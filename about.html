@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080f24">
+  <meta name="description" content="张致远的美术与技术美术作品集，探索 Unity 与 Unreal Engine 的实时渲染、特效与工具开发。">
+  <title>关于 · 张致远 — 美术 / 技术美术</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./i18n.css">
+  <link rel="stylesheet" href="./music.css">
+  <link rel="stylesheet" href="./interactions.css">
+  <script type="module" src="./cursor-trail.js"></script>
+  <script type="module" src="./hover-effects.js"></script>
+  <script type="module" src="./i18n.js"></script>
+  <script type="module" src="./music.js"></script>
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <canvas id="starfield-canvas" aria-hidden="true"></canvas>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="header">
+    <a class="brand" href="./index.html" aria-label="张致远，回到首页"><span class="brand-mark" aria-hidden="true">Z<span>Y</span></span><span class="brand-caption">张致远</span></a>
+    <nav aria-label="主导航"><a href="./portfolio.html" data-view="works">作品</a><a href="./about.html" data-view="about" aria-current="page">关于</a><a href="./contact.html" data-view="contact">联系</a></nav>
+    <span class="header-index" aria-hidden="true">作品集 / 01</span>
+  </header>
+  <main id="main-content" tabindex="-1">
+    <section class="hero shell" id="top" data-view-panel="top" aria-labelledby="hero-title" hidden>
+      <div class="hero-tracks" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="signal"></span> 视觉与技术的探索</div>
+        <h1 id="hero-title">张致远</h1>
+        <p class="hero-role">美术 <span>/</span> 技术美术</p>
+        <p class="hero-line">在像素之间，寻找更多可能。</p>
+        <div class="hero-tools"><span>UNITY</span><span>UNREAL ENGINE</span></div>
+        <div class="hero-actions"><a class="action" href="./portfolio.html">探索作品 <span aria-hidden="true">↗</span></a></div>
+      </div>
+      <div class="hero-visual hero-showcase">
+        <div class="visual-label"><span><i class="signal"></i> 精选作品</span><a href="./portfolio.html">全部作品 ↗</a></div>
+        <div id="home-project-grid" class="project-grid home-project-grid" aria-label="精选作品"></div>
+      </div>
+      <div class="hero-bottom"><a href="./portfolio.html">浏览作品 <span aria-hidden="true">↗</span></a><span>构想 · 创作 · 迭代</span></div>
+    </section>
+    <section class="works-section" id="works" data-view-panel="works" aria-labelledby="works-title" hidden>
+      <div class="section-head shell"><div><div class="section-kicker">01 / 精选作品</div><h2 id="works-title">作品<span>集</span><i aria-hidden="true">.</i></h2></div><div class="category-tabs" role="group" aria-label="作品分类"><button data-category="all" aria-pressed="true">全部</button><button data-category="unity" aria-pressed="false">Unity</button><button data-category="unreal" aria-pressed="false">Unreal Engine</button></div></div>
+      <div class="subcategory-row shell" id="ue-subcategories" hidden><span>UNREAL ENGINE <b aria-hidden="true">/</b></span><div role="group" aria-label="Unreal Engine 二级分类"><button data-subcategory="all" aria-pressed="true">全部 UE 作品</button><button data-subcategory="vehicle" aria-pressed="false">车辆</button></div></div>
+      <div class="works-layout shell">
+        <div class="preview-column">
+          <div class="preview-toolbar"><span><i class="signal"></i> 作品预览</span><span id="preview-index">— / —</span></div>
+          <div class="project-preview" id="project-preview"><div class="empty-preview"><div class="empty-symbol" aria-hidden="true">＋</div><span class="empty-kicker">新的作品</span><h3>作品待补充</h3><p>新的探索，即将在这里展开。</p></div></div>
+          <div id="playback-controls" class="playback-controls" hidden><label for="playback-speed">播放速度</label><select id="playback-speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1× 正常</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>
+          <div id="video-chapters" class="video-chapters" role="group" aria-label="效果时间定位" hidden></div>
+          <div class="project-caption"><div><p id="project-platform">UNITY / UNREAL ENGINE</p><h3 id="project-title">等待下一次灵感登场</h3></div><a id="project-link" class="text-link" href="https://space.bilibili.com/31364151" target="_blank" rel="noopener noreferrer">Bilibili 空间 <span aria-hidden="true">↗</span></a></div>
+          <a id="project-detail-link" class="project-detail-link" href="./portfolio.html">查看作品详情 <span aria-hidden="true">↗</span></a>
+          <p id="project-description" class="project-description">作品视频与制作过程将在这里更新。</p>
+          <div id="project-credits" class="project-credits" aria-label="项目参考与素材说明" hidden></div>
+        </div>
+        <div class="selection-column"><div class="selection-heading"><span>选择作品</span><span id="project-count">00</span></div><div id="project-grid" class="project-grid" aria-label="选择作品"></div><p class="selection-tip">悬停预览，点击查看详情。手机端点选预览，再次点击进入详情。</p></div>
+      </div>
+    </section>
+    <section class="about-section shell" id="about" data-view-panel="about" aria-labelledby="about-title">
+      <div><div class="section-kicker">02 / 关于</div><h2 id="about-title">关于<span>我</span><i aria-hidden="true">.</i></h2></div>
+      <div class="about-copy"><h3>张致远 </h3><p class="about-role">美术 / 技术美术</p><p id="about-text" class="muted">个人介绍待补充。</p><div class="about-tools"><span>Unity</span><span>Unreal Engine</span><span>着色器 / 特效 / 工具</span></div></div>
+      <div class="resume-details"><section aria-labelledby="experience-title"><h3 class="resume-heading" id="experience-title">工作经历 </h3><div id="experience-list" class="experience-list"></div></section><div><section aria-labelledby="skills-title"><h3 class="resume-heading" id="skills-title">技术方向 </h3><div id="skills-list" class="skills-list"></div></section><section class="education" aria-labelledby="education-title"><h3 class="resume-heading" id="education-title">教育经历 </h3><div id="education-list"></div></section></div></div>
+    </section>
+    <section class="contact-section" id="contact" data-view-panel="contact" aria-labelledby="contact-title" hidden><div class="shell contact-inner"><div><div class="section-kicker">03 / 联系</div><h2 id="contact-title">保持<span>联系</span><i aria-hidden="true">↗</i></h2></div><a class="contact-link" href="https://space.bilibili.com/31364151" target="_blank" rel="noopener noreferrer">哔哩哔哩<span>去我的空间看看 ↗</span></a></div><div class="shell footer-bottom"><span>© <span id="year">2026</span> 张致远</span><a href="./index.html">返回首页 ↗</a><span>技术美术作品集</span></div></section>
+  </main>
+  <div class="sr-only" id="announcement" aria-live="polite"></div>
+</body>
+</html>

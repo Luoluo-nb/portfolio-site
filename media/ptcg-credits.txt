@@ -1,0 +1,92 @@
+第一张卡：磨砂 → 细线 → Texture3D
+
+视频内容
+本版本将磨砂独立展示缩短为 3 秒，总片长 29 秒；其余效果及两次 2 秒渐变保留。
+全程只展示第一张卡，同一个透视镜头、同一套卡片与灯光晃动。
+0–3 秒：磨砂与细颗粒亮片。
+3–5 秒：磨砂平滑过渡到细线。
+5–15 秒：细线、分区高光与视差。
+15–17 秒：细线平滑过渡到 Texture3D。
+17–29 秒：48 层 Texture3D 光学涂层。
+两个过渡均使用 smoothstep 权重，在完全相同的卡片姿态和光照下渲染两种材质，再在线性颜色空间混合。视频不含新增标题或标签。
+渐进总片不是首尾无缝循环。此网页使用最终修正版的 1080p 播放副本，保留 29 秒时长与原时间轴。
+
+录制方式
+Unity 2022.3.62f3 / URP 14，实际运行环境和 GPU 见 *-capture.json。
+编辑模式固定步长 Camera.Render、像素回读，3840×2160、30fps、H.264；网页版本 1920×1080。
+30fps 为离线采样与编码帧率，不代表实时性能测试结果。
+沿用 NacreLightPreview 的 6 秒平滑四元数运动：卡片俯仰 8*sin(2phase)、偏航 25*sin(phase)；灯光俯仰 12+8*sin(phase)、偏航 28-43*cos(phase)。
+背景为静态深色、低饱和的柔和星空。最终版在背景 sRGB 输出加入固定的细微抖动（±1/255，4K 每 2×2 像素一格），缓解暗部色阶。编码使用 grain 与暗部自适应量化，尽量保留渐变；卡面材质、运动及亮度未调整。
+三个材质共享同一个圆角网格与 UV。磨砂原场景灯强度为 10，统一展示灯强度为 1.12，录制副本只对磨砂亮片强度进行等比补偿；没有启用原磨砂场景的额外调色和 Bloom。
+正式单文件 Shader CardFinish.shader 未修改。
+
+效果来源
+磨砂：现有 Card01_MatteGlitter 材质及 LayeredFoil/Card URP14 Shader。
+细线：当前 Test_01 材质及录制副本 CardFinishTuned.shader，含分区高光、细线与双层视差实验。
+Texture3D：现有 Card01_Final05 材质、FinalStockCard.shader 与 CoherentPhoto_05.asset（512×728×48）。按照视线/光照角度采样并插值 48 层外观，不是完整测量 BRDF。
+
+参考代码
+Daniel Ilett — shaders-holo-card
+https://github.com/daniel-ilett/shaders-holo-card
+MIT，Copyright 2024 Daniel Ilett，基础参考工程。
+本地来源提交 d683d9b95a8ef9eeae688e09ec0c99678b370ee5。
+
+Sergej Lopatkin — Pokébox
+https://github.com/selop/pokebox
+https://pokebox.lopatkin.net/
+MIT，Copyright 2026 Sergej Lopatkin，GLSL 工艺与纹理参考。
+本地来源提交 7f6b1b4b6bb4684f80b49d1318b2a1c90a357b80。
+完整代码许可见下方许可原文。
+
+原画
+第一张原画来自用户提供的 Test_01.png，画面署名 by WLOP，视频保留其原有署名。
+磨砂与 Texture3D 使用该画面的现有 4 倍超分版本；细线使用现有 800×1422 原图。
+原画不是本项目绘制，代码的 MIT 许可不涵盖插画。展示应标注“测试插画由用户提供，原画 WLOP”。
+
+网页说明建议
+卡面光学材质原型 / 复刻研究。同一张卡依次展示磨砂、分区细线高光与 48 层 Texture3D 涂层，以持续的卡片和灯光晃动呈现不同工艺的角度响应。Unity 2022.3 / URP 14，离线逐帧录制。原画 WLOP；开源代码参考 Daniel Ilett 与 Pokébox。
+
+代码许可原文
+MIT License
+
+Copyright (c) 2024 Daniel Ilett
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+MIT License
+
+Copyright (c) 2026 Sergej Lopatkin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

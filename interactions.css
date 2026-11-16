@@ -1,0 +1,89 @@
+/* Fine outlines and a moving light edge keep the controls part of the night sky. */
+@property --edge-phase{syntax:'<angle>';initial-value:0deg;inherits:false}
+@keyframes edge-flow{to{--edge-phase:360deg}}
+@keyframes selection-shimmer{0%,100%{opacity:.72}50%{opacity:1}}
+@keyframes selection-light{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.music-button,.action,.project-detail-link,.back-button{
+  position:relative;isolation:isolate;overflow:hidden;clip-path:none;border-radius:7px;
+  transition:color .2s,border-color .2s,background-color .2s,box-shadow .2s,transform .2s;
+}
+.header nav a{min-height:44px;min-width:76px;padding:10px 16px;background:transparent;border:1px solid transparent;color:#b6c8df}
+.header nav a[aria-current=page]{color:#eefaff;background:#b8dfff06;border-color:#9bcfff23;box-shadow:none}
+.header nav a::after{content:none}
+.category-tabs{gap:9px}
+.category-tabs button,.subcategory-row button{background:#09162a80;border:1px solid #93bfe12b;color:#a9bfd8;min-height:44px;font-weight:700}
+.category-tabs button[aria-pressed=true],.subcategory-row button[aria-pressed=true]{background:#b8dfff0a;border-color:#b7e8ff70;color:#edfaff;box-shadow:inset 0 0 18px #71beff06,0 0 12px #5cbfff0a}
+.category-tabs button:hover,.subcategory-row button:hover{background:#b8dfff0d;color:#f1fbff;border-color:#9edcff66}
+.language-switch{padding:0;gap:4px;border-color:transparent;background:transparent}
+.language-switch button{border-radius:6px;color:#9ab0ca;background:transparent;font-weight:700}
+.language-switch button[aria-pressed=true]{background:#b8dfff07;border-color:#b7e8ff3b;color:#eefaff}
+.language-switch button:hover{background:#b8dfff0b;color:#fff}
+.music-button{border-radius:6px;color:#a9d9f1}
+.music-button:hover,.music-button[aria-pressed=true]{background:#b8dfff09;border-color:#acdfff30}
+.action,.project-detail-link,.back-button{background:linear-gradient(115deg,#16324fca,#0b182bbc);border:1px solid #a6dbff5c;color:#effaff;box-shadow:inset 0 1px #e4f7ff0a;font-weight:700}
+.action:hover,.project-detail-link:hover,.back-button:hover{background:linear-gradient(115deg,#193d5c,#101f37);border-color:#c2eeff9c;box-shadow:0 0 20px #6bc9ff0e;transform:none}
+.fx-button::before,.project-card::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;z-index:3;pointer-events:none;
+  background:conic-gradient(from var(--edge-phase),transparent 0deg,transparent 195deg,#60bfff18 245deg,#84dbff 292deg,#e9fbff 307deg,#74cfff55 325deg,transparent 350deg);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;
+  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;
+  opacity:0;transition:opacity .2s;animation:edge-flow 2.6s linear infinite;animation-play-state:paused;
+}
+.fx-button:hover::before,.fx-button:focus-visible::before,.project-card:hover::before,.project-card:focus-visible::before{opacity:.9;animation-play-state:running}
+.fx-button:disabled::before{opacity:0;animation-play-state:paused}
+.project-card{clip-path:none;border:1px solid #89b9d52b;border-radius:8px;isolation:isolate}
+.project-card[data-selected=true]{border-color:#a9ddff8c;box-shadow:0 0 16px #72bcff10}
+.project-card .card-copy{border-radius:0 0 7px 7px}
+.fx-button:focus-visible,.back-button:focus-visible{outline:2px solid #d5f3ff;outline-offset:3px}
+.detail-breadcrumb{position:sticky;top:80px;z-index:20;min-height:66px;padding:10px 0;background:#071020eb;backdrop-filter:blur(14px);border-bottom:1px solid #8db9d322;margin-top:-10px;gap:18px}
+#work-back{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:44px;padding:10px 17px;font-size:13px;line-height:1.4;color:#e9f8ff;gap:9px}
+.detail-breadcrumb>span{font-size:12px;min-width:0}
+.breakdown-chapter{scroll-margin-top:72px}
+@media(max-width:900px){.detail-breadcrumb{top:126px}}
+@media(max-width:760px){.header nav a{min-width:61px;min-height:44px;padding:10px 13px}.detail-breadcrumb{gap:8px;flex-wrap:nowrap}#work-back{padding:10px 12px;font-size:12px}.detail-breadcrumb>span{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:9px}}
+@media(hover:none),(pointer:coarse){.fx-button::before,.project-card::before{display:none}.fx-button:active{background:#c2e6ff13;border-color:#d5f3ff80;transform:scale(.98)}}
+@media(prefers-reduced-motion:reduce){.fx-button::before,.project-card::before{animation:none!important}.fx-button,.project-card{transition:none!important}}
+.video-chapters{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.video-chapters button{display:inline-flex;align-items:center;gap:9px;min-height:44px;padding:10px 13px;position:relative;isolation:isolate;overflow:hidden;border-radius:6px;background:#09162a90;border:1px solid #93bfe12b;color:var(--muted);font-size:12px;font-weight:700}.video-chapters button[aria-pressed=true]{color:#ecfaff;border-color:#b7e8ff70;background:#b8dfff0a}.chapter-time{font-size:10px;font-variant-numeric:tabular-nums;color:var(--ice)}
+
+/* Navigation and toggles use light within the sky, without a boxed outline.
+   Keep the existing framed treatment for actions such as the return link. */
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button){
+  border-color:transparent!important;background:transparent;box-shadow:none;
+}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):hover{
+  background:radial-gradient(ellipse at center,#6db6ff0e,transparent 72%);border-color:transparent;box-shadow:none;
+}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button)::before{
+  inset:auto 25% 3px;height:3px;padding:0;border-radius:50%;
+  background:radial-gradient(ellipse at center,#c5f0ffbb, #74caff40 30%,transparent 72%);
+  background-size:200% 100%;-webkit-mask:none;mask:none;
+  box-shadow:none;filter:blur(.45px);animation:selection-light 4s ease-in-out infinite;
+  animation-play-state:paused;
+}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):is([aria-current=page],[aria-pressed=true]){
+  color:#eefbff;background:transparent;
+  border-color:transparent;box-shadow:none;text-shadow:0 0 14px #8edaff55;
+}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):is([aria-current=page],[aria-pressed=true])::before{
+  display:block;opacity:.9;animation-play-state:running;animation-duration:5.5s;
+}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):is([aria-current=page],[aria-pressed=true])::after{
+  content:'';position:absolute;inset:0;width:auto;height:auto;border-radius:inherit;
+  transform:none;pointer-events:none;z-index:-2;box-shadow:none;
+  -webkit-mask-image:radial-gradient(ellipse at center,#000 30%,transparent 72%);
+  mask-image:radial-gradient(ellipse at center,#000 30%,transparent 72%);
+  background:
+    radial-gradient(circle at 85% 24%,#d4f5ffb0 0 .65px,transparent 1.6px),
+    radial-gradient(circle at 17% 70%,#a7e5ff90 0 .55px,transparent 1.5px),
+    radial-gradient(circle at 67% 82%,#c9f1ff8a 0 .55px,transparent 1.5px),
+    radial-gradient(ellipse 17px 12px at 72% 50%,#020a1633 57%,#79caff24 65%,#a7e7ff3b 73%,#68baff10 85%,transparent 100%),
+    radial-gradient(ellipse at center,#4cafff26,transparent 70%);
+  animation:selection-shimmer 5.5s ease-in-out infinite;
+}
+@media(hover:none),(pointer:coarse){
+  :is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):is([aria-current=page],[aria-pressed=true])::before{animation:none;opacity:.85}
+  .fx-button::after{animation:none!important}
+}
+@media(prefers-reduced-motion:reduce){.fx-button::after{animation:none!important}}
+
+.music-controls .music-button::before,.music-controls .music-button::after{display:none}

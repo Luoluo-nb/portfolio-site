@@ -1,0 +1,33 @@
+.header-index{display:none}
+.header-tools{display:flex;align-items:center;gap:16px}
+.music-controls{position:relative;display:flex;align-items:center;gap:2px;flex-shrink:0;color:#badbea;font-weight:600}
+.music-controls .music-button{width:45px;height:45px;min-width:45px;flex:0 0 45px;padding:12px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#9dbaca;box-shadow:none;transition:color .18s,background .18s,filter .18s}
+.music-controls .music-button:hover,.music-controls .music-button[aria-pressed=true]{color:#e4f7ff;background:radial-gradient(circle,#8bd6ff10,transparent 70%);border-color:transparent;box-shadow:none;text-shadow:none}
+.music-controls .music-button:hover{filter:drop-shadow(0 0 5px #86d6ff32)}
+.music-controls .music-button:active{background:radial-gradient(circle,#8bd6ff1a,transparent 72%);transform:none}
+.music-controls .music-button:focus-visible{outline:1px solid #a1dfff9c;outline-offset:-5px}
+.music-controls .music-button:disabled{opacity:.38;filter:none}
+.music-controls .music-button svg{width:19px;height:19px;display:block;fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round}
+.music-controls #music-toggle svg{width:20px;height:20px;stroke-width:1.65}
+.music-volume-control{position:relative;display:flex;align-items:center;flex:0 0 78px;width:78px;height:45px;margin-left:5px}
+.music-controls input[type=range]{appearance:none;-webkit-appearance:none;display:block;width:100%;height:45px;padding:0;margin:0;border:0;border-radius:18px;background:transparent;cursor:pointer;--music-volume:35%}
+.music-controls input[type=range]::-webkit-slider-runnable-track{height:1px;border:0;border-radius:2px;background:linear-gradient(to right,#b3dfefc9 var(--music-volume),#7796b438 var(--music-volume))}
+.music-controls input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:8px;height:8px;border:1px solid #d9f4ffce;border-radius:50%;background:#9cd7ed;margin-top:-3.5px;box-shadow:0 0 7px #7acaff42;transition:box-shadow .15s,transform .15s}
+.music-controls input[type=range]::-moz-range-track{height:1px;border:0;border-radius:2px;background:#7796b438}
+.music-controls input[type=range]::-moz-range-progress{height:1px;border-radius:2px;background:#b3dfefc9}
+.music-controls input[type=range]::-moz-range-thumb{width:6px;height:6px;border:1px solid #d9f4ffce;border-radius:50%;background:#9cd7ed;box-shadow:0 0 7px #7acaff42}
+.music-controls input[type=range]:active::-webkit-slider-thumb{transform:scale(1.2);box-shadow:0 0 10px #8ad6ff80}
+.music-controls input[type=range]:focus-visible{outline:1px solid #a1dfff78;outline-offset:-7px}
+.music-controls output{position:absolute;top:0;right:0;min-width:30px;line-height:13px;font-size:9px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;color:#b0cfdf;pointer-events:none;opacity:0;transition:opacity .15s}
+.music-volume-control:hover output,.music-volume-control:focus-within output{opacity:1}
+.music-label{position:absolute;left:3px;top:calc(100% - 2px);z-index:5;display:flex;align-items:center;min-height:28px;padding:3px 10px;white-space:nowrap;border-radius:14px;background:#081427f2;color:#9eb8ce;font-size:10px;line-height:20px;letter-spacing:.3px;opacity:0;pointer-events:none;transform:translateY(-2px);transition:opacity .15s,transform .15s}
+.music-controls:hover .music-label,.music-label:focus-visible{opacity:1;pointer-events:auto;transform:none}
+.music-label:hover{color:#e4f7ff}
+.music-label:focus-visible{outline:1px solid #a1dfff9c;outline-offset:2px}
+@media(max-width:1199px){.header-tools{gap:8px}.music-volume-control{width:60px;flex-basis:60px;margin-left:3px}}
+@media(max-width:900px){.header{flex-wrap:wrap;height:126px;align-content:center;row-gap:0}.header>.brand,.header>nav{height:70px}.header-tools{width:100%;height:46px;justify-content:space-between;border-top:1px solid #28405d88}.music-volume-control{width:78px;flex-basis:78px;margin-left:5px}.header nav a{min-height:48px}.hero{padding-top:165px}.works-section[data-view-panel]{padding-top:158px}.about-section[data-view-panel]{padding-top:164px}.contact-section[data-view-panel]{padding-top:126px}.work-detail{padding-top:146px}html{scroll-padding-top:145px}#project-preview{scroll-margin-top:145px}}
+@media(max-width:380px){.music-controls{gap:0}.music-volume-control{width:54px;flex-basis:54px;margin-left:3px}.header-tools{gap:4px}.header>.brand,.header>nav{height:70px}}
+@media(prefers-reduced-motion:reduce){.music-controls .music-button,.music-controls output,.music-label,.music-controls input[type=range]::-webkit-slider-thumb{transition:none}}
+#project-preview,.breakdown-chapter{scroll-margin-top:0}
+.close-player{position:absolute;right:8px;top:8px;z-index:2;min-height:44px;padding:10px 14px;background:#0b173bea;border:1px solid #7addff90;color:var(--ice);font-size:12px;font-weight:600}
+.close-player:hover{background:#193759}
