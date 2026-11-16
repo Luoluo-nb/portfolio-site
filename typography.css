@@ -1,0 +1,43 @@
+/* Readable content type scale; navigation sizing lives in header-layout.css. */
+.hero .eyebrow,.section-kicker{font-size:14px;line-height:1.6;letter-spacing:1px;font-weight:650}
+.hero-line{font-size:17px;line-height:1.8;letter-spacing:.5px;color:#b3c3d8}
+.hero-tools span{font-size:13px;letter-spacing:.4px;font-weight:650}
+.visual-label,.preview-toolbar,.selection-heading{font-size:14px;line-height:1.5;letter-spacing:.4px}
+.hero-showcase .visual-label{margin-bottom:10px}
+.visual-label>span:first-child{color:#c9dbea}
+.visual-label a,.text-link{font-size:14px;letter-spacing:0}
+.project-card .card-copy{padding:34px 16px 16px}
+.card-copy strong,.home-project-grid .card-copy strong{font-size:18px;line-height:1.45;font-weight:750;letter-spacing:0}
+.card-copy small,.home-project-grid .card-copy small{font-size:13px;line-height:1.5;letter-spacing:0;font-weight:600;color:#a9c8da;margin-top:7px}
+.project-caption p{font-size:13px;line-height:1.5;letter-spacing:.7px}
+.project-caption h3{font-size:26px;line-height:1.4;letter-spacing:0}
+.project-description,.detail-information p{font-size:16px;line-height:1.85;font-weight:600;color:#b4c5d9}
+.selection-tip,.playback-help,.detail-duration,.detail-breadcrumb,.project-credits{font-size:13px;line-height:1.7;letter-spacing:0}
+.project-detail-link,.action,.back-button{font-size:16px;letter-spacing:0}
+.category-tabs button,.subcategory-row,.subcategory-row button,.playback-controls,.playback-controls select{font-size:14px;letter-spacing:0}
+.hero-bottom{font-size:13px;letter-spacing:.4px}
+.hero-bottom>span{display:none}
+.footer-bottom,.detail-footer{font-size:13px;line-height:1.7;letter-spacing:.3px}
+.resume-period,.resume-role,.skill-item h4{font-size:14px;line-height:1.6;letter-spacing:.3px}
+.resume-summary,.skill-item p,.about-copy>.muted{font-size:16px;line-height:1.85;font-weight:600;color:#b4c5d9}
+.experience-item h4,.education-item h4{font-size:19px;letter-spacing:0}
+.breakdown-heading>p:last-child,.breakdown-chapter-heading p,.breakdown-steps{font-size:16px;line-height:1.85;font-weight:600}
+.breakdown-toc a,.breakdown-image-link figcaption,.breakdown-image-action,.breakdown-return{font-size:14px;line-height:1.6}
+.detail-information h2{font-size:20px;letter-spacing:0}
+@media(max-width:760px){
+  .hero .eyebrow,.section-kicker,.visual-label,.preview-toolbar,.selection-heading{font-size:13px;letter-spacing:.3px}
+  .hero-line{font-size:16px;letter-spacing:0}
+  .card-copy strong,.home-project-grid .card-copy strong{font-size:16px;line-height:1.45}
+  .card-copy small,.home-project-grid .card-copy small{font-size:12px;margin-top:5px}
+  .project-card .card-copy{padding:30px 12px 12px}
+  .project-caption h3{font-size:23px}
+  .project-description,.detail-information p,.resume-summary,.skill-item p,.about-copy>.muted{font-size:15px}
+  .breakdown-heading>p:last-child,.breakdown-chapter-heading p,.breakdown-steps{font-size:15px}
+  .detail-heading h1{font-size:28px;line-height:1.4;letter-spacing:0}
+  .footer-bottom,.detail-footer{font-size:12px}
+}
+/* Keep the larger captions readable without covering a tiny two-column image. */
+@media(max-width:600px){
+  .home-project-grid,.project-grid{grid-template-columns:1fr}
+  .home-project-grid .project-card,.project-grid .project-card{aspect-ratio:16/10}
+}

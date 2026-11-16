@@ -94,12 +94,15 @@ function createPoster(project) {
   img.referrerPolicy = 'no-referrer';
   img.addEventListener('error', () => { img.hidden = true; }, {once:true});
   const caption = element('span', 'poster-play');
-  caption.append(element('span', 'play-triangle', '▷'), element('span', '', '播放作品'));
+  const playIcon = element('span', 'play-triangle');
+  playIcon.setAttribute('aria-hidden', 'true');
+  playIcon.innerHTML = '<svg viewBox="0 0 28 28" focusable="false"><path d="m10 7 11 7-11 7Z"/></svg>';
+  caption.append(playIcon, element('span', '', '播放作品'));
   button.append(img, caption);
   button.addEventListener('click', () => openPlayer(project));
   return button;
 }
-function openPlayer(project, startTime = 0) {
+function openPlayer(project, startTime = project.startTime ?? 0) {
   if (project.videoSrc) {
     const video = document.createElement('video');
     video.controls = true;
@@ -168,7 +171,7 @@ function selectProject(project, shouldScroll = false) {
     link.rel = 'noopener noreferrer';
     $('project-credits').append(link);
   }
-  $('project-link').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/`;
+  $('project-link').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/${Number.isFinite(project.startTime) && project.startTime > 0 ? `?t=${project.startTime}` : ''}`;
   $('project-link').textContent = project.videoSrc ? '打开视频 ↗' : '在 Bilibili 打开 ↗';
   $('preview-index').textContent = `${String(projects.indexOf(project) + 1).padStart(2,'0')} / ${String(projects.length).padStart(2,'0')}`;
   $('playback-help').hidden = true;
@@ -334,7 +337,7 @@ for (const item of profile.education || []) {
   $('education-list').append(row);
 }
 $('year').textContent = new Date().getFullYear();
-for (const project of projects.filter(item => item.category).slice(0, 4)) {
+function createProjectLink(project) {
   const card = element('a', 'project-card');
   card.href = `./work.html?id=${encodeURIComponent(project.id)}`;
   const image = element('img');
@@ -344,7 +347,14 @@ for (const project of projects.filter(item => item.category).slice(0, 4)) {
   const copy = element('span', 'card-copy');
   copy.append(element('strong', '', project.title), element('small', '', `${categoryName(project.category)} · 查看详情 ↗`));
   card.append(image, copy);
-  $('home-project-grid').append(card);
+  return card;
+}
+for (const project of projects.filter(item => item.category).slice(0, 4)) {
+  $('home-project-grid').append(createProjectLink(project));
+}
+for (const id of ['ptcg-card', 'rain-vat', 'unreal-snow']) {
+  const project = projects.find(item => item.id === id);
+  if (project) $('contact-project-grid')?.append(createProjectLink(project));
 }
 renderProjects();
 showRoute();

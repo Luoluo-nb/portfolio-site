@@ -50,7 +50,7 @@ function help(message) {
   $('detail-playback-help').textContent = message;
   $('detail-playback-help').hidden = !message;
 }
-function play(startTime = 0) {
+function play(startTime = project?.startTime ?? 0) {
   if (!project) return;
   if (project.videoSrc) {
     const video = document.createElement('video');
@@ -110,7 +110,7 @@ function showPoster() {
   caption.className = 'poster-play';
   const icon = document.createElement('span');
   icon.className = 'play-triangle';
-  icon.textContent = '▷';
+  icon.innerHTML = '<svg viewBox="0 0 28 28" focusable="false"><path d="m10 7 11 7-11 7Z"/></svg>';
   icon.setAttribute('aria-hidden', 'true');
   const text = document.createElement('span');
   text.textContent = '播放作品';
@@ -216,7 +216,7 @@ if (project) {
   const seconds = Math.max(0, Math.round(project.duration || 0));
   $('work-duration').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')} / 视频`;
   document.title = `${project.title} · 张致远作品集`;
-  $('work-source').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/`;
+  $('work-source').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/${Number.isFinite(project.startTime) && project.startTime > 0 ? `?t=${project.startTime}` : ''}`;
   $('work-source').textContent = project.videoSrc ? '打开原视频 ↗' : '在 Bilibili 打开 ↗';
   $('work-profile').href = profile.bilibili;
   $('detail-speed-controls').hidden = !project.videoSrc;

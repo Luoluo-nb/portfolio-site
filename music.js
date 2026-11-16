@@ -28,6 +28,81 @@ audio.volume = volume;
 audio.muted = muted;
 audio.hidden = true;
 document.body.append(audio);
+
+// Analyse only this soundtrack, after a user gesture. Playback remains a normal
+// media element when Web Audio is unavailable or cannot start.
+let audioContext;
+let mediaSource;
+let analyser;
+let frequencyData;
+let analysisPending;
+let analysisUnavailable = false;
+let sampledAt = 0;
+const levels = {bass: 0, mid: 0, treble: 0, active: false};
+async function enableAnalysis() {
+  if (analysisUnavailable || analysisPending || !wanted) return;
+  const Context = window.AudioContext || window.webkitAudioContext;
+  if (!Context) { analysisUnavailable = true; return; }
+  analysisPending = true;
+  try {
+    if (!audioContext) audioContext = new Context({latencyHint: 'playback'});
+    // Do not reroute audio into a context that has not successfully resumed.
+    if (audioContext.state !== 'running') await audioContext.resume();
+    if (audioContext.state !== 'running' || mediaSource) return;
+    const nextAnalyser = audioContext.createAnalyser();
+    nextAnalyser.fftSize = 1024;
+    nextAnalyser.smoothingTimeConstant = 0.72;
+    nextAnalyser.minDecibels = -85;
+    nextAnalyser.maxDecibels = -15;
+    const nextData = new Uint8Array(nextAnalyser.frequencyBinCount);
+    // Connect the downstream path first; createMediaElementSource is called once.
+    nextAnalyser.connect(audioContext.destination);
+    mediaSource = audioContext.createMediaElementSource(audio);
+    try {
+      mediaSource.connect(nextAnalyser);
+      analyser = nextAnalyser;
+      frequencyData = nextData;
+    } catch {
+      // The media element is already attached: preserve a direct audible route.
+      mediaSource.connect(audioContext.destination);
+      nextAnalyser.disconnect();
+      analysisUnavailable = true;
+    }
+  } catch {
+    analysisUnavailable = true;
+  } finally { analysisPending = false; }
+}
+function getLevels() {
+  const now = performance.now();
+  const seconds = Math.min(1, Math.max(0, (now - sampledAt) / 1000));
+  sampledAt = now;
+  const active = Boolean(analyser && audioContext?.state === 'running' && wanted && !audio.paused
+    && !audio.muted && audio.volume > 0 && !blocked && pageActive && !document.hidden);
+  const targets = [0, 0, 0];
+  if (active) {
+    analyser.getByteFrequencyData(frequencyData);
+    const binHz = audioContext.sampleRate / analyser.fftSize;
+    [[45, 200], [200, 2200], [2200, 9000]].forEach(([low, high], band) => {
+      const begin = Math.max(1, Math.floor(low / binHz));
+      const end = Math.min(frequencyData.length - 1, Math.ceil(high / binHz));
+      let energy = 0;
+      for (let bin = begin; bin <= end; bin++) energy += (frequencyData[bin] / 255) ** 2;
+      targets[band] = Math.sqrt(energy / Math.max(1, end - begin + 1)) * audio.volume;
+    });
+  }
+  ['bass', 'mid', 'treble'].forEach((band, index) => {
+    const easing = 1 - Math.exp(-seconds / (targets[index] > levels[band] ? 0.07 : 0.12));
+    levels[band] += (targets[index] - levels[band]) * easing;
+    if (levels[band] < 0.001) levels[band] = 0;
+  });
+  levels.active = active;
+  return {...levels};
+}
+window.PortfolioAudioAnalysis = Object.freeze({getLevels});
+// A resumed cross-page session can opt in on the visitor's next interaction.
+for (const event of ['pointerdown', 'keydown']) document.addEventListener(event, () => {
+  if (wanted) enableAnalysis();
+}, {once: true, passive: true});
 const header = document.querySelector('.header');
 let tools = header.querySelector('.header-tools');
 if (!tools) {
@@ -91,6 +166,10 @@ async function start() {
   if (!wanted || blocked || document.hidden || !pageActive) return draw();
   unavailable = false;
   try {
+    if (mediaSource && audioContext.state !== 'running' && audioContext.state !== 'closed') {
+      // Browsers may suspend an existing graph while a page is in the background.
+      audioContext.resume().catch(() => {});
+    }
     await audio.play();
     if (!wanted || blocked || document.hidden || !pageActive) audio.pause();
     else claimAudio();
@@ -103,7 +182,7 @@ async function start() {
 }
 toggle.addEventListener('click', () => {
   wanted = !wanted;
-  if (wanted) start();
+  if (wanted) { enableAnalysis(); start(); }
   else audio.pause();
   remember();
   draw();

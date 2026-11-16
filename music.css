@@ -1,10 +1,9 @@
 .header-index{display:none}
 .header-tools{display:flex;align-items:center;gap:16px}
 .music-controls{position:relative;display:flex;align-items:center;gap:2px;flex-shrink:0;color:#badbea;font-weight:600}
-.music-controls .music-button{width:45px;height:45px;min-width:45px;flex:0 0 45px;padding:12px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#9dbaca;box-shadow:none;transition:color .18s,background .18s,filter .18s}
-.music-controls .music-button:hover,.music-controls .music-button[aria-pressed=true]{color:#e4f7ff;background:radial-gradient(circle,#8bd6ff10,transparent 70%);border-color:transparent;box-shadow:none;text-shadow:none}
-.music-controls .music-button:hover{filter:drop-shadow(0 0 5px #86d6ff32)}
-.music-controls .music-button:active{background:radial-gradient(circle,#8bd6ff1a,transparent 72%);transform:none}
+.music-controls .music-button{width:45px;height:45px;min-width:45px;flex:0 0 45px;padding:12px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#9dbaca;box-shadow:none;filter:none;transition:color .18s}
+.music-controls .music-button:hover,.music-controls .music-button[aria-pressed=true]{color:#e4f7ff;background:transparent;border-color:transparent;box-shadow:none;text-shadow:none;filter:none}
+.music-controls .music-button:active{color:#fff;background:transparent;transform:none;filter:none}
 .music-controls .music-button:focus-visible{outline:1px solid #a1dfff9c;outline-offset:-5px}
 .music-controls .music-button:disabled{opacity:.38;filter:none}
 .music-controls .music-button svg{width:19px;height:19px;display:block;fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round}

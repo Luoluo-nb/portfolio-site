@@ -1,4 +1,5 @@
-// One softly tethered Big Dipper; the native pointer and hit testing stay unchanged.
+// Every short-lived particle drifts away from the current mouse independently.
+// Native cursor behavior is unchanged; this transparent canvas never takes hits.
 function mountCursorTrail() {
   if (document.getElementById('cursor-trail-canvas')) return;
   const canvas = document.createElement('canvas');
@@ -13,26 +14,19 @@ function mountCursorTrail() {
 
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  // Dubhe, Merak, Phecda, Megrez form the bowl; Alioth, Mizar, Alkaid the handle.
-  const stars = [
-    { x: -43, y: -12, radius: 1.15, response: 22 },
-    { x: -47, y: 13, radius: 1.02, response: 18 },
-    { x: -18, y: 20, radius: 1.08, response: 24 },
-    { x: -11, y: -4, radius: .86, response: 19 },
-    { x: 12, y: -12, radius: 1.22, response: 26 },
-    { x: 34, y: -10, radius: 1.12, response: 21 },
-    { x: 51, y: 6, radius: 1.15, response: 28 },
-  ];
-  // Four closed-bowl edges plus three handle links require seven segments.
-  const links = [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4], [4, 5], [5, 6]];
-  const deadZone = 26;
-  const holdTime = 45;
-  const fadeTime = 500;
-  let width = 0, height = 0, frameId = 0;
-  let previous = null, constellation = null;
+  const MAX_PARTICLES = 32;
+  const spacing = 6, linkDistance = 54, activationDistance = 11;
+  const coneHalfAngle = Math.PI / 6, drag = 2.6;
+  const particles = [];
+  let width = 0, height = 0, frameId = 0, linkCount = 0, remainder = 0;
+  let previous = null, mouse = null;
   let suspended = false, enabled = false;
-  canvas.dataset.shape = 'big-dipper';
-  canvas.dataset.deadZone = String(deadZone);
+  canvas.dataset.shape = 'scatter-radial';
+  canvas.dataset.maxParticles = String(MAX_PARTICLES);
+  canvas.dataset.activationDistance = String(activationDistance);
+  canvas.dataset.spacing = String(spacing);
+  canvas.dataset.coneDegrees = '60';
+  canvas.dataset.linkDistance = String(linkDistance);
 
   const glow = document.createElement('canvas');
   glow.width = glow.height = 40;
@@ -50,17 +44,17 @@ function mountCursorTrail() {
   function state(value) {
     canvas.dataset.state = value;
     canvas.dataset.running = String(Boolean(frameId));
-    canvas.dataset.constellations = constellation ? '1' : '0';
-    canvas.dataset.stars = constellation ? '7' : '0';
-    canvas.dataset.segments = constellation ? '7' : '0';
-    canvas.dataset.particles = canvas.dataset.stars;
+    canvas.dataset.particles = String(particles.length);
+    canvas.dataset.segments = String(linkCount);
   }
 
   function stop(reason) {
     if (frameId) cancelAnimationFrame(frameId);
     frameId = 0;
-    constellation = null;
+    particles.length = 0;
     previous = null;
+    mouse = null;
+    remainder = linkCount = 0;
     context.clearRect(0, 0, width, height);
     state(reason);
   }
@@ -86,75 +80,94 @@ function mountCursorTrail() {
     resize();
   }
 
-  // An exact critically damped spring: no autonomous wobble or accumulated jitter.
-  function follow(body, targetX, targetY, response, dt) {
-    const oldX = body.x, oldY = body.y;
-    const dx = oldX - targetX, dy = oldY - targetY;
-    const jx = body.vx + response * dx, jy = body.vy + response * dy;
-    const decay = Math.exp(-response * dt);
-    body.x = targetX + (dx + jx * dt) * decay;
-    body.y = targetY + (dy + jy * dt) * decay;
-    body.vx = (body.vx - response * jx * dt) * decay;
-    body.vy = (body.vy - response * jy * dt) * decay;
-    const step = Math.hypot(body.x - oldX, body.y - oldY);
-    const limit = 900 * dt;
-    if (step > limit) {
-      body.x = oldX + (body.x - oldX) * limit / step;
-      body.y = oldY + (body.y - oldY) * limit / step;
-      body.vx = (body.x - oldX) / dt;
-      body.vy = (body.y - oldY) / dt;
-    }
-    if (Math.hypot(body.x - targetX, body.y - targetY) < .02 && Math.hypot(body.vx, body.vy) < .2) {
-      body.x = targetX; body.y = targetY; body.vx = body.vy = 0;
-    }
+  function emit(x, y, now) {
+    if (particles.length >= MAX_PARTICLES) particles.shift();
+    particles.push({
+      x, y, born: now, updated: now,
+      // Keep each cone offset stable through its life, rather than noisy per frame.
+      angleOffset: (Math.random() * 2 - 1) * coneHalfAngle,
+      speed: 38 + Math.random() * 46,
+      vx: 0, vy: 0,
+      life: 520 + Math.random() * 140,
+      radius: .7 + Math.random() * .45,
+      alpha: .64,
+    });
   }
 
   function render(now) {
     frameId = 0;
     if (!enabled || suspended || document.hidden) { stop('suspended'); return; }
-    if (!constellation || now - constellation.moved >= holdTime + fadeTime) { stop('idle'); return; }
-    const item = constellation;
-    const dt = Math.min(32, Math.max(1, now - item.frame)) / 1000;
-    follow(item, item.targetX, item.targetY, 14, dt);
-    for (let index = 0; index < stars.length; index++) {
-      const base = stars[index], point = item.points[index];
-      const targetX = item.x + base.x, targetY = item.y + base.y;
-      follow(point, targetX, targetY, base.response, dt);
-      // Keep the bowl and curved handle recognizable while each star responds.
-      const dx = point.x - targetX, dy = point.y - targetY;
-      const distance = Math.hypot(dx, dy), tether = 6 + index * .7;
-      if (distance > tether) {
-        point.x = targetX + dx * tether / distance;
-        point.y = targetY + dy * tether / distance;
+    context.clearRect(0, 0, width, height);
+    for (let index = particles.length - 1; index >= 0; index--) {
+      const particle = particles[index], age = Math.max(0, now - particle.born);
+      if (age >= particle.life) { particles.splice(index, 1); continue; }
+      const seconds = Math.min(Math.max(0, now - particle.updated) / 1000, 0.05);
+      particle.updated = now;
+      const dx = particle.x - (mouse?.x ?? particle.x);
+      const dy = particle.y - (mouse?.y ?? particle.y);
+      const distance = Math.hypot(dx, dy);
+      particle.vx = particle.vy = 0;
+      if (distance > activationDistance) {
+        // Recompute from this particle to the current mouse on every frame.
+        // The quiet centre prevents jitter directly under the native pointer.
+        const angle = Math.atan2(dy, dx) + particle.angleOffset;
+        const release = Math.min(1, (distance - activationDistance) / 7);
+        const falloff = 1 / (1 + (distance - activationDistance) / 150);
+        const speed = particle.speed * release * falloff * Math.exp(-drag * age / 1000);
+        particle.vx = Math.cos(angle) * speed;
+        particle.vy = Math.sin(angle) * speed;
+        particle.x += particle.vx * seconds;
+        particle.y += particle.vy * seconds;
+      }
+      particle.alpha = Math.pow(1 - age / particle.life, 1.65) * .64;
+    }
+    if (!particles.length) { stop('idle'); return; }
+
+    // At most 32 dots: a bounded nearest-pair search is small and runs only alive.
+    const candidates = [], degree = new Uint8Array(particles.length);
+    const groups = particles.map((_, index) => index);
+    const root = index => { while (groups[index] !== index) index = groups[index]; return index; };
+    for (let a = 0; a < particles.length; a++) {
+      for (let b = a + 1; b < particles.length; b++) {
+        const distance = Math.hypot(particles[a].x - particles[b].x, particles[a].y - particles[b].y);
+        if (distance > 1 && distance < linkDistance) candidates.push({ a, b, distance });
       }
     }
-    item.frame = now;
-    const progress = Math.min(1, Math.max(0, now - item.moved - holdTime) / fadeTime);
-    const opacity = Math.min(1, (now - item.born) / 90) * (1 - progress * progress * (3 - 2 * progress));
-    context.clearRect(0, 0, width, height);
+    candidates.sort((a, b) => a.distance - b.distance);
     context.save();
     context.globalCompositeOperation = 'lighter';
-    context.lineWidth = .65;
+    context.lineWidth = .55;
     context.lineCap = 'round';
     context.strokeStyle = '#a9d9f5';
-    context.globalAlpha = opacity * .25;
-    context.beginPath();
-    for (const [from, to] of links) {
-      context.moveTo(item.points[from].x, item.points[from].y);
-      context.lineTo(item.points[to].x, item.points[to].y);
+    linkCount = 0;
+    for (const pair of candidates) {
+      if (linkCount >= 24) break;
+      if (degree[pair.a] >= 2 || degree[pair.b] >= 2) continue;
+      const groupA = root(pair.a), groupB = root(pair.b);
+      // Short chains, never closed triangles or a densely connected web.
+      if (groupA === groupB) continue;
+      const a = particles[pair.a], b = particles[pair.b];
+      const alpha = Math.min(a.alpha, b.alpha) * .22 * (1 - (pair.distance / linkDistance) ** 2);
+      if (alpha < .006) continue;
+      context.globalAlpha = alpha;
+      context.beginPath();
+      context.moveTo(a.x, a.y);
+      context.lineTo(b.x, b.y);
+      context.stroke();
+      degree[pair.a]++; degree[pair.b]++;
+      groups[groupB] = groupA;
+      linkCount++;
     }
-    context.stroke();
-    for (let index = 0; index < stars.length; index++) {
-      const star = stars[index], point = item.points[index];
+    for (const particle of particles) {
       if (glowContext) {
-        const diameter = star.radius * 12;
-        context.globalAlpha = opacity * .48;
-        context.drawImage(glow, point.x - diameter / 2, point.y - diameter / 2, diameter, diameter);
+        const diameter = particle.radius * 11;
+        context.globalAlpha = particle.alpha * .55;
+        context.drawImage(glow, particle.x - diameter / 2, particle.y - diameter / 2, diameter, diameter);
       }
-      context.globalAlpha = opacity * .78;
+      context.globalAlpha = particle.alpha;
       context.fillStyle = '#e3f4ff';
       context.beginPath();
-      context.arc(point.x, point.y, star.radius, 0, Math.PI * 2);
+      context.arc(particle.x, particle.y, particle.radius * .85, 0, Math.PI * 2);
       context.fill();
     }
     context.restore();
@@ -164,29 +177,28 @@ function mountCursorTrail() {
 
   function move(event) {
     if (!enabled || event.pointerType !== 'mouse') return;
-    const now = performance.now(), point = { x: event.clientX, y: event.clientY };
-    if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < .25) return;
-    const targetX = Math.min(Math.max(54, point.x - 64), Math.max(54, width - 58));
-    const targetY = Math.min(Math.max(26, point.y + 20), Math.max(26, height - 30));
-    if (!constellation) {
-      constellation = { x: targetX, y: targetY, vx: 0, vy: 0, targetX, targetY, born: now, moved: now, frame: now,
-        points: stars.map(star => ({ x: targetX + star.x, y: targetY + star.y, vx: 0, vy: 0 })) };
-    } else {
-      // Only a pull beyond the last target's dead zone updates the target.
-      // Small pointer movements keep the stars visible but do not move them.
-      if (Math.hypot(targetX - constellation.targetX, targetY - constellation.targetY) > deadZone) {
-        constellation.targetX = targetX;
-        constellation.targetY = targetY;
-      }
-      constellation.moved = now;
+    const now = performance.now(), point = { x: event.clientX, y: event.clientY, time: now };
+    mouse = point;
+    if (!previous || now - previous.time > 180) { previous = point; remainder = 0; return; }
+    const dx = point.x - previous.x, dy = point.y - previous.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < .1) return;
+    const directionX = dx / distance, directionY = dy / distance;
+    // A large pointer jump emits near its arrival, not across the entire page.
+    const pathLength = Math.min(distance, spacing * 12);
+    if (distance > pathLength) remainder = 0;
+    const startX = point.x - directionX * pathLength, startY = point.y - directionY * pathLength;
+    for (let traveled = spacing - remainder; traveled <= pathLength; traveled += spacing) {
+      emit(startX + directionX * traveled, startY + directionY * traveled, now);
     }
+    remainder = (remainder + pathLength) % spacing;
     previous = point;
-    if (!frameId) frameId = requestAnimationFrame(render);
-    state('active');
+    if (particles.length && !frameId) frameId = requestAnimationFrame(render);
+    if (particles.length) state('active');
   }
 
   document.addEventListener('pointermove', move, { passive: true });
-  document.documentElement.addEventListener('pointerleave', () => { previous = null; }, { passive: true });
+  document.documentElement.addEventListener('pointerleave', () => { previous = null; remainder = 0; }, { passive: true });
   window.addEventListener('blur', () => { stop(enabled ? 'idle' : canvas.dataset.state); });
   window.addEventListener('resize', () => { if (enabled) { stop('idle'); resize(); } }, { passive: true });
   document.addEventListener('visibilitychange', availability);

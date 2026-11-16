@@ -1,4 +1,7 @@
-/* Original, texture-free background shader.
+/* Adapted from the Image shader supplied by the user,
+ * reference https://www.shadertoy.com/view/tllfRX.
+ * Retains layered depth travel, star rays, Hash21 and colored twinkle;
+ * exposure, saturation and motion are reduced for foreground readability.
  * Usage: new Starfield(canvas, { reducedMotion, onStatus: ({ state }) => {} }).
  * Position the canvas with CSS; keep a static CSS background beneath it.
  * setPaused(true) freezes the sky. destroy() releases its listeners and GPU objects.
@@ -20,96 +23,92 @@ precision mediump float;
 varying mediump vec2 vUv;
 uniform vec2 uResolution;
 uniform vec2 uViewSize;
-// Smoothed pointer displacement in CSS pixels, bounded to an 18 px circle.
+// Smoothed pointer displacement in CSS pixels, bounded to a 10 px circle.
 uniform vec2 uPointer;
 uniform float uTime;
+uniform vec3 uAudio;
+uniform float uLayers;
 
-float hash(vec2 p) {
-  // The fallback stays in mediump's range, including its fractional component.
-  p = mod(p, 113.0);
+const float TAU = 6.283185;
+const float VELOCITY = 0.010;
+const float STAR_GLOW = 0.008;
+const float CANVAS_VIEW = 20.0;
+const float EXPOSURE = 0.32;
+
+float Hash21(vec2 p) {
 #ifdef GL_FRAGMENT_PRECISION_HIGH
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
 #else
-  return fract(sin(dot(p, vec2(1.271, 3.117))) * 7.13);
+  // Keep fractional bits on fragment processors with only mediump precision.
+  return fract(sin(dot(mod(p, 113.0), vec2(1.271, 3.117))) * 7.13);
 #endif
 }
 
-// x: crisp star aperture, y: Gaussian light spill, z: independent brightness.
-// These are masks, not solid discs; the lower light layer supplies their color.
-vec3 starMask(vec2 p, float cells, float density, float size, float seed) {
-  vec2 q = p * cells + vec2(seed, seed * 0.37);
-  vec2 cell = floor(q);
-  float choice = hash(cell + seed * 1.73);
-  // Most cells contain no star: skip their remaining hashes and light math.
-  if (choice < 1.0 - density) return vec3(0.0);
-  // A sparse, randomly offset point in each selected cell. The generous inset
-  // keeps its tiny halo inside the cell, so no expensive neighbour search is needed.
-  vec2 center = 0.22 + 0.56 * vec2(hash(cell + 7.17), hash(cell + 31.83));
-  float distance = length(fract(q) - center);
-  float pixel = cells / max(min(uResolution.x, uResolution.y), 1.0);
-  float radius = pixel * size * mix(0.65, 1.2, hash(cell + 19.41));
-  float core = 1.0 - smoothstep(radius * 0.15, radius + pixel * 0.7, distance);
-  // A compact analytic blur replaces a full-screen bloom framebuffer/pass.
-  // Its weak Gaussian tail has no sharp outer ring or large circular boundary.
-  float blurRadius = min(radius * 1.65 + pixel * 0.35, 0.073);
-  float blurredDistance = distance / max(blurRadius, 0.0001);
-  float halo = exp(-0.5 * blurredDistance * blurredDistance);
-  float phase = hash(cell + 55.1) * 6.283185;
-  float twinkle = 0.72 + 0.28 * sin(uTime * (0.65 + hash(cell + 9.31) * 1.2) + phase);
-  // Occasional bright pinpoints, with independent timing instead of a shared pulse.
-  float sparkle = pow(max(0.0, sin(uTime * 0.85 + phase)), 12.0) * 0.28;
-  return vec3(core, halo, twinkle + sparkle);
+float Star(vec2 uv, float flare) {
+  float d = length(uv);
+  // Bound the supplied 1/d core at its centre to prevent NaN/Inf pixels.
+  float light = sin(STAR_GLOW * 1.2) / max(d, 0.0015);
+  float rays = max(0.0, 0.5 - abs(uv.x * uv.y * 1000.0));
+  light += rays * flare * 2.0;
+  // Ascending smoothstep is defined on every driver; shorter falloff prevents
+  // broad overlapping glow while preserving the reference's fine star rays.
+  return light * (1.0 - smoothstep(0.035, 0.38, d));
+}
+
+vec3 StarLayer(vec2 uv) {
+  vec3 col = vec3(0.0);
+  vec2 gv = fract(uv) - 0.5;
+  vec2 id = floor(uv);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 offset = vec2(float(x), float(y));
+      float n = Hash21(id + offset);
+      // Leave more space between near points so they do not resemble snow.
+      if (n < 0.40) continue;
+      float size = fract(n);
+      vec2 starUV = gv - offset - vec2(n, fract(n * 34.0)) + 0.5;
+      if (dot(starUV, starUV) > 0.1444) continue;
+      float flare = smoothstep(0.10, 0.90, size) * 0.10;
+      float star = Star(starUV, flare);
+      vec3 originalColor = (sin(vec3(0.2, 0.3, 0.9) * fract(n * 2345.2) * TAU) * 0.25 + 0.75)
+                           * vec3(0.9, 0.59, 0.9 + size);
+      float luminance = dot(originalColor, vec3(0.2126, 0.7152, 0.0722));
+      vec3 color = mix(vec3(luminance), originalColor, 0.22) * vec3(0.86, 0.93, 1.0);
+      float twinkle = sin(uTime * 0.34 + n * TAU) * 0.22 + 0.78;
+      // Only measured music bands affect this pulse; silence contributes zero.
+      float audioPulse = 1.0 + (uAudio.x * 0.08 + uAudio.z * 0.15) * (0.25 + size * 0.75);
+      col += star * size * color * twinkle * audioPulse;
+    }
+  }
+  return col;
 }
 
 void main() {
-  vec2 p = (vUv - 0.5) * uResolution / max(min(uResolution.x, uResolution.y), 1.0);
-  // CSS pixels keep pointer travel identical when the GPU resolution adapts.
-  vec2 parallax = uPointer / max(min(uViewSize.x, uViewSize.y), 1.0);
-  // Gentle common drift with depth: the nearest points move about 6 px/s.
-  vec2 drift = vec2(uTime * 0.0048, uTime * -0.0016);
-
-  // Independent orientations, cell sizes and seeds break up the underlying grids.
-  mat2 middleRotation = mat2(0.8, 0.6, -0.6, 0.8);
-  mat2 nearRotation = mat2(0.6, -0.8, 0.8, 0.6);
-  // Small screens keep enough separation between points to read the copy.
-  float spread = clamp(min(uViewSize.x, uViewSize.y) / 700.0, 0.65, 1.0);
-  vec3 far = starMask(p + drift * 0.22 + parallax * 0.18,
-                     76.0 * spread, 0.115, 0.45, 8.1);
-  vec3 middle = starMask(middleRotation * (p + drift * 0.60 + parallax * 0.50),
-                        43.0 * spread, 0.095, 0.72, 43.2);
-  vec3 near = starMask(nearRotation * (p + drift * 1.35 + parallax),
-                      19.0 * spread, 0.075, 1.10, 77.6);
-  if (far.z + middle.z + near.z < 0.001) {
-    gl_FragColor = vec4(0.0);
-    return;
+  vec2 uv = (vUv - 0.5) * uResolution / max(uResolution.y, 1.0);
+  vec2 pointer = uPointer / max(uViewSize.y, 1.0) * 0.7;
+  vec2 orbit = vec2(-sin(uTime * 0.07), cos(uTime * 0.07)) * 0.06;
+  vec3 col = vec3(0.0);
+  float travel = uTime * VELOCITY;
+  for (int layer = 0; layer < 8; layer++) {
+    if (float(layer) >= uLayers) break;
+    float i = float(layer) / uLayers;
+    float depth = fract(i + travel);
+    float scale = mix(CANVAS_VIEW, 0.65, depth);
+    // Both ends fade to zero, so the near-to-far wrap has no hard jump.
+    // Staggered depths populate the very first frame, including on mobile.
+    float fade = depth * (1.0 - smoothstep(0.90, 1.0, depth));
+    if (fade < 0.001) continue;
+    col += StarLayer(uv * scale + i * 453.2 - uTime * 0.006 + orbit + pointer) * fade;
   }
-
-  // Layer 1: deep, gently varying blue-white illumination and distant stars.
-  // This field is never drawn on its own: only tiny star apertures reveal it.
-  // Moving the front mask therefore exposes a different, slower-moving layer.
-  vec2 deepUV = p + drift * 0.08 + parallax * 0.06;
-  float lightVariation = 0.5 + 0.5 * sin(deepUV.x * 2.3 + deepUV.y * 1.1
-                                      + sin(deepUV.y * 3.7) * 0.45);
-  vec3 deepLight = mix(vec3(0.72, 0.84, 1.0), vec3(0.91, 0.95, 1.0), lightVariation);
-  float distantCore = far.x * far.z * 0.60;
-  float distantBloom = far.y * far.z * 0.035;
-  float distantAlpha = min(distantCore + distantBloom, 0.84);
-  vec3 distantColor = (deepLight * distantCore + vec3(0.34, 0.54, 0.80) * distantBloom)
-                     * distantAlpha / max(distantCore + distantBloom, 0.0001);
-
-  // Layer 2: a soft foreground aperture mask. White cores stay fine and clear;
-  // color and alpha both weaken toward the edge, with only a trace of bloom.
-  float frontCore = middle.x * middle.z * 0.80 + near.x * near.z * 1.02;
-  float frontBloom = middle.y * middle.z * 0.050 + near.y * near.z * 0.075;
-  float frontAlpha = min(frontCore + frontBloom, 0.96);
-  vec3 foreground = (deepLight * frontCore + vec3(0.34, 0.56, 0.86) * frontBloom)
-                    * frontAlpha / max(frontCore + frontBloom, 0.0001);
-
-  // Premultiplied-alpha over: actual two-layer compositing, not grid speed alone.
-  vec3 color = foreground + distantColor * (1.0 - frontAlpha);
-  float alpha = frontAlpha + distantAlpha * (1.0 - frontAlpha);
+  vec3 color = col * EXPOSURE;
+  color = min(color / (1.0 + color * 1.7), vec3(0.42));
+  // Premultiplied output: do not attenuate the star light by alpha a second time.
+  float alpha = max(max(color.r, color.g), color.b);
   gl_FragColor = vec4(color, alpha);
-}`;
+}
+`;
 
 export class Starfield {
   constructor(canvas, { reducedMotion, onStatus = () => {} } = {}) {
@@ -120,6 +119,7 @@ export class Starfield {
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reducedMotion = Boolean(reducedMotion) || this.motionQuery.matches;
     this.paused = false;
+    this.pageActive = true;
     this.destroyed = false;
     this.ready = false;
     this.frame = 0;
@@ -134,6 +134,8 @@ export class Starfield {
     this._tick = this._tick.bind(this);
 
     this._listen(document, 'visibilitychange', () => this._sync());
+    this._listen(window, 'pagehide', () => { this.pageActive = false; this._stop(); });
+    this._listen(window, 'pageshow', () => { this.pageActive = true; this._sync(); });
     this._listen(window, 'resize', () => this._resize());
     this._listen(window, 'pointermove', event => {
       if (event.pointerType !== 'mouse' || !this.pointerQuery.matches || this.reducedMotion
@@ -141,8 +143,8 @@ export class Starfield {
       const nx = (event.clientX - this.viewSize.left) / Math.max(this.viewSize.width, 1) * 2 - 1;
       const ny = 1 - (event.clientY - this.viewSize.top) / Math.max(this.viewSize.height, 1) * 2;
       const radius = Math.max(1, Math.hypot(nx, ny));
-      this.pointer.targetX = nx / radius * 18;
-      this.pointer.targetY = ny / radius * 18;
+      this.pointer.targetX = nx / radius * 10;
+      this.pointer.targetY = ny / radius * 10;
     });
     const releasePointer = () => { this.pointer.targetX = 0; this.pointer.targetY = 0; };
     this._listen(window, 'blur', releasePointer);
@@ -223,6 +225,8 @@ export class Starfield {
         viewSize: gl.getUniformLocation(program, 'uViewSize'),
         pointer: gl.getUniformLocation(program, 'uPointer'),
         time: gl.getUniformLocation(program, 'uTime'),
+        audio: gl.getUniformLocation(program, 'uAudio'),
+        layers: gl.getUniformLocation(program, 'uLayers'),
       };
       this.maxSize = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), ...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
       this.ready = true;
@@ -248,7 +252,12 @@ export class Starfield {
     const rect = this.canvas.getBoundingClientRect();
     this.viewSize = { width: rect.width, height: rect.height, left: rect.left, top: rect.top };
     const area = Math.max(1, rect.width * rect.height);
-    const scale = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(1100000 / area)) * this.resolutionScale;
+    const compact = rect.width <= 600;
+    this.layerCount = compact ? 4 : 8;
+    const pixelBudget = compact ? 180000 : 520000;
+    this.canvas.dataset.layers = String(this.layerCount);
+    this.canvas.dataset.pixelBudget = String(pixelBudget);
+    const scale = Math.min(window.devicePixelRatio || 1, 1.25, Math.sqrt(pixelBudget / area)) * this.resolutionScale;
     const width = Math.max(1, Math.min(this.maxSize, Math.round(rect.width * scale)));
     const height = Math.max(1, Math.min(this.maxSize, Math.round(rect.height * scale)));
     if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -267,12 +276,16 @@ export class Starfield {
     gl.uniform2f(this.uniforms.viewSize, this.viewSize.width, this.viewSize.height);
     gl.uniform2f(this.uniforms.pointer, this.pointer.x, this.pointer.y);
     gl.uniform1f(this.uniforms.time, this.time);
+    const levels = !this.reducedMotion && this.pageActive && !document.hidden
+      ? window.PortfolioAudioAnalysis?.getLevels() : null;
+    gl.uniform3f(this.uniforms.audio, levels?.bass || 0, levels?.mid || 0, levels?.treble || 0);
+    gl.uniform1f(this.uniforms.layers, this.layerCount);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
   _tick(now) {
     this.frame = 0;
-    if (!this.ready || this.destroyed || this.paused || this.reducedMotion || document.hidden) return;
+    if (!this.ready || this.destroyed || !this.pageActive || this.paused || this.reducedMotion || document.hidden) return;
     const elapsed = this.lastDraw ? now - this.lastDraw : 34;
     // A fixed background does not need to render at the display's refresh rate.
     if (elapsed >= 32) {
@@ -308,7 +321,7 @@ export class Starfield {
 
   _sync() {
     this._stop();
-    if (!this.ready || this.destroyed || document.hidden) return;
+    if (!this.ready || this.destroyed || !this.pageActive || document.hidden) return;
     this._draw();
     if (!this.paused && !this.reducedMotion) this.frame = requestAnimationFrame(this._tick);
   }

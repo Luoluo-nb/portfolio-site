@@ -1,5 +1,9 @@
 // Chinese is the source language. Keep technical product names unchanged.
 export const translations = {
+  '关于材质、实时特效与交互项目，欢迎交流创作与实现过程。': 'Let’s talk about materials, real-time effects, interactive projects, and how they are made.',
+  '材质与渲染': 'Materials & Rendering', '实时特效': 'Real-time Effects', '工具与交互': 'Tools & Interaction',
+  '电子邮箱': 'Email', '项目交流与联系': 'Projects & Enquiries', '作品动态': 'Latest Work',
+  '查看作品视频与练习记录': 'Watch project videos and studies', '从作品开始了解': 'Explore My Work',
   'Unity 2022.3 / URP 14 · 同一张卡依次展示磨砂亮片、分区细线高光与双层视差、48 层 Texture3D 涂层，通过卡片与灯光运动呈现不同工艺的角度响应。\n29 秒递进展示：0–3 秒磨砂，3–5 秒渐变；5–15 秒细线，15–17 秒渐变；17–29 秒 Texture3D。非无缝循环。Texture3D 为 512×728×48 的外观采样，不代表实测 BRDF。\n测试插画由用户提供，原画 WLOP；开源代码参考 Daniel Ilett 与 Pokébox。视频为离线逐帧录制，30 fps 不代表实时性能。': 'Unity 2022.3 / URP 14 · One card progresses through matte glitter, zoned fine-line highlights with dual-layer parallax, and a 48-layer Texture3D coating. Card and light motion reveal each finish from different angles.\n29-second demonstration: matte at 0–3s, transition at 3–5s; fine lines at 5–15s, transition at 15–17s; Texture3D at 17–29s. This is not a seamless loop. The 512×728×48 Texture3D contains appearance samples, not measured BRDF data.\nUser-provided test illustration by WLOP; code references: Daniel Ilett and Pokébox. Recorded offline frame by frame; 30 fps is the video frame rate, not a runtime benchmark.',
   '效果时间定位': 'Jump to an effect', '磨砂': 'Matte', '细线': 'Fine Lines',
   '张致远': 'Zhang Zhiyuan',

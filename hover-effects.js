@@ -1,308 +1,142 @@
-/* One shared, lazily created WebGL surface for desktop button hovers.
- * The isolated button paints its own background before negative-z descendants;
- * the canvas therefore sits above that background and below all button copy.
- * Selection, focus, clicks and the CSS border effect remain independent.
- */
-const selector = '.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.music-button,.action,.project-detail-link,.back-button,.video-chapters button';
-const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const canvas = document.createElement('canvas');
-canvas.id = 'button-hover-canvas';
-canvas.dataset.state = 'idle';
-canvas.dataset.noTranslate = '';
-canvas.setAttribute('aria-hidden', 'true');
-Object.assign(canvas.style, {
-  position: 'absolute', inset: '0', width: '100%', height: '100%',
-  pointerEvents: 'none', zIndex: '-1', opacity: '0', display: 'none',
-  borderRadius: 'inherit', transition: 'opacity 120ms linear',
-});
-document.body.append(canvas);
-
-const vertexSource = `
-attribute vec2 aPosition;
-varying mediump vec2 vUv;
-void main() {
-  vUv = aPosition * 0.5 + 0.5;
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}`;
-const fragmentSource = `
+/* One WebGL atlas renders the selected controls and the hovered control.
+   The small 2D copies stay behind text and never intercept pointer input. */
+const targets = '.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.action,.project-detail-link,.back-button,.video-chapters button';
+const selected = '.header nav a[aria-current="page"],.category-tabs button[aria-pressed="true"],.subcategory-row button[aria-pressed="true"],.language-switch button[aria-pressed="true"],.video-chapters button[aria-pressed="true"]';
+const fine = matchMedia('(hover:hover) and (pointer:fine)'), reduced = matchMedia('(prefers-reduced-motion:reduce)');
+const atlas = document.createElement('canvas');
+atlas.id='button-shader-renderer'; atlas.hidden=true; atlas.dataset.noTranslate=''; atlas.setAttribute('aria-hidden','true');
+atlas.dataset.state='idle'; atlas.dataset.time='0'; document.body.append(atlas);
+const vertex=`attribute vec2 aPosition;varying mediump vec2 vUv;void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}`;
+const fragment=`
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
 precision mediump float;
 #endif
 varying mediump vec2 vUv;
-uniform vec2 uSize;
-uniform float uTime;
-uniform float uStrength;
-
-float random(float n) { return fract(sin(n * 1.79 + 0.61) * 17.17); }
-void main() {
-  // Place the small vortex toward the trailing edge, away from the main label.
-  float aspect = uSize.x / max(uSize.y, 1.0);
-  vec2 p = (vUv - vec2(0.80, 0.50)) * vec2(aspect, 1.0);
-  vec2 ellipse = p * vec2(0.88, 1.24);
-  float radius = length(ellipse);
-  float angle = atan(ellipse.y, ellipse.x);
-  float pixel = 1.0 / max(uSize.y, 1.0);
-  float horizon = 0.285;
-  float ringDistance = (radius - horizon) / max(pixel * 0.85, 0.001);
-  float blurDistance = (radius - horizon) / max(pixel * 3.2, 0.001);
-  float ring = exp(-ringDistance * ringDistance);
-  float bloom = exp(-blurDistance * blurDistance);
-  float arc = 0.58 + 0.42 * cos(angle * 2.0 - uTime * 0.65);
-  float light = ring * (0.25 + 0.20 * arc) + bloom * 0.055;
-
-  // Eight fine orbiting points; no textures, framebuffer chain, or large haze.
-  float particles = 0.0;
-  for (int i = 0; i < 8; i++) {
-    float seed = float(i) + 1.0;
-    float orbit = horizon * mix(0.95, 1.75, random(seed));
-    float phase = random(seed + 9.0) * 6.283185
-                + uTime * mix(0.28, 0.52, random(seed + 17.0));
-    vec2 point = vec2(cos(phase) / 0.88, sin(phase) / 1.24) * orbit;
-    float distance = length(p - point) / max(pixel, 0.001);
-    float core = exp(-distance * distance * 1.7);
-    float glow = exp(-distance * distance * 0.22) * 0.07;
-    float twinkle = 0.76 + 0.24 * sin(uTime * 1.2 + seed * 2.6);
-    particles += (core + glow) * twinkle;
-  }
-
-  // Keep a translucent dark core with a thin blue-white rim, never a solid disc.
-  float edge = smoothstep(0.0, 0.055, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
-  float luminance = (light + particles * 0.72) * uStrength * edge;
-  float lightAlpha = min(luminance, 0.46);
-  float darkAlpha = (1.0 - smoothstep(horizon * 0.45, horizon * 0.92, radius))
-                    * uStrength * 0.24 * edge;
-  vec3 tint = mix(vec3(0.30, 0.66, 1.0), vec3(0.86, 0.95, 1.0),
-                  clamp(particles + ring * 0.35, 0.0, 1.0));
-  gl_FragColor = vec4(tint * lightAlpha, lightAlpha + darkAlpha * (1.0 - lightAlpha));
+uniform vec2 uSize,uCenter,uRadius;
+uniform float uTime,uStrength;
+float random(float n){return fract(sin(n*1.79+.61)*17.17);}
+void main(){
+ vec2 p=(vUv-uCenter)*uSize;
+ vec2 ellipse=p/uRadius;
+ float r=length(ellipse),angle=atan(ellipse.y,ellipse.x);
+ float grad=length(ellipse/uRadius)/max(r,.001);
+ float d=(r-1.)/max(grad,.001);
+ float rim=exp(-pow(d/.8,2.)),bloom=exp(-pow(d/2.8,2.));
+ float arc=pow(.5+.5*cos(angle-uTime*.6),5.);
+ float counter=pow(.5+.5*cos(angle+uTime*.35+2.4),9.);
+ float light=rim*(.10+arc*.38+counter*.12)+bloom*(.025+arc*.035);
+ float dust=pow(.5+.5*cos(angle*2.-uTime*.45+r*2.),4.);
+ light+=dust*exp(-pow((r-1.15)*3.4,2.))*.025;
+ float stars=0.;
+ for(int i=0;i<8;i++){
+  float seed=float(i)+1.;
+  float phase=random(seed+9.)*6.283185+uTime*mix(.26,.48,random(seed+17.));
+  vec2 point=vec2(cos(phase),sin(phase))*uRadius*mix(1.10,1.38,random(seed));
+  float dist=length(p-point);
+  stars+=(exp(-dist*dist*1.5)+exp(-dist*dist*.14)*.10)*(.76+.24*sin(uTime*1.5+seed*2.6));
+ }
+ vec2 edgeDist=min(vUv,1.-vUv)*uSize;
+ float edge=smoothstep(0.,6.,min(edgeDist.x,edgeDist.y));
+ float alpha=min((light+stars*.64)*uStrength*edge,.48);
+ vec3 tint=mix(vec3(.35,.69,1.),vec3(.88,.97,1.),clamp(stars+arc*.35,0.,1.));
+ gl_FragColor=vec4(tint*alpha,alpha);
 }`;
-
-let gl, program, buffer, uniforms;
-let ready = false;
-let failed = false;
-let destroyed = false;
-let active = null;
-let frame = 0;
-let lastDraw = 0;
-let time = 0;
-let fadeTimer;
-let width = 1;
-let height = 1;
-let strength = 0.22;
-const cleanups = [];
-const allowed = () => !destroyed && finePointer.matches && !reducedMotion.matches && !document.hidden;
-const enabled = target => target?.isConnected && !target.matches(':disabled,[aria-disabled="true"]');
-
-function listen(target, event, handler, options) {
-  target.addEventListener(event, handler, options);
-  cleanups.push(() => target.removeEventListener(event, handler, options));
+let gl,program,buffer,uniforms,ready=false,failed=false,lost=false,destroyed=false,suspended=false,blurred=false;
+let hover=null,focus=null,frame=0,refreshFrame=0,lastDraw=0,time=0,atlasHeight=1;
+const surfaces=new Map(),cleanups=[];
+const allowed=()=>!destroyed&&!suspended&&!blurred&&!document.hidden&&!reduced.matches;
+const enabled=el=>el?.isConnected&&!el.matches(':disabled,[aria-disabled="true"]');
+function listen(el,event,callback,options){el.addEventListener(event,callback,options);cleanups.push(()=>el.removeEventListener(event,callback,options));}
+function stop(){if(frame)cancelAnimationFrame(frame);frame=0;lastDraw=0;atlas.dataset.running='false';}
+function clear(){for(const [el,s]of surfaces){s.context.clearRect(0,0,s.canvas.width,s.canvas.height);delete el.dataset.shaderActive;}}
+function initialize(){
+ if(ready)return true;if(failed||lost||!allowed())return false;
+ let vs,fs,p,b;
+ try{
+  gl=atlas.getContext('webgl',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,powerPreference:'low-power'});
+  if(!gl)throw Error('WebGL unavailable');
+  const compile=(type,source)=>{const s=gl.createShader(type);if(!s)throw Error('Shader unavailable');gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){gl.deleteShader(s);throw Error('Shader compile');}return s;};
+  vs=compile(gl.VERTEX_SHADER,vertex);fs=compile(gl.FRAGMENT_SHADER,fragment);
+  p=gl.createProgram();if(!p)throw Error('Program unavailable');gl.attachShader(p,vs);gl.attachShader(p,fs);gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error('Shader link');
+  b=gl.createBuffer();if(!b)throw Error('Buffer unavailable');gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  gl.useProgram(p);const pos=gl.getAttribLocation(p,'aPosition');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+  program=p;buffer=b;uniforms=Object.fromEntries(['Size','Center','Radius','Time','Strength'].map(n=>[n,gl.getUniformLocation(p,'u'+n)]));ready=true;return true;
+ }catch{if(b)gl?.deleteBuffer(b);if(p)gl?.deleteProgram(p);failed=true;return false;}
+ finally{if(vs)gl.deleteShader(vs);if(fs)gl.deleteShader(fs);}
 }
-function watch(query, handler) {
-  if (query.addEventListener) {
-    query.addEventListener('change', handler);
-    cleanups.push(() => query.removeEventListener('change', handler));
-  } else {
-    query.addListener(handler);
-    cleanups.push(() => query.removeListener(handler));
-  }
+function measure(el){
+ const rect=el.getBoundingClientRect(),width=el.clientWidth,height=el.clientHeight;
+ if(!width||!height||rect.bottom<=0||rect.top>=innerHeight||rect.right<=0||rect.left>=innerWidth||getComputedStyle(el).visibility==='hidden')return null;
+ let l=Infinity,t=Infinity,r=-Infinity,b=-Infinity;
+ const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+ for(let node=walker.nextNode();node;node=walker.nextNode()){
+  if(!/[\p{L}\p{N}]/u.test(node.nodeValue)||node.parentElement.closest('canvas,svg,[aria-hidden="true"],[hidden],.chapter-time'))continue;
+  const text=node.nodeValue,start=text.search(/\S/);if(start<0)continue;
+  const range=document.createRange();range.setStart(node,start);range.setEnd(node,text.trimEnd().length);
+  for(const q of range.getClientRects()){if(!q.width||!q.height)continue;l=Math.min(l,q.left);t=Math.min(t,q.top);r=Math.max(r,q.right);b=Math.max(b,q.bottom);}
+ }
+ const has=Number.isFinite(l),cx=has?(l+r)/2-rect.left-el.clientLeft:width/2,cy=has?(t+b)/2-rect.top-el.clientTop:height/2;
+ const rx=Math.max(8,Math.min(has?(r-l)/2+8:12,cx-4,width-cx-4)),ry=Math.max(7,Math.min(has?(b-t)/2+4:12,cy-4,height-cy-4));
+ return{width,height,cx,cy,rx,ry};
 }
-function discover(root) {
-  if (!(root instanceof Element)) return;
-  if (root.matches(selector)) root.classList.add('fx-button');
-  for (const target of root.querySelectorAll(selector)) target.classList.add('fx-button');
+function schedule(){if(!destroyed&&!refreshFrame)refreshFrame=requestAnimationFrame(refresh);}
+const resizeObserver='ResizeObserver'in window?new ResizeObserver(schedule):null;
+function remove(el,s){resizeObserver?.unobserve(el);s.canvas.remove();delete el.dataset.shaderActive;surfaces.delete(el);}
+function create(el){
+ const canvas=document.createElement('canvas');canvas.className='button-shader-surface';canvas.dataset.noTranslate='';canvas.setAttribute('aria-hidden','true');
+ const context=canvas.getContext('2d',{alpha:true});if(!context)return null;
+ const s={canvas,context};el.append(canvas);surfaces.set(el,s);resizeObserver?.observe(el);return s;
 }
-function stop() {
-  if (frame) cancelAnimationFrame(frame);
-  frame = 0;
-  lastDraw = 0;
+function refresh(){
+ refreshFrame=0;if(destroyed)return;
+ for(const el of document.querySelectorAll(targets))el.classList.add('fx-button');
+ if(!allowed()){stop();clear();atlas.dataset.state=reduced.matches?'disabled-motion':'suspended';return;}
+ const candidates=new Set(document.querySelectorAll(selected));
+ if(fine.matches&&enabled(hover))candidates.add(hover);
+ if(enabled(focus)&&focus.matches(':focus-visible'))candidates.add(focus);
+ const visible=new Map();for(const el of candidates){if(!enabled(el))continue;const m=measure(el);if(m)visible.set(el,m);}
+ for(const [el,s]of surfaces)if(!visible.has(el))remove(el,s);
+ for(const [el,m]of visible){const s=surfaces.get(el)||create(el);if(!s)continue;if(s.canvas.parentElement!==el)el.append(s.canvas);Object.assign(s,m);s.canvas.dataset.center=m.cx.toFixed(3)+','+m.cy.toFixed(3);s.canvas.dataset.radius=m.rx.toFixed(3)+','+m.ry.toFixed(3);}
+ atlas.dataset.targets=String(surfaces.size);
+ if(!surfaces.size){stop();atlas.dataset.state='idle';return;}
+ if(!initialize()){stop();clear();atlas.dataset.state='fallback';return;}
+ const entries=[...surfaces.values()],maxWidth=Math.max(...entries.map(s=>s.width)),sumHeight=entries.reduce((sum,s)=>sum+s.height,0);
+ const scale=Math.min(devicePixelRatio||1,fine.matches?1.5:1,Math.sqrt(140000/(maxWidth*sumHeight)),1024/maxWidth,2048/sumHeight);
+ let atlasWidth=1;atlasHeight=0;
+ for(const s of entries){s.pw=Math.max(1,Math.floor(s.width*scale));s.ph=Math.max(1,Math.floor(s.height*scale));s.y=atlasHeight;atlasHeight+=s.ph;atlasWidth=Math.max(atlasWidth,s.pw);if(s.canvas.width!==s.pw)s.canvas.width=s.pw;if(s.canvas.height!==s.ph)s.canvas.height=s.ph;}
+ if(atlas.width!==atlasWidth)atlas.width=atlasWidth;if(atlas.height!==atlasHeight)atlas.height=atlasHeight;
+ atlas.dataset.layoutpixels=String(atlasWidth*atlasHeight);draw();if(!frame)frame=requestAnimationFrame(tick);
 }
-function draw() {
-  if (!ready || !active || !allowed()) return;
-  gl.useProgram(program);
-  gl.uniform2f(uniforms.size, width, height);
-  gl.uniform1f(uniforms.time, time);
-  gl.uniform1f(uniforms.strength, strength);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+function draw(){
+ if(!ready||!allowed()||!surfaces.size)return;
+ gl.useProgram(program);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
+ for(const [el,s]of surfaces){
+  gl.viewport(0,atlasHeight-s.y-s.ph,s.pw,s.ph);gl.uniform2f(uniforms.Size,s.width,s.height);gl.uniform2f(uniforms.Center,s.cx/s.width,1-s.cy/s.height);gl.uniform2f(uniforms.Radius,s.rx,s.ry);gl.uniform1f(uniforms.Time,time);gl.uniform1f(uniforms.Strength,el === hover ? .72 : .56);gl.drawArrays(gl.TRIANGLES,0,3);
+ }
+ // Synchronous copies precede drawing-buffer invalidation at the end of the task.
+ for(const [el,s]of surfaces){s.context.clearRect(0,0,s.pw,s.ph);s.context.drawImage(atlas,0,s.y,s.pw,s.ph,0,0,s.pw,s.ph);if(el.dataset.shaderActive!=='true')el.dataset.shaderActive='true';}
+ atlas.dataset.state='ready';atlas.dataset.time=time.toFixed(3);atlas.dataset.running='true';
 }
-function resize() {
-  if (!ready || !active || !allowed()) return;
-  const rect = active.getBoundingClientRect();
-  width = Math.max(1, rect.width);
-  height = Math.max(1, rect.height);
-  const scale = Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(48000 / (width * height)));
-  const nextWidth = Math.max(1, Math.min(1024, Math.round(width * scale)));
-  const nextHeight = Math.max(1, Math.min(256, Math.round(height * scale)));
-  if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
-    canvas.width = nextWidth;
-    canvas.height = nextHeight;
-  }
-  gl.viewport(0, 0, nextWidth, nextHeight);
-  draw();
+function tick(now){frame=0;if(!allowed()||!ready||!surfaces.size){stop();return;}const elapsed=lastDraw?now-lastDraw:(fine.matches?34:50);if(elapsed>=(fine.matches?32:49)){lastDraw=now;time+=Math.min(elapsed,80)/1000;draw();}frame=requestAnimationFrame(tick);}
+const own=node=>node instanceof Element&&node.matches('.button-shader-surface,#button-shader-renderer');
+const observer=new MutationObserver(records=>{if(records.some(r=>r.type==='attributes'?r.oldValue!==r.target.getAttribute(r.attributeName):r.type==='characterData'?Boolean(r.target.parentElement?.closest(targets)):[...r.addedNodes,...r.removedNodes].some(n=>!own(n))))schedule();});
+observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:['aria-current','aria-pressed','disabled','aria-disabled','hidden']});
+listen(document,'pointerover',e=>{if(e.pointerType!=='mouse'||!(e.target instanceof Element))return;const el=e.target.closest(targets);if(el!==hover){hover=el;schedule();}});
+listen(document,'pointerout',e=>{if(hover&&(!(e.relatedTarget instanceof Node)||!hover.contains(e.relatedTarget))){hover=null;schedule();}});
+listen(document,'focusin',e=>{focus=e.target.closest?.(targets)||null;schedule();});listen(document,'focusout',()=>{focus=null;schedule();});
+listen(window,'resize',schedule,{passive:true});listen(window,'scroll',schedule,{passive:true});
+listen(window,'blur',()=>{blurred=true;hover=null;stop();clear();atlas.dataset.state='suspended';});listen(window,'focus',()=>{blurred=false;schedule();});
+listen(document,'visibilitychange',refresh);listen(document,'portfolio:languagechange',schedule);listen(fine,'change',schedule);listen(reduced,'change',refresh);
+if(document.fonts){document.fonts.ready.then(schedule);listen(document.fonts,'loadingdone',schedule);}
+listen(atlas,'webglcontextlost',e=>{e.preventDefault();lost=true;ready=false;stop();clear();atlas.dataset.state='fallback';});
+listen(atlas,'webglcontextrestored',()=>{lost=false;failed=false;program=null;buffer=null;schedule();});
+export function destroyHoverEffects(){
+ if(destroyed)return;destroyed=true;stop();if(refreshFrame)cancelAnimationFrame(refreshFrame);refreshFrame=0;observer.disconnect();resizeObserver?.disconnect();cleanups.splice(0).forEach(fn=>fn());for(const [el,s]of surfaces)remove(el,s);
+ if(gl&&!gl.isContextLost()){if(buffer)gl.deleteBuffer(buffer);if(program)gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();}ready=false;atlas.remove();
 }
-function tick(now) {
-  frame = 0;
-  if (!allowed() || !ready || !enabled(active)) { leave(true); return; }
-  const elapsed = lastDraw ? now - lastDraw : 34;
-  if (elapsed >= 32) {
-    lastDraw = now;
-    time += Math.min(elapsed, 80) / 1000;
-    draw();
-  }
-  frame = requestAnimationFrame(tick);
-}
-function initialize() {
-  if (ready) return true;
-  if (failed || destroyed || !allowed()) return false;
-  let vertex, fragment;
-  let candidateProgram, candidateBuffer;
-  try {
-    // Repeated calls after context restoration reuse this same canvas/context.
-    gl = canvas.getContext('webgl', { alpha:true, premultipliedAlpha:true,
-      antialias:false, depth:false, stencil:false, powerPreference:'low-power' });
-    if (!gl) throw new Error('WebGL unavailable');
-    const compile = (type, source) => {
-      const shader = gl.createShader(type);
-      if (!shader) throw new Error('Shader unavailable');
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        gl.deleteShader(shader);
-        throw new Error('Shader compilation failed');
-      }
-      return shader;
-    };
-    vertex = compile(gl.VERTEX_SHADER, vertexSource);
-    fragment = compile(gl.FRAGMENT_SHADER, fragmentSource);
-    candidateProgram = gl.createProgram();
-    if (!candidateProgram) throw new Error('Program unavailable');
-    gl.attachShader(candidateProgram, vertex);
-    gl.attachShader(candidateProgram, fragment);
-    gl.linkProgram(candidateProgram);
-    if (!gl.getProgramParameter(candidateProgram, gl.LINK_STATUS)) throw new Error('Link failed');
-    candidateBuffer = gl.createBuffer();
-    if (!candidateBuffer) throw new Error('Buffer unavailable');
-    gl.bindBuffer(gl.ARRAY_BUFFER, candidateBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,3,-1,-1,3]), gl.STATIC_DRAW);
-    gl.useProgram(candidateProgram);
-    const position = gl.getAttribLocation(candidateProgram, 'aPosition');
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-    program = candidateProgram;
-    buffer = candidateBuffer;
-    uniforms = {
-      size: gl.getUniformLocation(program, 'uSize'),
-      time: gl.getUniformLocation(program, 'uTime'),
-      strength: gl.getUniformLocation(program, 'uStrength'),
-    };
-    ready = true;
-    return true;
-  } catch {
-    if (candidateBuffer) gl.deleteBuffer(candidateBuffer);
-    if (candidateProgram) gl.deleteProgram(candidateProgram);
-    failed = true;
-    canvas.dataset.state = 'fallback';
-    return false;
-  } finally {
-    if (vertex) gl.deleteShader(vertex);
-    if (fragment) gl.deleteShader(fragment);
-  }
-}
-const resizeObserver = 'ResizeObserver' in window ? new ResizeObserver(resize) : null;
-function enter(target) {
-  if (!allowed() || !enabled(target)) return;
-  if (target === active && ready && canvas.parentElement === target) return;
-  clearTimeout(fadeTimer);
-  stop();
-  active = target;
-  strength = target.matches('.action,.project-detail-link') ? 0.48 : 0.22;
-  canvas.style.display = 'block';
-  canvas.style.opacity = '0';
-  target.append(canvas);
-  resizeObserver?.disconnect();
-  resizeObserver?.observe(target);
-  if (!initialize()) { canvas.style.display = 'none'; return; }
-  resize();
-  canvas.dataset.state = 'ready';
-  canvas.style.opacity = '1';
-  frame = requestAnimationFrame(tick);
-}
-function leave(immediate = false) {
-  clearTimeout(fadeTimer);
-  stop();
-  active = null;
-  resizeObserver?.disconnect();
-  canvas.style.opacity = '0';
-  const finish = () => {
-    canvas.style.display = 'none';
-    canvas.dataset.state = failed ? 'fallback' : 'idle';
-  };
-  // Freeze the last GPU frame immediately; the 120 ms fade is compositor-only.
-  if (immediate) finish();
-  else fadeTimer = setTimeout(finish, 120);
-}
-function resumeHover() {
-  if (!allowed()) { leave(true); return; }
-  const hovered = [...document.querySelectorAll(selector)].find(target => target.matches(':hover') && enabled(target));
-  if (hovered) enter(hovered);
-}
-
-discover(document.body);
-const observer = new MutationObserver(records => {
-  for (const record of records) for (const node of record.addedNodes) discover(node);
-  if (active && !active.isConnected) leave(true);
-  // Music state updates can replace a hovered icon button's innerHTML.
-  else if (active && canvas.parentElement !== active && allowed()) {
-    if (active.matches(':hover')) enter(active);
-    else leave(true);
-  }
-});
-observer.observe(document.body, { childList:true, subtree:true });
-listen(document, 'pointerover', event => {
-  if (event.pointerType !== 'mouse' || !(event.target instanceof Element)) return;
-  const target = event.target.closest(selector);
-  if (target) enter(target);
-});
-listen(document, 'pointerout', event => {
-  if (!active) return;
-  if (!(event.relatedTarget instanceof Node) || !active.contains(event.relatedTarget)) leave();
-});
-listen(window, 'blur', () => leave(true));
-listen(window, 'resize', resize, { passive:true });
-listen(document, 'visibilitychange', () => document.hidden ? leave(true) : resumeHover());
-watch(finePointer, resumeHover);
-watch(reducedMotion, resumeHover);
-listen(canvas, 'webglcontextlost', event => {
-  event.preventDefault();
-  ready = false;
-  stop();
-  canvas.style.opacity = '0';
-  canvas.dataset.state = 'fallback';
-});
-listen(canvas, 'webglcontextrestored', () => {
-  failed = false;
-  if (active && allowed()) enter(active);
-  else canvas.dataset.state = 'idle';
-});
-
-export function destroyHoverEffects() {
-  if (destroyed) return;
-  leave(true);
-  destroyed = true;
-  observer.disconnect();
-  resizeObserver?.disconnect();
-  cleanups.splice(0).forEach(cleanup => cleanup());
-  if (gl && !gl.isContextLost()) {
-    if (buffer) gl.deleteBuffer(buffer);
-    if (program) gl.deleteProgram(program);
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-  }
-  ready = false;
-  canvas.remove();
-}
-listen(window, 'pagehide', event => {
-  if (event.persisted) leave(true);
-  else destroyHoverEffects();
-});
-listen(window, 'pageshow', event => { if (event.persisted) resumeHover(); });
+listen(window,'pagehide',e=>{suspended=true;if(e.persisted){stop();clear();}else destroyHoverEffects();});
+listen(window,'pageshow',e=>{if(e.persisted){suspended=false;blurred=false;schedule();}});
+schedule();

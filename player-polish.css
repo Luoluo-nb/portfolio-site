@@ -1,0 +1,15 @@
+/* Only the poster fades into the night sky. Live players keep every pixel and
+   their own control bar, with no mask, vignette, or clipping layer above them. */
+.project-preview,.detail-player{border:0;background:transparent;aspect-ratio:16/9;min-height:0;max-height:none;overflow:visible;isolation:isolate}
+.project-preview .poster-button{border:0;border-radius:0;background:transparent;overflow:visible}
+.project-preview .poster-button>img{display:block;width:100%;height:100%;object-fit:contain;filter:brightness(.83);transform:none;transition:filter .3s;-webkit-mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(0deg,transparent,#000 5%,#000 95%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(0deg,transparent,#000 5%,#000 95%,transparent);mask-composite:intersect}
+.project-preview .poster-button:hover>img{transform:none;filter:brightness(.96)}
+.project-preview .poster-play{gap:13px;background:radial-gradient(ellipse 130px 105px at center,#05101a4d,transparent 75%);color:#e3f4ff;font-size:11px;font-weight:600;letter-spacing:2px;text-shadow:0 1px 10px #020816}
+.project-preview .play-triangle{display:grid;place-items:center;width:66px;height:66px;padding:0;border:1px solid #c5e6f34d;border-radius:50%;background:radial-gradient(circle,#0b1d2b5c,transparent 72%);backdrop-filter:none;box-shadow:0 0 28px #73c9ff0c;color:#e6f6ff;transition:border-color .2s,box-shadow .2s,background .2s}
+.project-preview .play-triangle svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}
+.project-preview .poster-button:hover .play-triangle{border-color:#ddf4ff96;box-shadow:0 0 35px #8edaff24;background:radial-gradient(circle,#102b3d73,transparent 74%)}
+.project-preview .poster-button:focus-visible{outline:none}
+.project-preview .poster-button:focus-visible .play-triangle{outline:1px solid #d5f3ff;outline-offset:5px}
+.project-preview>iframe,.project-preview>video{display:block;border:0;border-radius:0;background:#000;object-fit:contain;clip-path:none;-webkit-mask:none;mask:none;filter:none}
+@media(max-width:760px){.project-preview .play-triangle{width:56px;height:56px}.project-preview .play-triangle svg{width:25px;height:25px}.project-preview .poster-play{gap:10px;font-size:10px;letter-spacing:1.5px}}
+@media(prefers-reduced-motion:reduce){.project-preview .poster-button>img,.project-preview .play-triangle{transition:none}}
