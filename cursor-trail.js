@@ -14,12 +14,12 @@ function mountCursorTrail() {
 
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const MAX_PARTICLES = 32;
-  const spacing = 6, linkDistance = 54, activationDistance = 11;
+  const MAX_PARTICLES = 11; // Previous 32 / 3, rounded to a whole particle.
+  const spacing = 18, linkDistance = 72, activationDistance = 11;
   const coneHalfAngle = Math.PI / 6, drag = 2.6;
   const particles = [];
   let width = 0, height = 0, frameId = 0, linkCount = 0, remainder = 0;
-  let previous = null, mouse = null;
+  let previous = null, mouse = null, head = null;
   let suspended = false, enabled = false;
   canvas.dataset.shape = 'scatter-radial';
   canvas.dataset.maxParticles = String(MAX_PARTICLES);
@@ -54,6 +54,7 @@ function mountCursorTrail() {
     particles.length = 0;
     previous = null;
     mouse = null;
+    head = null;
     remainder = linkCount = 0;
     context.clearRect(0, 0, width, height);
     state(reason);
@@ -61,11 +62,13 @@ function mountCursorTrail() {
 
   function resize() {
     const ratio = Math.min(devicePixelRatio || 1, 1.5);
-    width = Math.max(1, window.innerWidth);
-    height = Math.max(1, window.innerHeight);
+    // CSS width excludes the scrollbar; innerWidth can include it and skew x.
+    const bounds = canvas.getBoundingClientRect();
+    width = Math.max(1, bounds.width);
+    height = Math.max(1, bounds.height);
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
     canvas.dataset.dpr = String(ratio);
   }
 
@@ -92,6 +95,7 @@ function mountCursorTrail() {
       radius: .7 + Math.random() * .45,
       alpha: .64,
     });
+    return particles[particles.length - 1];
   }
 
   function render(now) {
@@ -100,14 +104,22 @@ function mountCursorTrail() {
     context.clearRect(0, 0, width, height);
     for (let index = particles.length - 1; index >= 0; index--) {
       const particle = particles[index], age = Math.max(0, now - particle.born);
-      if (age >= particle.life) { particles.splice(index, 1); continue; }
+      if (age >= particle.life) {
+        if (particle === head) head = null;
+        particles.splice(index, 1);
+        continue;
+      }
       const seconds = Math.min(Math.max(0, now - particle.updated) / 1000, 0.05);
       particle.updated = now;
       const dx = particle.x - (mouse?.x ?? particle.x);
       const dy = particle.y - (mouse?.y ?? particle.y);
       const distance = Math.hypot(dx, dy);
       particle.vx = particle.vy = 0;
-      if (distance > activationDistance) {
+      if (particle === head && mouse) {
+        // One of the eleven points marks the pointer, without easing or offset.
+        particle.x = mouse.x;
+        particle.y = mouse.y;
+      } else if (distance > activationDistance) {
         // Recompute from this particle to the current mouse on every frame.
         // The quiet centre prevents jitter directly under the native pointer.
         const angle = Math.atan2(dy, dx) + particle.angleOffset;
@@ -123,7 +135,7 @@ function mountCursorTrail() {
     }
     if (!particles.length) { stop('idle'); return; }
 
-    // At most 32 dots: a bounded nearest-pair search is small and runs only alive.
+    // Sparse dots with short, readable chains; work stays bounded by the count cap.
     const candidates = [], degree = new Uint8Array(particles.length);
     const groups = particles.map((_, index) => index);
     const root = index => { while (groups[index] !== index) index = groups[index]; return index; };
@@ -136,18 +148,18 @@ function mountCursorTrail() {
     candidates.sort((a, b) => a.distance - b.distance);
     context.save();
     context.globalCompositeOperation = 'lighter';
-    context.lineWidth = .55;
+    context.lineWidth = .85;
     context.lineCap = 'round';
     context.strokeStyle = '#a9d9f5';
     linkCount = 0;
     for (const pair of candidates) {
-      if (linkCount >= 24) break;
+      if (linkCount >= MAX_PARTICLES - 1) break;
       if (degree[pair.a] >= 2 || degree[pair.b] >= 2) continue;
       const groupA = root(pair.a), groupB = root(pair.b);
       // Short chains, never closed triangles or a densely connected web.
       if (groupA === groupB) continue;
       const a = particles[pair.a], b = particles[pair.b];
-      const alpha = Math.min(a.alpha, b.alpha) * .22 * (1 - (pair.distance / linkDistance) ** 2);
+      const alpha = Math.min(a.alpha, b.alpha) * .64 * (1 - (pair.distance / linkDistance) ** 2);
       if (alpha < .006) continue;
       context.globalAlpha = alpha;
       context.beginPath();
@@ -177,15 +189,25 @@ function mountCursorTrail() {
 
   function move(event) {
     if (!enabled || event.pointerType !== 'mouse') return;
-    const now = performance.now(), point = { x: event.clientX, y: event.clientY, time: now };
+    const bounds = canvas.getBoundingClientRect();
+    // Content/language changes can toggle scrollbars without a window resize.
+    if (Math.abs(bounds.width - width) > .01 || Math.abs(bounds.height - height) > .01) resize();
+    const now = performance.now(), point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, time: now };
     mouse = point;
-    if (!previous || now - previous.time > 180) { previous = point; remainder = 0; return; }
+    if (!previous || now - previous.time > 180) {
+      previous = point;
+      remainder = 0;
+      head = emit(point.x, point.y, now);
+      if (!frameId) frameId = requestAnimationFrame(render);
+      state('active');
+      return;
+    }
     const dx = point.x - previous.x, dy = point.y - previous.y;
     const distance = Math.hypot(dx, dy);
     if (distance < .1) return;
     const directionX = dx / distance, directionY = dy / distance;
     // A large pointer jump emits near its arrival, not across the entire page.
-    const pathLength = Math.min(distance, spacing * 12);
+    const pathLength = Math.min(distance, spacing * MAX_PARTICLES);
     if (distance > pathLength) remainder = 0;
     const startX = point.x - directionX * pathLength, startY = point.y - directionY * pathLength;
     for (let traveled = spacing - remainder; traveled <= pathLength; traveled += spacing) {
@@ -193,6 +215,12 @@ function mountCursorTrail() {
     }
     remainder = (remainder + pathLength) % spacing;
     previous = point;
+    head = particles[particles.length - 1] || emit(point.x, point.y, now);
+    head.x = point.x;
+    head.y = point.y;
+    head.born = head.updated = now;
+    head.alpha = .64;
+    head.vx = head.vy = 0;
     if (particles.length && !frameId) frameId = requestAnimationFrame(render);
     if (particles.length) state('active');
   }
