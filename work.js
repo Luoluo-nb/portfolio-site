@@ -79,13 +79,15 @@ function play(startTime = project?.startTime ?? 0) {
     frame.allowFullscreen = true;
     frame.referrerPolicy = 'strict-origin-when-cross-origin';
     if (!frame.isConnected) {
+      const transferFocus = $('detail-player').contains(document.activeElement);
       $('detail-player').replaceChildren(frame);
       const close = document.createElement('button');
       close.className = 'close-player';
       close.type = 'button';
       close.textContent = '关闭播放器';
-      close.addEventListener('click', () => { showPoster(); help(''); });
+      close.addEventListener('click', () => { showPoster(); help(''); $('detail-player').querySelector('.poster-button').focus({preventScroll:true}); });
       $('detail-player').append(close);
+      if (transferFocus) frame.focus({preventScroll:true});
     }
     help(project.videoChapters?.length
       ? '已打开所选章节，请在 Bilibili 播放器内点击播放。倍速可在播放器内调整。'

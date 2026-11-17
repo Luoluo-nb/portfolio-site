@@ -139,11 +139,13 @@ function openPlayer(project, startTime = project.startTime ?? 0) {
   frame.allowFullscreen = true;
   frame.referrerPolicy = 'strict-origin-when-cross-origin';
   if (!frame.isConnected) {
+    const transferFocus = $('project-preview').contains(document.activeElement);
     replacePreview(frame);
     const close = element('button', 'close-player', '关闭播放器');
     close.type = 'button';
-    close.addEventListener('click', () => { replacePreview(createPoster(project)); $('playback-help').hidden = true; });
+    close.addEventListener('click', () => { replacePreview(createPoster(project)); $('playback-help').hidden = true; $('project-preview').querySelector('.poster-button').focus({preventScroll:true}); });
     $('project-preview').append(close);
+    if (transferFocus) frame.focus({preventScroll:true});
   }
   $('playback-help').textContent = project.videoChapters?.length
     ? '已打开所选章节，请在 Bilibili 播放器内点击播放。倍速可在播放器内调整。'
@@ -175,7 +177,12 @@ function selectProject(project, shouldScroll = false) {
   $('project-link').textContent = project.videoSrc ? '打开视频 ↗' : '在 Bilibili 打开 ↗';
   $('preview-index').textContent = `${String(projects.indexOf(project) + 1).padStart(2,'0')} / ${String(projects.length).padStart(2,'0')}`;
   $('playback-help').hidden = true;
-  for (const item of document.querySelectorAll('#project-grid .project-card')) item.dataset.selected = String(item.dataset.id === project.id);
+  for (const item of document.querySelectorAll('#project-grid .project-card')) {
+    const current = item.dataset.id === project.id;
+    item.dataset.selected = String(current);
+    if (current) item.setAttribute('aria-current', 'true');
+    else item.removeAttribute('aria-current');
+  }
   if (shouldScroll && matchMedia('(max-width:760px)').matches) $('project-preview').scrollIntoView({behavior:reducedMotion.matches ? 'instant' : 'smooth', block:'start'});
   announce(`已选择：${project.title}`);
   savedProjectId = project.id;
@@ -212,6 +219,7 @@ function renderProjects() {
     button.dataset.id = project.id;
     button.setAttribute('aria-label', `查看 ${project.title} 详情`);
     button.dataset.selected = String(selected?.id === project.id);
+    button.setAttribute('aria-current', String(selected?.id === project.id));
     const img = element('img');
     img.src = project.cover;
     img.alt = '';
@@ -233,6 +241,8 @@ function renderProjects() {
     });
     // Hover updates posters only, and never interrupts an already opened player.
     button.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse' && !$('project-preview').querySelector('iframe, video')) selectProject(project); });
+    // Keyboard focus previews; touch focus must leave the first-tap decision to click.
+    button.addEventListener('focus', () => { if (button.matches(':focus-visible') && !$('project-preview').querySelector('iframe, video')) selectProject(project); });
     $('project-grid').append(button);
   }
   if (!visible.length) {
@@ -340,12 +350,17 @@ $('year').textContent = new Date().getFullYear();
 function createProjectLink(project) {
   const card = element('a', 'project-card');
   card.href = `./work.html?id=${encodeURIComponent(project.id)}`;
+  card.setAttribute('aria-label', `查看 ${project.title} 详情`);
   const image = element('img');
   image.src = project.cover;
   image.alt = '';
   image.loading = 'lazy';
   const copy = element('span', 'card-copy');
-  copy.append(element('strong', '', project.title), element('small', '', `${categoryName(project.category)} · 查看详情 ↗`));
+  const meta = element('small', '');
+  const arrow = element('span', 'card-arrow', '↗');
+  arrow.setAttribute('aria-hidden', 'true');
+  meta.append(element('span', '', categoryName(project.category)), arrow);
+  copy.append(element('strong', '', project.title), meta);
   card.append(image, copy);
   return card;
 }

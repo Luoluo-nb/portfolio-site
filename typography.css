@@ -1,4 +1,8 @@
 /* Readable content type scale; navigation sizing lives in header-layout.css. */
+.page-title{font-size:46px;letter-spacing:-2px;font-weight:900;line-height:1.1}
+html[lang=en] .page-title{font-size:clamp(32px,4.5vw,60px);letter-spacing:-.04em}
+#contact-title.page-title{font-size:clamp(38px,4vw,58px);line-height:1.2;letter-spacing:-1px}
+@media(max-width:760px){.page-title{font-size:36px}#contact-title.page-title{font-size:38px}}
 .hero .eyebrow,.section-kicker{font-size:14px;line-height:1.6;letter-spacing:1px;font-weight:650}
 .hero-line{font-size:17px;line-height:1.8;letter-spacing:.5px;color:#b3c3d8}
 .hero-tools span{font-size:13px;letter-spacing:.4px;font-weight:650}
@@ -9,6 +13,8 @@
 .project-card .card-copy{padding:34px 16px 16px}
 .card-copy strong,.home-project-grid .card-copy strong{font-size:18px;line-height:1.45;font-weight:750;letter-spacing:0}
 .card-copy small,.home-project-grid .card-copy small{font-size:13px;line-height:1.5;letter-spacing:0;font-weight:600;color:#a9c8da;margin-top:7px}
+.card-copy small:has(.card-arrow){display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-arrow{font-size:17px;line-height:1;color:var(--ice)}
 .project-caption p{font-size:13px;line-height:1.5;letter-spacing:.7px}
 .project-caption h3{font-size:26px;line-height:1.4;letter-spacing:0}
 .project-description,.detail-information p{font-size:16px;line-height:1.85;font-weight:600;color:#b4c5d9}

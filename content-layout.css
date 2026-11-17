@@ -1,0 +1,45 @@
+/* Content-level layout refinements. Keep navigation, shaders and media behavior
+   in their own modules; this stylesheet only adjusts reading rhythm. */
+
+/* Round 05: preserve the preview's hierarchy without squeezing tablet cards. */
+.works-layout{align-items:start}
+.preview-toolbar,.selection-heading{min-height:31px;align-items:center}
+.selection-heading{padding-bottom:10px;margin-bottom:0}
+.preview-column .project-caption{align-items:flex-start;flex-direction:row;flex-wrap:wrap;gap:12px 24px}
+.preview-column .project-caption>div{min-width:0;flex:1 1 250px}
+.preview-column .project-caption h3{max-width:28ch;text-wrap:balance}
+.preview-column .project-caption .text-link{min-height:44px;display:inline-flex;align-items:center}
+.selection-tip{max-width:60ch}
+@media(min-width:601px) and (max-width:1100px){
+  .works-layout{grid-template-columns:1fr;gap:38px}
+  #project-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  #project-grid .project-card{aspect-ratio:16/10}
+}
+@media(max-width:600px){
+  .works-layout{gap:34px}
+  .preview-column .project-caption{gap:6px}
+  .preview-column .project-caption>div{flex-basis:100%}
+}
+
+/* Round 06: an inactive media toolbar should not create a blank band between
+   the poster and its explanation. It returns when playback help is visible. */
+.detail-media-bar:has(>#detail-playback-help[hidden]):has(>#detail-speed-controls[hidden]){display:none}
+.detail-heading>div{min-width:0}
+.detail-heading h1{text-wrap:balance}
+.detail-information .detail-links a{min-height:44px}
+
+/* Round 07: section labels lead the resume; long English names stay subordinate. */
+.about-copy h3{letter-spacing:.3px;line-height:1.35}
+.about-role{letter-spacing:.4px;line-height:1.6}
+.resume-heading{font-size:21px;font-weight:750;letter-spacing:.3px;line-height:1.4}
+.experience-item h4,.education-item h4{font-size:18px;line-height:1.55;font-weight:700}
+.resume-details{align-items:start}
+@media(min-width:761px) and (max-width:1100px){
+  .about-section{grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);column-gap:32px;row-gap:48px}
+  .resume-details{column-gap:36px}
+}
+@media(max-width:760px){
+  .resume-heading{font-size:20px}
+  .experience-item h4,.education-item h4{font-size:17px}
+  .experience-item{padding-left:18px}
+}

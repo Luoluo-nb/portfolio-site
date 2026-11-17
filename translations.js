@@ -1,5 +1,7 @@
 // Chinese is the source language. Keep technical product names unchanged.
 export const translations = {
+  '2026 技术美术作品集': '2026 Technical Art Showreel',
+  '车辆材质与交互展示': 'Vehicle Materials & Interaction',
   '关于材质、实时特效与交互项目，欢迎交流创作与实现过程。': 'Let’s talk about materials, real-time effects, interactive projects, and how they are made.',
   '材质与渲染': 'Materials & Rendering', '实时特效': 'Real-time Effects', '工具与交互': 'Tools & Interaction',
   '电子邮箱': 'Email', '项目交流与联系': 'Projects & Enquiries', '作品动态': 'Latest Work',

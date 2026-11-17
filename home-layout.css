@@ -1,0 +1,82 @@
+/* Home composition overrides. Shared navigation lives in header-layout.css. */
+#top.hero{
+  min-height:100svh;
+  grid-template-columns:minmax(280px,.78fr) minmax(0,1.22fr);
+  gap:40px;
+  padding-top:clamp(132px,15svh,176px);
+  padding-bottom:96px;
+}
+#top .hero-copy{min-width:0}
+#top h1{font-size:clamp(78px,7vw,104px);line-height:1.08;letter-spacing:-4px;margin-top:24px}
+html[lang=en] #top h1{font-size:clamp(52px,5vw,76px);letter-spacing:-.045em;overflow-wrap:normal}
+#top .hero-role{font-size:21px;letter-spacing:3px;margin-top:22px}
+#top .hero-line{margin-top:14px}
+#top .hero-tools{margin:24px 0 28px;flex-wrap:wrap}
+#top .hero-showcase{padding-top:0}
+/* Give the artwork and its caption separate space, including on light covers. */
+#home-project-grid{gap:16px;align-items:stretch}
+#home-project-grid .project-card{display:flex;flex-direction:column;aspect-ratio:auto;background:#0a1527}
+#home-project-grid .project-card>img{flex:none;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;filter:brightness(.85)}
+#home-project-grid .project-card:hover>img{filter:brightness(1)}
+#home-project-grid .card-copy{position:relative;inset:auto;z-index:1;flex:1;display:flex;flex-direction:column;min-height:76px;padding:13px 16px 14px;background:#0a1527}
+#home-project-grid .card-copy strong{font-size:17px;line-height:1.4;letter-spacing:0}
+#home-project-grid .card-copy small{font-size:12px;line-height:1.5;margin-top:7px}
+@media(max-width:1100px){
+  #top.hero{grid-template-columns:1fr;align-items:start;min-height:0;gap:36px;padding-top:138px;padding-bottom:96px}
+  #top h1{font-size:80px}
+  html[lang=en] #top h1{font-size:64px}
+  #top .hero-copy{max-width:720px}
+}
+@media(max-width:900px){#top.hero{padding-top:170px}}
+@media(max-width:600px){
+  #top.hero{gap:32px;padding-top:160px;padding-bottom:86px}
+  #top h1{font-size:clamp(60px,16vw,78px);letter-spacing:-3px;margin-top:18px}
+  html[lang=en] #top h1{font-size:clamp(42px,11vw,60px);letter-spacing:-.045em}
+  #top .hero-role{font-size:18px;letter-spacing:2px;margin-top:18px}
+  #top .hero-role>span{margin-inline:6px}
+  #top .hero-line{margin-top:12px}
+  #top .hero-tools{margin:18px 0 24px}
+  #top .action{min-height:48px;padding-block:13px}
+  #home-project-grid{gap:14px}
+  #home-project-grid .card-copy{min-height:72px;padding:12px 14px 13px}
+  #home-project-grid .card-copy strong{font-size:16px}
+}
+/* Short windows should show the identity and an actionable project entry,
+   without vertically centring the introduction below the fold. */
+@media(max-height:700px){
+  #top.hero{align-items:start;min-height:0;padding-top:112px;padding-bottom:78px;gap:28px}
+  #top h1{font-size:88px;margin-top:18px}
+  html[lang=en] #top h1{font-size:62px}
+  #top .hero-role{font-size:19px;margin-top:16px}
+  #top .hero-line{font-size:16px;line-height:1.65;margin-top:10px}
+  #top .hero-tools{margin:18px 0 22px}
+  #top .hero-showcase .visual-label{margin-bottom:6px;padding-bottom:4px}
+}
+@media(max-width:900px) and (max-height:700px){#top.hero{padding-top:150px}}
+@media(max-width:600px) and (max-height:700px){
+  #top.hero{gap:24px;padding-top:148px}
+  #top h1{font-size:52px;margin-top:14px}
+  html[lang=en] #top h1{font-size:36px}
+  #top .hero-role{font-size:17px;letter-spacing:.5px;margin-top:12px}
+  #top .hero-line{font-size:15px;line-height:1.6;margin-top:8px}
+  #top .hero-tools{margin:14px 0 18px}
+  #top .action{min-height:44px;padding-block:11px}
+}
+@media(min-width:601px) and (max-width:1100px) and (max-height:500px){
+  #top.hero{grid-template-columns:minmax(200px,.8fr) minmax(0,1.2fr);gap:24px;padding-top:100px}
+  #top h1{font-size:50px;letter-spacing:-2px;margin-top:12px}
+  html[lang=en] #top h1{font-size:38px;line-height:1.04}
+  #top .eyebrow{font-size:12px;line-height:1.6;letter-spacing:0}
+  #top .hero-role{font-size:16px;letter-spacing:.3px;margin-top:12px}
+  #top .hero-role>span{margin-inline:5px}
+  #top .hero-line{font-size:14px;line-height:1.55;margin-top:8px}
+  #top .hero-tools{gap:12px;margin:12px 0 16px}
+  #top .hero-tools span{font-size:12px}
+  #top .action{width:100%;max-width:210px;min-height:44px;padding:11px 16px;gap:16px;font-size:14px}
+  #top .hero-showcase .visual-label,#top .hero-showcase .visual-label a{font-size:12px}
+  #home-project-grid{gap:12px}
+  #home-project-grid .card-copy{padding:10px 11px 11px;min-height:68px}
+  #home-project-grid .card-copy strong{font-size:15px}
+  #home-project-grid .card-copy small{font-size:11px;margin-top:5px}
+}
+@media(min-width:601px) and (max-width:900px) and (max-height:500px){#top.hero{padding-top:154px}}

@@ -33,7 +33,7 @@
 .project-card{clip-path:none;border:1px solid #89b9d52b;border-radius:8px;isolation:isolate}
 .project-card[data-selected=true]{border-color:#a9ddff8c;box-shadow:0 0 16px #72bcff10}
 .project-card .card-copy{border-radius:0 0 7px 7px}
-.fx-button:focus-visible,.back-button:focus-visible{outline:2px solid #d5f3ff;outline-offset:3px}
+.fx-button:focus-visible,.back-button:focus-visible,.project-card:focus-visible{outline:2px solid #d5f3ff;outline-offset:3px}
 .detail-breadcrumb{position:sticky;top:80px;z-index:20;min-height:66px;padding:10px 0;background:#071020eb;backdrop-filter:blur(14px);border-bottom:1px solid #8db9d322;margin-top:-10px;gap:18px}
 #work-back{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:44px;padding:10px 17px;font-size:13px;line-height:1.4;color:#e9f8ff;gap:9px}
 .detail-breadcrumb>span{font-size:12px;min-width:0}
