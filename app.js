@@ -1,6 +1,7 @@
 import { profile, projects } from './content.js';
 import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
+import './player-nebula.js';
 
 const $ = (id) => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -141,8 +142,10 @@ function openPlayer(project, startTime = project.startTime ?? 0) {
   if (!frame.isConnected) {
     const transferFocus = $('project-preview').contains(document.activeElement);
     replacePreview(frame);
-    const close = element('button', 'close-player', '关闭播放器');
+    const close = element('button', 'close-player');
     close.type = 'button';
+    close.setAttribute('aria-label', '关闭播放器');
+    close.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 5 10 10M15 5 5 15"/></svg><span>关闭</span>';
     close.addEventListener('click', () => { replacePreview(createPoster(project)); $('playback-help').hidden = true; $('project-preview').querySelector('.poster-button').focus({preventScroll:true}); });
     $('project-preview').append(close);
     if (transferFocus) frame.focus({preventScroll:true});
@@ -194,7 +197,7 @@ function showEmpty() {
   renderVideoChapters($('video-chapters'), null);
   $('project-detail-link').hidden = true;
   const state = element('div','empty-preview');
-  state.append(element('div','empty-symbol','＋'),element('span','empty-kicker','新的作品'),element('h3','','作品待补充'),element('p','','新的探索，即将在这里展开。'));
+  state.append(element('div','empty-symbol','＋'),element('span','empty-kicker','新的作品'),element('h3','','作品待补充'),element('p','','此分类暂无作品。'));
   replacePreview(state);
   $('project-title').textContent = '等待下一次灵感登场';
   $('project-platform').textContent = activeCategory === 'all' ? 'UNITY / UNREAL ENGINE' : categoryName(activeCategory);
@@ -282,6 +285,7 @@ function showRoute({focus = false} = {}) {
   const parts = location.hash.slice(1).split('/');
   const fileView = { 'portfolio.html':'works', 'about.html':'about', 'contact.html':'contact' }[location.pathname.split('/').pop()];
   const nextView = fileView || (['works','about','contact'].includes(parts[0]) ? parts[0] : 'top');
+  const homeProjects = nextView === 'top' && parts[0] === 'home-projects';
   const changedView = activeView !== nextView;
   // Hidden views must not keep playing audio. Keep local progress and selection.
   if (activeView === 'works' && nextView !== 'works') {
@@ -309,26 +313,33 @@ function showRoute({focus = false} = {}) {
   document.body.dataset.view = activeView;
   const labels = {top:'首页',works:'作品',about:'关于',contact:'联系'};
   document.title = `${labels[activeView]} · 张致远 — 美术 / 技术美术`;
-  if (changedView || focus) window.scrollTo({top:0,left:0,behavior:'instant'});
+  if (homeProjects) $('home-projects').scrollIntoView({block:'start',behavior:focus && !reducedMotion.matches ? 'smooth' : 'instant'});
+  else if (changedView || focus || activeView === 'top') window.scrollTo({top:0,left:0,behavior:'instant'});
   if (focus) {
-    const heading = $(activeView).querySelector('h1,h2');
+    const heading = homeProjects ? $('home-projects-title') : $(activeView).querySelector('h1,h2');
     heading.tabIndex = -1;
     heading.focus({preventScroll:true});
-    announce(`已切换到${labels[activeView]}`);
+    announce(homeProjects ? '精选作品' : `已切换到${labels[activeView]}`);
   }
 }
 document.addEventListener('click', event => {
   const link = event.target.closest('a[href^="#"]');
   if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   let route = link.getAttribute('href');
-  if (!/^#(top|works(?:\/(unity|unreal)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
+  if (!/^#(top|home-projects|works(?:\/(unity|unreal)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
   event.preventDefault();
   if (link.dataset.view === 'works') route = worksRoute();
   if (location.hash !== route) history.pushState(null, '', route);
   showRoute({focus:true});
 });
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-window.addEventListener('popstate', () => showRoute());
+window.addEventListener('popstate', () => {
+  showRoute();
+  // A compositor smooth-scroll frame can arrive after history's instant jump.
+  // Reapply the destination once after that frame, unless navigation changed.
+  const destination = location.href;
+  requestAnimationFrame(() => { if (location.href === destination) showRoute(); });
+});
 window.addEventListener('hashchange', () => showRoute());
 if (profile.about) $('about-text').textContent = profile.about;
 for (const item of profile.experience || []) {
@@ -374,3 +385,4 @@ for (const id of ['ptcg-card', 'rain-vat', 'unreal-snow']) {
 renderProjects();
 showRoute();
 window.addEventListener('pagehide', (event) => { if (!event.persisted) starfield?.destroy(); });
+

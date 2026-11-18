@@ -1,3 +1,5 @@
+import { mountMusicShader } from './music-shader.js';
+
 const source = './media/bgm-instrumental.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
@@ -114,21 +116,26 @@ const panel = document.createElement('div');
 panel.className = 'music-controls';
 panel.setAttribute('role', 'group');
 panel.setAttribute('aria-label', '背景音乐');
-panel.innerHTML = `<a class="music-label" href="./media/bgm-credits.txt" target="_blank" rel="noopener noreferrer">音源说明</a>
-  <button type="button" class="music-button" id="music-toggle" aria-label="播放背景音乐" title="播放背景音乐"></button>
+panel.innerHTML = `<button type="button" class="music-button" id="music-toggle" aria-label="播放背景音乐" title="播放背景音乐"></button>
   <button type="button" class="music-button" id="music-mute" aria-label="静音背景音乐" title="静音背景音乐"></button>
   <div class="music-volume-control">
     <label class="sr-only" for="music-volume">背景音乐音量</label>
     <input id="music-volume" type="range" min="0" max="100" step="1" value="${Math.round(volume * 100)}">
-    <output id="music-volume-value" for="music-volume">${Math.round(volume * 100)}%</output>
   </div>
   <span id="music-status" class="sr-only" role="status" aria-live="polite"></span>`;
 tools.prepend(panel);
 const toggle = panel.querySelector('#music-toggle');
 const mute = panel.querySelector('#music-mute');
 const slider = panel.querySelector('#music-volume');
-const output = panel.querySelector('#music-volume-value');
 const status = panel.querySelector('#music-status');
+let musicShader;
+const creditTarget = document.querySelector('.detail-footer, .footer-bottom');
+if (creditTarget) {
+  const credit = document.createElement('p');
+  credit.className = 'music-credit';
+  credit.innerHTML = '<span>背景音乐</span><span data-no-translate>《永夜のパレード》 · JUMA / ケーキ姫☆優海</span>';
+  creditTarget.append(credit);
+}
 const icon = path => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${path}</svg>`;
 const playIcon = icon('<path d="m9 6.5 8.5 5.5-8.5 5.5Z"/>');
 const pauseIcon = icon('<path d="M9 6.5v11M15 6.5v11"/>');
@@ -149,9 +156,9 @@ function draw() {
   const muteAction = muted ? '取消背景音乐静音' : '静音背景音乐';
   mute.setAttribute('aria-label', muteAction);
   mute.title = muteAction;
-  output.textContent = `${Math.round(volume * 100)}%`;
   slider.style.setProperty('--music-volume', `${Math.round(volume * 100)}%`);
   status.textContent = unavailable ? '音乐暂时无法加载，请稍后重试。' : blocked && wanted ? '观看 Bilibili 视频时暂停背景音乐。' : playing ? '背景音乐正在播放' : '背景音乐已暂停';
+  musicShader?.refresh();
 }
 function remember() {
   try {
@@ -252,5 +259,11 @@ window.addEventListener('storage', event => {
     draw();
   }
 });
+musicShader = mountMusicShader(panel, () => ({
+  playing: wanted && !audio.paused,
+  pauseIcon: wanted && !blocked,
+  muted: muted || volume === 0,
+  blocked,
+}), getLevels);
 draw();
 if (wanted) start();

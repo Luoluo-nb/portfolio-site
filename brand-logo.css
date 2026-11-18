@@ -1,0 +1,6 @@
+/* A single folded Z/Y monogram, shared with the browser icon. */
+.header .brand-mark{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;font-size:0;font-style:normal;letter-spacing:0;line-height:1}
+.header .brand-mark img{display:block;width:48px;height:48px;max-width:none;object-fit:contain;transition:filter .2s ease}
+.header .brand:hover .brand-mark img,.header .brand:focus-visible .brand-mark img{filter:brightness(1.12)}
+@media(max-width:760px){.header .brand-mark{flex-basis:42px;width:42px;height:44px}.header .brand-mark img{width:42px;height:42px}}
+@media(prefers-reduced-motion:reduce){.header .brand-mark img{transition:none}}

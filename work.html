@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="./content-layout.css">
   <link rel="stylesheet" href="./header-layout.css">
   <link rel="stylesheet" href="./home-layout.css">
+  <link rel="stylesheet" href="./brand-logo.css">
   <script type="module" src="./cursor-trail.js"></script>
   <script type="module" src="./hover-effects.js"></script>
   <script type="module" src="./i18n.js"></script>
@@ -28,12 +29,12 @@
   <canvas id="starfield-canvas" aria-hidden="true"></canvas>
   <a class="skip-link" href="#work-main">跳到作品详情</a>
   <header class="header">
-    <a class="brand" href="./index.html" aria-label="张致远，回到首页"><span class="brand-mark" aria-hidden="true">Z<span>Y</span></span><span class="brand-caption">张致远</span></a>
+    <a class="brand" href="./index.html" aria-label="张致远，回到首页"><span class="brand-mark" aria-hidden="true"><img src="./brand-logo.svg" width="48" height="48" alt=""></span><span class="brand-caption">张致远</span></a>
     <nav aria-label="主导航"><a href="./portfolio.html" aria-current="page">作品</a><a href="./about.html">关于</a><a href="./contact.html">联系</a></nav>
     <span class="header-index" aria-hidden="true">作品集 / 详情</span>
   </header>
   <main class="work-detail shell" id="work-main">
-    <nav class="detail-breadcrumb" aria-label="面包屑导航"><a id="work-back" class="back-button" href="./portfolio.html">← 返回作品集</a><span id="work-breadcrumb" aria-current="page">作品详情</span></nav>
+    <nav class="detail-breadcrumb" aria-label="面包屑导航"><a id="work-back" class="back-button" href="./portfolio.html">← 返回作品集</a><span id="work-breadcrumb" aria-current="page">作品详情</span><a id="work-next" class="detail-next-link" rel="next" aria-labelledby="work-next-label work-next-name" hidden><span id="work-next-label">下一个作品</span><span class="detail-next-arrow" aria-hidden="true">→</span><span id="work-next-name" class="sr-only"></span></a></nav>
     <div class="detail-heading"><div><p class="section-kicker" id="work-category">作品</p><h1 id="work-title">作品详情</h1></div><span class="detail-duration" id="work-duration"></span></div>
     <div id="work-content" hidden>
       <div class="detail-player project-preview" id="detail-player" aria-label="作品视频"></div>
@@ -49,6 +50,9 @@
         <div id="breakdown-chapters"></div>
         <a class="breakdown-return" href="#work-main">返回作品顶部 ↑</a>
       </section>
+      <nav class="detail-next-project" id="work-next-navigation" aria-label="作品导航" hidden>
+        <a id="work-next-footer" rel="next" aria-labelledby="work-next-footer-label work-next-title"><span class="detail-next-copy"><span id="work-next-footer-label" class="detail-next-label">下一个作品</span><strong id="work-next-title"></strong></span><span class="detail-next-arrow" aria-hidden="true">→</span></a>
+      </nav>
     </div>
     <div class="detail-missing" id="work-missing" hidden><p>没有找到这件作品，可以返回作品集选择其他作品。</p><a class="action" href="./portfolio.html">返回作品集 <span aria-hidden="true">↗</span></a></div>
     <noscript><p class="detail-missing">请启用 JavaScript 查看作品视频，或<a href="./portfolio.html">返回作品集</a>。</p></noscript>

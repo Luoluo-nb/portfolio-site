@@ -14,11 +14,13 @@ function mountCursorTrail() {
 
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const MAX_PARTICLES = 11; // Previous 32 / 3, rounded to a whole particle.
+  const MAX_PARTICLES = 6; // Previous 11 / 2, rounded to a whole particle.
   const spacing = 18, linkDistance = 72, activationDistance = 11;
   const coneHalfAngle = Math.PI / 6, drag = 2.6;
   const particles = [];
   let width = 0, height = 0, frameId = 0, linkCount = 0, remainder = 0;
+  let nextSpacing = spacing;
+  const sampleSpacing = () => spacing * (.7 + Math.random() * .6);
   let previous = null, mouse = null, head = null;
   let suspended = false, enabled = false;
   canvas.dataset.shape = 'scatter-radial';
@@ -56,6 +58,7 @@ function mountCursorTrail() {
     mouse = null;
     head = null;
     remainder = linkCount = 0;
+    nextSpacing = spacing;
     context.clearRect(0, 0, width, height);
     state(reason);
   }
@@ -116,7 +119,7 @@ function mountCursorTrail() {
       const distance = Math.hypot(dx, dy);
       particle.vx = particle.vy = 0;
       if (particle === head && mouse) {
-        // One of the eleven points marks the pointer, without easing or offset.
+        // One of the six points marks the pointer, without easing or offset.
         particle.x = mouse.x;
         particle.y = mouse.y;
       } else if (distance > activationDistance) {
@@ -125,7 +128,9 @@ function mountCursorTrail() {
         const angle = Math.atan2(dy, dx) + particle.angleOffset;
         const release = Math.min(1, (distance - activationDistance) / 7);
         const falloff = 1 / (1 + (distance - activationDistance) / 150);
-        const speed = particle.speed * release * falloff * Math.exp(-drag * age / 1000);
+        // Ease into twice the outward travel beyond the pointer's quiet centre.
+        const outwardBoost = 1 + Math.min(1, Math.max(0, (distance - activationDistance) / 43));
+        const speed = particle.speed * release * falloff * outwardBoost * Math.exp(-drag * age / 1000);
         particle.vx = Math.cos(angle) * speed;
         particle.vy = Math.sin(angle) * speed;
         particle.x += particle.vx * seconds;
@@ -197,6 +202,7 @@ function mountCursorTrail() {
     if (!previous || now - previous.time > 180) {
       previous = point;
       remainder = 0;
+      nextSpacing = sampleSpacing();
       head = emit(point.x, point.y, now);
       if (!frameId) frameId = requestAnimationFrame(render);
       state('active');
@@ -210,10 +216,13 @@ function mountCursorTrail() {
     const pathLength = Math.min(distance, spacing * MAX_PARTICLES);
     if (distance > pathLength) remainder = 0;
     const startX = point.x - directionX * pathLength, startY = point.y - directionY * pathLength;
-    for (let traveled = spacing - remainder; traveled <= pathLength; traveled += spacing) {
+    let traveled = nextSpacing - remainder;
+    for (; traveled <= pathLength;) {
       emit(startX + directionX * traveled, startY + directionY * traveled, now);
+      nextSpacing = sampleSpacing();
+      traveled += nextSpacing;
     }
-    remainder = (remainder + pathLength) % spacing;
+    remainder = pathLength - (traveled - nextSpacing);
     previous = point;
     head = particles[particles.length - 1] || emit(point.x, point.y, now);
     head.x = point.x;

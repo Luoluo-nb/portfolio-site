@@ -2,6 +2,7 @@ import { profile, projects } from './content.js';
 import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
 import { projectDetails } from './project-details.js';
+import './player-nebula.js';
 
 const $ = id => document.getElementById(id);
 const announce = message => { $('detail-announcement').textContent = message; };
@@ -84,7 +85,8 @@ function play(startTime = project?.startTime ?? 0) {
       const close = document.createElement('button');
       close.className = 'close-player';
       close.type = 'button';
-      close.textContent = '关闭播放器';
+      close.setAttribute('aria-label', '关闭播放器');
+      close.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 5 10 10M15 5 5 15"/></svg><span>关闭</span>';
       close.addEventListener('click', () => { showPoster(); help(''); $('detail-player').querySelector('.poster-button').focus({preventScroll:true}); });
       $('detail-player').append(close);
       if (transferFocus) frame.focus({preventScroll:true});
@@ -137,7 +139,7 @@ function renderBreakdown(detail) {
     const section = document.createElement('section');
     section.className = 'breakdown-chapter';
     section.id = chapterId;
-    section.dataset.sourceSlide = chapter.sourceSlide;
+    if (chapter.sourceSlide != null) section.dataset.sourceSlide = chapter.sourceSlide;
     section.setAttribute('aria-labelledby', `${chapterId}-title`);
     const header = document.createElement('div');
     header.className = 'breakdown-chapter-heading';
@@ -165,10 +167,12 @@ function renderBreakdown(detail) {
     header.append(count, copy);
     const gallery = document.createElement('div');
     gallery.className = 'breakdown-gallery';
-    for (const item of chapter.figures) {
+    for (const item of chapter.figures || []) {
       const figure = document.createElement('figure');
       figure.className = 'breakdown-figure';
       if (item.type === 'diagram') figure.classList.add('breakdown-diagram');
+      if (item.type === 'preview') figure.classList.add('breakdown-preview');
+      if (item.wide) figure.classList.add('breakdown-wide');
       const open = document.createElement('a');
       open.href = item.src;
       open.target = '_blank';
@@ -195,7 +199,8 @@ function renderBreakdown(detail) {
       figure.append(open);
       gallery.append(figure);
     }
-    section.append(header, gallery);
+    section.append(header);
+    if (gallery.childElementCount) section.append(gallery);
     $('breakdown-chapters').append(section);
   }
   $('work-breakdown').hidden = false;
@@ -211,6 +216,13 @@ if (project) {
   const subcategoryRoute = project.subcategory === 'vehicle' ? '/vehicle' : '';
   const returnUrl = `./portfolio.html#works${categoryRoute}${subcategoryRoute}`;
   $('work-back').href = returnUrl;
+  if (projects.length > 1) {
+    const nextProject = projects[(projects.indexOf(project) + 1) % projects.length];
+    const nextUrl = `./work.html?id=${encodeURIComponent(nextProject.id)}`;
+    $('work-next').href = $('work-next-footer').href = nextUrl;
+    $('work-next-name').textContent = $('work-next-title').textContent = nextProject.title;
+    $('work-next').hidden = $('work-next-navigation').hidden = false;
+  }
   $('work-breadcrumb').textContent = project.title;
   $('work-category').textContent = platform + (project.subcategory === 'vehicle' ? ' / 车辆' : '');
   $('work-title').textContent = project.title;

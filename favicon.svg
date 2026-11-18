@@ -1,1 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0b1630"/><path d="M13 15h37v8L26 43h24v9H12v-8l24-20H13z" fill="#7addff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="ribbon" x1="9" y1="13" x2="48" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B3E5F2"/>
+      <stop offset=".54" stop-color="#70BDDC"/>
+      <stop offset="1" stop-color="#557EC4"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="16" y1="20" x2="31" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#668ED2"/>
+      <stop offset="1" stop-color="#87CBE4"/>
+    </linearGradient>
+  </defs>
+  <path d="M7 12H55L49 20H39L21 44H51L45 52H5L29 20H7V12Z" fill="url(#ribbon)"/>
+  <path d="M15 20H25L33 29L27 37L15 20Z" fill="url(#fold)"/>
+</svg>

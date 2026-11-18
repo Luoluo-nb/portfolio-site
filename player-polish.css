@@ -1,5 +1,6 @@
-/* Only the poster fades into the night sky. Live players keep every pixel and
-   their own control bar, with no mask, vignette, or clipping layer above them. */
+@import url('./player-controls.css');
+/* Posters and live players blend into the sky. Live-player masks retain a solid
+   lower control strip; no overlay intercepts the embedded player's controls. */
 .project-preview,.detail-player{border:0;background:transparent;aspect-ratio:16/9;min-height:0;max-height:none;overflow:visible;isolation:isolate}
 .project-preview .poster-button{border:0;border-radius:0;background:transparent;overflow:visible}
 .project-preview .poster-button>img{display:block;width:100%;height:100%;object-fit:contain;filter:brightness(.83);transform:none;transition:filter .3s;-webkit-mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(0deg,transparent,#000 5%,#000 95%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(0deg,transparent,#000 5%,#000 95%,transparent);mask-composite:intersect}
@@ -11,5 +12,14 @@
 .project-preview .poster-button:focus-visible{outline:none}
 .project-preview .poster-button:focus-visible .play-triangle{outline:1px solid #d5f3ff;outline-offset:5px}
 .project-preview>iframe,.project-preview>video{display:block;border:0;border-radius:0;background:#000;object-fit:contain;clip-path:none;-webkit-mask:none;mask:none;filter:none}
+.project-preview>iframe,.project-preview>video{
+  -webkit-mask-image:linear-gradient(to top,transparent,#000 3px),linear-gradient(to top,#000 48px,transparent 72px),linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(to bottom,transparent,#000 5%,#000);
+  -webkit-mask-composite:source-in,source-over,source-in;
+  mask-image:linear-gradient(to top,transparent,#000 3px),linear-gradient(to top,#000 48px,transparent 72px),linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(to bottom,transparent,#000 5%,#000);
+  mask-composite:intersect,add,intersect;
+}
+.project-preview>iframe:fullscreen,.project-preview>video:fullscreen,.project-preview:fullscreen>iframe,.project-preview:fullscreen>video{-webkit-mask:none;mask:none}
+.project-preview>.player-nebula{position:absolute;inset:0;display:block;width:100%;height:100%;pointer-events:none;z-index:1}
+.project-preview>.player-nebula[hidden],.project-preview:fullscreen>.player-nebula{display:none}
 @media(max-width:760px){.project-preview .play-triangle{width:56px;height:56px}.project-preview .play-triangle svg{width:25px;height:25px}.project-preview .poster-play{gap:10px;font-size:10px;letter-spacing:1.5px}}
 @media(prefers-reduced-motion:reduce){.project-preview .poster-button>img,.project-preview .play-triangle{transition:none}}
