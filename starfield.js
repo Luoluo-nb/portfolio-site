@@ -14,6 +14,8 @@ void main() {
   gl_Position = vec4(aPosition, 0.0, 1.0);
 }`;
 
+const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .28});
+
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -26,8 +28,7 @@ uniform vec2 uViewSize;
 // Smoothed pointer displacement in CSS pixels, bounded to a 10 px circle.
 uniform vec2 uPointer;
 uniform float uTime;
-uniform vec3 uAudio;
-uniform vec2 uPulse; // kick envelope, immersive-home blend
+uniform vec2 uPulse; // lagged snare, immersive-home blend
 uniform float uLayers;
 
 const float TAU = 6.283185;
@@ -79,7 +80,7 @@ vec3 StarLayer(vec2 uv) {
       vec3 color = mix(vec3(luminance), originalColor, 0.22) * vec3(0.86, 0.93, 1.0);
       float twinkle = sin(uTime * 0.34 + n * TAU) * 0.22 + 0.78;
       // Only measured music bands affect this pulse; silence contributes zero.
-      float audioPulse = 1.0 + (uAudio.x * 0.08 + uAudio.z * 0.15 + uPulse.x * .10) * (0.25 + size * 0.75);
+      float audioPulse = 1.0 + uPulse.x * .10 * (0.25 + size * 0.75);
       col += star * size * color * twinkle * audioPulse;
     }
   }
@@ -91,7 +92,7 @@ float rayNoise(vec2 p) {
   return mix(mix(Hash21(i),Hash21(i+vec2(1.,0.)),f.x),mix(Hash21(i+vec2(0.,1.)),Hash21(i+vec2(1.)),f.x),f.y);
 }
 vec3 musicRays(vec2 uv) {
-  float strength=(uAudio.x*.06+uPulse.x*.20)*mix(.07,1.,uPulse.y);
+  float strength=uPulse.x*.24*mix(.07,1.,uPulse.y);
   if(strength<.0001)return vec3(0.);
   vec2 ray=uv-vec2(-.48,.78);
   float distance=length(ray),angle=atan(ray.x,-ray.y);
@@ -145,7 +146,9 @@ export class Starfield {
     this.frame = 0;
     this.lastDraw = 0;
     this.time = 0;
-    this.speedBoost = 0;
+    this.baseTime = 0;
+    this.audioOffset = 0;
+    this.audioSpeed = 0;
     this.heroMix = 0;
     this.heroTarget = 0;
     this.sceneMeasuredAt = -1000;
@@ -250,7 +253,6 @@ export class Starfield {
         viewSize: gl.getUniformLocation(program, 'uViewSize'),
         pointer: gl.getUniformLocation(program, 'uPointer'),
         time: gl.getUniformLocation(program, 'uTime'),
-        audio: gl.getUniformLocation(program, 'uAudio'),
         pulse: gl.getUniformLocation(program, 'uPulse'),
         layers: gl.getUniformLocation(program, 'uLayers'),
       };
@@ -304,8 +306,7 @@ export class Starfield {
     gl.uniform1f(this.uniforms.time, this.time);
     const levels = !this.reducedMotion && this.pageActive && !document.hidden
       ? this.audioLevels : null;
-    gl.uniform3f(this.uniforms.audio, levels?.bass || 0, levels?.mid || 0, levels?.treble || 0);
-    gl.uniform2f(this.uniforms.pulse, levels?.kick || 0, this.heroMix);
+    gl.uniform2f(this.uniforms.pulse, levels?.active ? levels.snareLag || 0 : 0, this.heroMix);
     gl.uniform1f(this.uniforms.layers, this.layerCount);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -326,13 +327,19 @@ export class Starfield {
         this.heroTarget = rect ? Math.max(0, Math.min(1, (rect.bottom - 100) / Math.max(innerHeight * .65, 1))) : 0;
       }
       this.heroMix += (this.heroTarget - this.heroMix) * (1 - Math.exp(-seconds / .35));
-      const targetBoost = this.audioLevels?.active ? (this.audioLevels.boost || 0) * (.35 + this.heroMix * .65) : 0;
-      this.speedBoost += (targetBoost - this.speedBoost) * (1 - Math.exp(-seconds / (targetBoost > this.speedBoost ? .075 : .42)));
-      // This clock belongs only to the background. Audio/video time is untouched.
-      this.time += seconds * (1 + Math.min(2.4, Math.max(0, this.speedBoost)));
+      // Speed CHOP equivalent: integrate the lagged snare output into a durable
+      // offset, then add it to the ordinary background clock. Silence stops this
+      // integrator without rewinding the accumulated offset.
+      const sceneGain = AUDIO_SCENE_GAIN.content + this.heroMix * (AUDIO_SCENE_GAIN.home - AUDIO_SCENE_GAIN.content);
+      this.audioSpeed = this.audioLevels?.active ? Math.max(0, this.audioLevels.speed || 0) * sceneGain : 0;
+      this.baseTime += seconds;
+      this.audioOffset += this.audioSpeed * seconds;
+      this.time = this.baseTime + this.audioOffset;
       this.canvas.dataset.visualTime = this.time.toFixed(3);
-      this.canvas.dataset.audioBoost = this.speedBoost.toFixed(3);
-      this.canvas.dataset.kick = (this.audioLevels?.kick || 0).toFixed(3);
+      this.canvas.dataset.baseTime = this.baseTime.toFixed(3);
+      this.canvas.dataset.audioOffset = this.audioOffset.toFixed(5);
+      this.canvas.dataset.audioSpeed = this.audioSpeed.toFixed(4);
+      this.canvas.dataset.snareLag = (this.audioLevels?.snareLag || 0).toFixed(4);
       this.canvas.dataset.heroMix = this.heroMix.toFixed(3);
       // Exponential easing is frame-rate independent; no input work on touch.
       const easing = 1 - Math.exp(-seconds * 4.5);

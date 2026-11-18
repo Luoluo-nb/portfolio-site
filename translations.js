@@ -318,3 +318,18 @@ Object.assign(translations, {
   '图片加载失败，请关闭后重试。': 'The image could not load. Close the preview and try again.',
   '正在加载图片…': 'Loading image…',
 });
+
+Object.assign(translations, {
+  '磨砂亮片 · 细线高光 · 双层视差': 'Matte glitter · Fine-line highlights · Dual-layer parallax',
+  '分层车漆 · 按键变色 · 平面反射': 'Layered paint · Keyboard color switching · Planar reflections',
+  '雨滴材质 · 涟漪法线 · 水花粒子': 'Raindrop materials · Ripple normals · Splash particles',
+  '雪地压痕 · 车轮沾雪 · 接触映射': 'Snow tracks · Snow on tires · Contact mapping',
+  '通过邮件、电话或微信联系，也可以在哔哩哔哩查看作品动态。': 'Contact me by email, phone, or WeChat. Project updates are also available on Bilibili.',
+  '电话': 'Phone',
+  '拨打电话': 'Call this number',
+  '微信': 'WeChat',
+  '微信号': 'WeChat ID',
+  '复制微信号': 'Copy WeChat ID',
+  '微信号已复制': 'WeChat ID copied',
+  '无法自动复制，请复制已选中的微信号。': 'Automatic copying is unavailable. Copy the selected WeChat ID.',
+});

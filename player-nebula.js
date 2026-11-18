@@ -1,9 +1,10 @@
 /* Actual alpha compositing, not a colored overlay. A small looping procedural
    mask reveals the existing page background through cross-origin players. */
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const WIDTH = 256, HEIGHT = 144, FRAME_COUNT = 96, FPS = 8;
-const frames = [], instances = new Set();
-let canvas, context, controlTexture = '', building = false, buildFailed = false, pendingBuild = false, suspended = false;
+const WIDTH = 192, HEIGHT = 108, FRAME_COUNT = 96, FPS = 8;
+const frames = [], compactFrames = [], alphaFrames = [], compactAlphaFrames = [], instances = new Set();
+const controlField = new Float32Array(WIDTH * HEIGHT);
+let canvas, context, building = false, buildFailed = false, pendingBuild = false, suspended = false;
 const smooth = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 // Fixed noise lattice avoids per-frame random jitter and expensive pixel hashes.
 const lattice = Float32Array.from({length:1024}, (_, i) => {
@@ -17,28 +18,40 @@ function noise(x, y) {
   const b = value(ix, iy + 1) * (1 - fx) + value(ix + 1, iy + 1) * fx;
   return a * (1 - fy) + b * fy;
 }
-function texture(index, controls = false) {
+function makeFrame(index) {
   const image = context.createImageData(WIDTH, HEIGHT), pixels = image.data;
+  const regular = new Uint8Array(WIDTH * HEIGHT), compact = new Uint8Array(WIDTH * HEIGHT);
   const phase = index / FRAME_COUNT * Math.PI * 2, tx = Math.cos(phase) * 1.3, ty = Math.sin(phase) * 1.3;
   for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
     const u = x / (WIDTH - 1), v = y / (HEIGHT - 1), offset = (y * WIDTH + x) * 4;
-    let alpha;
-    if (controls) {
-      alpha = smooth(0, .018, u) * smooth(0, .018, 1 - u) * smooth(.72, .90, v) * smooth(0, .025, 1 - v) * .82;
-    } else {
-      const dx = Math.min(u, 1 - u) * WIDTH / HEIGHT, dy = Math.min(v, 1 - v);
-      if (Math.min(dx, dy) >= .175) alpha = 1;
-      else {
-        const nx = u * 5.3 + tx, ny = v * 3.2 + ty;
-        const cloud = noise(nx, ny) * .68 + noise(nx * 2.02 + 7.3, ny * 2.02 + 13.1) * .32;
-        const feather = .095 + cloud * .08;
-        // Both edge distances reach zero at the boundary, so noise never creates
-        // an opaque outer rectangle. The product gently rounds the corners.
-        alpha = smooth(0, feather, dx) * smooth(0, feather, dy);
-      }
-    }
+    const i = y * WIDTH + x, dx = Math.min(u, 1 - u) * WIDTH / HEIGHT, dy = Math.min(v, 1 - v);
+    const nx = u * 5.3 + tx, ny = v * 3.2 + ty;
+    const cloud = Math.min(dx, dy) >= .315 ? .5 : noise(nx, ny) * .68 + noise(nx * 2.02 + 7.3, ny * 2.02 + 13.1) * .32;
+    const wideFeather = .20 + cloud * .115, smallFeather = .14 + cloud * .075;
+    // A broad, slowly varying alpha ramp dissolves every edge. A small fully
+    // transparent rim also removes rasterized corner/outer-pixel outlines.
+    regular[i] = Math.round(Math.pow(smooth(.012, wideFeather, dx) * smooth(.012, wideFeather, dy), 1.18) * 255);
+    compact[i] = Math.round(Math.pow(smooth(.006, smallFeather, dx) * smooth(.006, smallFeather, dy), 1.12) * 255);
+    if (index === 0) controlField[i] = smooth(0, .07, u) * smooth(0, .07, 1 - u) * smooth(.55, .85, v) * smooth(0, .10, 1 - v) * .62;
     pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
-    pixels[offset + 3] = Math.round(alpha * 255);
+    pixels[offset + 3] = regular[i];
+  }
+  context.putImageData(image, 0, 0);
+  const regularUrl = `url("${canvas.toDataURL('image/png')}")`;
+  for (let i = 0; i < compact.length; i++) pixels[i * 4 + 3] = compact[i];
+  context.putImageData(image, 0, 0);
+  compactFrames.push(`url("${canvas.toDataURL('image/png')}")`);
+  alphaFrames.push(regular); compactAlphaFrames.push(compact); frames.push(regularUrl);
+}
+function composedTexture(index, compact, controls) {
+  if (controls <= .001) return (compact ? compactFrames : frames)[index];
+  const source = (compact ? compactAlphaFrames : alphaFrames)[index];
+  const image = context.createImageData(WIDTH, HEIGHT), pixels = image.data;
+  for (let i = 0; i < source.length; i++) {
+    pixels[i * 4] = pixels[i * 4 + 1] = pixels[i * 4 + 2] = 255;
+    // Readability assistance is blended into the same mask, never a separate
+    // opaque strip. Its own broad side/bottom ramps still end at zero alpha.
+    pixels[i * 4 + 3] = Math.round(source[i] + (255 - source[i]) * controlField[i] * controls);
   }
   context.putImageData(image, 0, 0);
   return `url("${canvas.toDataURL('image/png')}")`;
@@ -50,7 +63,7 @@ function queueBuild() {
   const step = () => {
     pendingBuild = false;
     if (document.hidden || buildFailed || reducedMotion.matches || suspended) return;
-    try { for (let n = 0; n < 2 && frames.length < FRAME_COUNT; n++) frames.push(texture(frames.length)); }
+    try { if (frames.length < FRAME_COUNT) makeFrame(frames.length); }
     catch { buildFailed = true; }
     if (frames.length === FRAME_COUNT || buildFailed) { building = false; notify(); }
     else queueBuild();
@@ -61,40 +74,66 @@ function prepare() {
   if (building || buildFailed || frames.length) return;
   try {
     canvas = document.createElement('canvas'); canvas.width = WIDTH; canvas.height = HEIGHT;
-    context = canvas.getContext('2d', {alpha:true});
+    // These tiny textures are immediately PNG-encoded. Keep them on the CPU to
+    // avoid a synchronous GPU readback when the first visible mask is prepared.
+    context = canvas.getContext('2d', {alpha:true, willReadFrequently:true});
     if (!context) throw new Error('Mask canvas unavailable');
-    controlTexture = texture(0, true); frames.push(texture(0)); building = true; queueBuild();
+    makeFrame(0); building = true; queueBuild();
   } catch { buildFailed = true; }
 }
 
 function attachMask(root) {
   let visible = false, timer = 0, lastFrame = -1, disposed = false;
+  let compact = false, lastCompact = false, lastControls = -1, controlStart = 0, controlTarget = 0, controlAt = 0;
   const isFullscreen = () => document.fullscreenElement && (document.fullscreenElement === root || root.contains(document.fullscreenElement));
   const canAnimate = () => !disposed && !suspended && visible && !document.hidden && !reducedMotion.matches && !isFullscreen() && frames.length === FRAME_COUNT;
   function stop() { clearTimeout(timer); timer = 0; root.dataset.playerMaskRunning = 'false'; }
-  function apply(index) {
-    if (index === lastFrame || !frames[index]) return;
-    root.style.setProperty('--player-noise-mask', frames[index]);
+  const controlsAt = now => reducedMotion.matches ? controlTarget : controlStart + (controlTarget - controlStart) * smooth(0, 500, now - controlAt);
+  const transitioning = now => Math.abs(controlsAt(now) - controlTarget) > .001;
+  function refreshControls() {
+    const live = root.querySelector(':scope > iframe, :scope > video');
+    const target = live && (root.matches(':hover') || root.contains(document.activeElement)) ? 1 : 0;
+    if (target !== controlTarget) { const now = performance.now(); controlStart = controlsAt(now); controlTarget = target; controlAt = now; }
+  }
+  function apply(index, controls = controlsAt(performance.now())) {
+    if (!frames[index] || (index === lastFrame && Math.abs(controls - lastControls) < .001 && compact === lastCompact)) return;
+    root.style.setProperty('--player-noise-mask', composedTexture(index, compact, controls));
+    root.dataset.playerMaskControls = controls.toFixed(3); lastControls = controls; lastCompact = compact;
     root.dataset.playerMaskFrame = String(index); lastFrame = index;
   }
   function tick() {
     timer = 0;
-    if (!canAnimate()) { stop(); return; }
-    apply(Math.floor(performance.now() / 1000 * FPS) % FRAME_COUNT);
-    root.dataset.playerMaskRunning = 'true'; timer = setTimeout(tick, 1000 / FPS);
+    if (disposed || suspended || !visible || document.hidden || isFullscreen()) { stop(); return; }
+    refreshControls();
+    const now = performance.now();
+    apply(reducedMotion.matches ? 0 : Math.floor(now / 1000 * FPS) % frames.length);
+    if (!canAnimate() && !transitioning(now)) { stop(); return; }
+    root.dataset.playerMaskRunning = 'true'; timer = setTimeout(tick, 1000 / (transitioning(now) ? 16 : FPS));
   }
   function update() {
     stop(); if (disposed) return;
     if (visible) prepare();
-    if (controlTexture) root.style.setProperty('--player-control-mask', controlTexture);
+    compact = root.getBoundingClientRect().width <= 600;
+    root.dataset.playerMaskSize = compact ? 'compact' : 'wide';
+    refreshControls();
     if (!frames.length) { root.dataset.playerMaskState = buildFailed ? 'fallback' : 'waiting'; return; }
     root.dataset.playerMaskState = reducedMotion.matches ? 'static' : frames.length === FRAME_COUNT ? 'ready' : 'preparing';
     if (!visible || document.hidden || isFullscreen()) return;
     apply(reducedMotion.matches ? 0 : Math.floor(performance.now() / 1000 * FPS) % frames.length);
-    if (canAnimate()) tick();
+    if (canAnimate() || transitioning(performance.now())) tick();
   }
   const observer = new IntersectionObserver(entries => { visible = entries[0].isIntersecting; update(); }); observer.observe(root);
-  const instance = {update, destroy() { disposed = true; stop(); observer.disconnect(); instances.delete(instance); }};
+  const resize = new ResizeObserver(update); resize.observe(root);
+  const content = new MutationObserver(update); content.observe(root, {childList:true});
+  const enter = () => update(), leave = () => update();
+  // Cross-origin frames can lose focus after fullscreen without bubbling a
+  // matching focusout. Reconcile actual state instead of retaining a hover flag.
+  const pointer = () => { if (visible && controlTarget && !root.matches(':hover') && !root.contains(document.activeElement)) update(); };
+  const focus = () => queueMicrotask(update);
+  root.addEventListener('pointerenter', enter); root.addEventListener('pointerleave', leave);
+  root.addEventListener('focusin', focus); root.addEventListener('focusout', focus);
+  document.addEventListener('pointermove', pointer, {passive:true});
+  const instance = {update, destroy() { disposed = true; stop(); observer.disconnect(); resize.disconnect(); content.disconnect(); root.removeEventListener('pointerenter',enter); root.removeEventListener('pointerleave',leave); root.removeEventListener('focusin',focus); root.removeEventListener('focusout',focus); document.removeEventListener('pointermove',pointer); instances.delete(instance); }};
   instances.add(instance); update();
 }
 document.querySelectorAll('.project-preview').forEach(attachMask);

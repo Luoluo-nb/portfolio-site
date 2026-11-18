@@ -41,9 +41,19 @@ let previousSpectrum;
 let analysisPending;
 let analysisUnavailable = false;
 let sampledAt = 0;
-const levels = {bass: 0, mid: 0, treble: 0, active: false, energy: 0, flux: 0, kick: 0, boost: 0, beatCount: 0, onsetTime: 0};
-let spectrumPrimed = false, audibleSince = 0, lastOnset = -1000, kickTarget = 0;
-let averageFlux = .012, fluxDeviation = .006, averageBass = 0;
+// Audio Analyze -> Select(snare-like onset) -> Lag -> Speed.
+// This is a spectral approximation, not instrument/source separation.
+const SNARE_ANALYSIS = Object.freeze({
+  bodyHz: [180, 350], noiseHz: [1200, 6000], hatHz: [6000, 12000], kickHz: [35, 150],
+  warmupSeconds: .28, refractorySeconds: .20, holdSeconds: .075,
+  bodyAttackSeconds: .08, attackSeconds: .05, releaseSeconds: .60, adaptiveSeconds: 1.8, speedGain: 2.0,
+});
+const levels = {bass: 0, mid: 0, treble: 0, active: false,
+  snare: 0, snareConfidence: 0, snareLag: 0, speed: 0, snareCount: 0, onsetTime: 0,
+  snareBodyFlux: 0, snareNoiseFlux: 0};
+let spectrumPrimed = false, audibleSince = 0, lastOnset = -1000, heldSnare = 0;
+let bodyMean = .006, bodyDeviation = .003, noiseMean = .01, noiseDeviation = .005;
+let recentBodyAttack = 0;
 async function enableAnalysis() {
   if (analysisUnavailable || analysisPending || !wanted) return;
   const Context = window.AudioContext || window.webkitAudioContext;
@@ -98,44 +108,66 @@ function getLevels() {
       for (let bin = begin; bin <= end; bin++) energy += (frequencyData[bin] / 255) ** 2;
       targets[band] = Math.sqrt(energy / Math.max(1, end - begin + 1));
     });
-    let lowFlux = 0, spectrumFlux = 0, lowBins = 0, allBins = 0;
+    const bands = [SNARE_ANALYSIS.bodyHz, SNARE_ANALYSIS.noiseHz, SNARE_ANALYSIS.hatHz, SNARE_ANALYSIS.kickHz]
+      .map(([low, high]) => ({low, high, flux:0, energy:0, count:0}));
     for (let bin = 1; bin < frequencyData.length; bin++) {
       const hz = bin * binHz, current = frequencyData[bin] / 255;
       const increase = Math.max(0, current - previousSpectrum[bin]);
-      if (hz >= 35 && hz <= 220) { lowFlux += increase; lowBins++; }
-      if (hz >= 35 && hz <= 1800) { spectrumFlux += increase * increase; allBins++; }
+      for (const band of bands) if (hz >= band.low && hz <= band.high) {
+        band.flux += increase; band.energy += current * current; band.count++;
+      }
       previousSpectrum[bin] = current;
     }
-    lowFlux /= Math.max(1, lowBins);
-    const flux = lowFlux * .75 + Math.sqrt(spectrumFlux / Math.max(1, allBins)) * .25;
+    for (const band of bands) { band.flux /= Math.max(1, band.count); band.energy = Math.sqrt(band.energy / Math.max(1, band.count)); }
+    const [bodyBand, noiseBand, hatBand, kickBand] = bands;
+    recentBodyAttack = Math.max(bodyBand.flux, recentBodyAttack * Math.exp(-seconds / SNARE_ANALYSIS.bodyAttackSeconds));
+    let confidence = 0;
     if (!spectrumPrimed) {
-      spectrumPrimed = true; audibleSince = now; averageBass = targets[0]; averageFlux = .012; fluxDeviation = .006;
+      spectrumPrimed = true; audibleSince = now;
+      bodyMean = .006; bodyDeviation = .003; noiseMean = .01; noiseDeviation = .005;
     } else {
-      const threshold = Math.max(.012, averageFlux * 1.65 + fluxDeviation * 1.1);
-      if (now - audibleSince > 280 && now - lastOnset > 280 && flux > threshold
-          && lowFlux > .006 && targets[0] > Math.max(.06, averageBass * .85)) {
-        lastOnset = now; levels.onsetTime = now / 1000; levels.beatCount++;
-        kickTarget = Math.min(1, .48 + (flux - threshold) * 9);
+      const bodyThreshold = Math.max(.005, bodyMean * .65 + bodyDeviation * .25);
+      const noiseThreshold = Math.max(.010, noiseMean * 1.6 + noiseDeviation * .9);
+      // Both drum-body attack and noisy mid/high attack must be present. A
+      // solitary sub-bass kick or top-heavy hat cannot satisfy this conjunction.
+      const balanced = bodyBand.energy > Math.max(.045, hatBand.energy * .18, noiseBand.energy * .12)
+        && noiseBand.energy > Math.max(.05, hatBand.energy * .38)
+        && recentBodyAttack > noiseBand.flux * .06
+        && noiseBand.flux > kickBand.flux * .06;
+      // A short peak window tolerates the body/noise components landing in
+      // adjacent FFT frames and a body partly masked by sustained bass.
+      if (balanced && recentBodyAttack > bodyThreshold && noiseBand.flux > noiseThreshold) {
+        const bodyStrength = Math.min(1, recentBodyAttack / Math.max(.014, bodyThreshold * 2));
+        const noiseStrength = Math.min(1, (noiseBand.flux / noiseThreshold - 1) / 2);
+        confidence = Math.sqrt(bodyStrength * noiseStrength);
       }
-      const adapt = 1 - Math.exp(-seconds / 1.6);
-      fluxDeviation += (Math.abs(flux - averageFlux) - fluxDeviation) * adapt;
-      averageFlux += (flux - averageFlux) * adapt;
-      averageBass += (targets[0] - averageBass) * (1 - Math.exp(-seconds / 1.1));
+      if (now - audibleSince > SNARE_ANALYSIS.warmupSeconds * 1000
+          && now - lastOnset > SNARE_ANALYSIS.refractorySeconds * 1000 && confidence > .20) {
+        lastOnset = now; levels.onsetTime = now / 1000; levels.snareCount++; heldSnare = confidence;
+      }
+      const adapt = 1 - Math.exp(-seconds / SNARE_ANALYSIS.adaptiveSeconds);
+      bodyDeviation += (Math.abs(bodyBand.flux - bodyMean) - bodyDeviation) * adapt;
+      noiseDeviation += (Math.abs(noiseBand.flux - noiseMean) - noiseDeviation) * adapt;
+      bodyMean += (bodyBand.flux - bodyMean) * adapt;
+      noiseMean += (noiseBand.flux - noiseMean) * adapt;
     }
-    // The detector uses source-relative changes, while visual amplitude still
-    // follows the audible volume, including existing native-video ducking.
     const audibleGain = Math.min(1, Math.sqrt(audio.volume / .35));
-    levels.flux = Math.min(1, flux * 7) * audibleGain;
-    levels.energy = targets[0] * audibleGain;
-    if (now - lastOnset > 70) kickTarget *= Math.exp(-seconds / .24);
-    const nextKick = kickTarget * audibleGain;
-    levels.kick += (nextKick - levels.kick) * (1 - Math.exp(-seconds / (nextKick > levels.kick ? .035 : .22)));
-    const boost = Math.min(2.4, levels.kick * 2.1 + levels.flux * .45);
-    levels.boost += (boost - levels.boost) * (1 - Math.exp(-seconds / (boost > levels.boost ? .055 : .35)));
+    levels.snareBodyFlux = bodyBand.flux; levels.snareNoiseFlux = noiseBand.flux;
+    levels.snareConfidence = confidence;
+    // Select: hold the normalized snare onset briefly, then send zero to Lag.
+    levels.snare = now - lastOnset < SNARE_ANALYSIS.holdSeconds * 1000 ? heldSnare * audibleGain : 0;
+    const lagSeconds = levels.snare > levels.snareLag ? SNARE_ANALYSIS.attackSeconds : SNARE_ANALYSIS.releaseSeconds;
+    levels.snareLag += (levels.snare - levels.snareLag) * (1 - Math.exp(-seconds / lagSeconds));
+    if (levels.snareLag < .0001) levels.snareLag = 0;
+    // Speed: only the lagged snare drives this output; no raw FFT/bass bypass.
+    levels.speed = levels.snareLag * SNARE_ANALYSIS.speedGain;
     for (let band = 0; band < targets.length; band++) targets[band] *= audio.volume;
   } else {
-    spectrumPrimed = false; audibleSince = 0; kickTarget = 0;
-    levels.energy = levels.flux = levels.kick = levels.boost = 0;
+    spectrumPrimed = false; audibleSince = 0; heldSnare = 0; recentBodyAttack = 0;
+    // Explicit user silence/backgrounding gates the chain. It does not integrate
+    // a tail later on resume or reuse stale pre-pause FFT differences.
+    levels.snare = levels.snareConfidence = levels.snareLag = levels.speed = 0;
+    levels.snareBodyFlux = levels.snareNoiseFlux = 0;
   }
   ['bass', 'mid', 'treble'].forEach((band, index) => {
     const easing = 1 - Math.exp(-seconds / (targets[index] > levels[band] ? 0.07 : 0.12));
@@ -145,7 +177,7 @@ function getLevels() {
   levels.active = active;
   return {...levels};
 }
-window.PortfolioAudioAnalysis = Object.freeze({getLevels});
+window.PortfolioAudioAnalysis = Object.freeze({getLevels, snareSettings:SNARE_ANALYSIS});
 audio.addEventListener('pause', () => getLevels());
 audio.addEventListener('volumechange', () => { if (audio.muted || audio.volume === 0) getLevels(); });
 // A resumed cross-page session can opt in on the visitor's next interaction.

@@ -358,6 +358,12 @@ for (const item of profile.education || []) {
   $('education-list').append(row);
 }
 $('year').textContent = new Date().getFullYear();
+const featuredTechniques = {
+  'ptcg-card': '磨砂亮片 · 细线高光 · 双层视差',
+  'unreal-car': '分层车漆 · 按键变色 · 平面反射',
+  'rain-vat': '雨滴材质 · 涟漪法线 · 水花粒子',
+  'unreal-snow': '雪地压痕 · 车轮沾雪 · 接触映射',
+};
 function createProjectLink(project) {
   const card = element('a', 'project-card');
   card.href = `./work.html?id=${encodeURIComponent(project.id)}`;
@@ -366,22 +372,47 @@ function createProjectLink(project) {
   image.src = project.cover;
   image.alt = '';
   image.loading = 'lazy';
+  const media = element('span', 'home-card-media');
+  media.append(image);
   const copy = element('span', 'card-copy');
-  const meta = element('small', '');
-  const arrow = element('span', 'card-arrow', '↗');
+  const meta = element('span', 'home-card-meta');
+  const duration = Math.max(0, Math.round(project.duration || 0));
+  meta.append(element('span', '', project.category === 'unity' ? 'Unity' : 'Unreal Engine'), element('span', 'home-card-duration', `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2,'0')}`));
+  const heading = element('span', 'home-card-heading');
+  const arrow = element('span', 'card-arrow');
+  arrow.innerHTML = '<svg viewBox="0 0 24 24" focusable="false"><path d="M6 18 18 6M7 6h11v11"/></svg>';
   arrow.setAttribute('aria-hidden', 'true');
-  meta.append(element('span', '', categoryName(project.category)), arrow);
-  copy.append(element('strong', '', project.title), meta);
-  card.append(image, copy);
+  heading.append(element('strong', '', project.title), arrow);
+  copy.append(meta, heading, element('span', 'home-card-detail', featuredTechniques[project.id] || ''));
+  card.append(media, copy);
   return card;
 }
 for (const project of projects.filter(item => item.category).slice(0, 4)) {
   $('home-project-grid').append(createProjectLink(project));
 }
-for (const id of ['ptcg-card', 'rain-vat', 'unreal-snow']) {
-  const project = projects.find(item => item.id === id);
-  if (project) $('contact-project-grid')?.append(createProjectLink(project));
-}
+const wechatCopy = $('wechat-copy');
+wechatCopy?.addEventListener('click', async () => {
+  if (wechatCopy.disabled) return;
+  wechatCopy.disabled = true;
+  const value = $('wechat-value');
+  const feedback = $('wechat-copy-feedback');
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(value.textContent.trim());
+    feedback.textContent = '微信号已复制';
+  } catch {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(value);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    value.focus({preventScroll:true});
+    feedback.textContent = '无法自动复制，请复制已选中的微信号。';
+  } finally {
+    feedback.hidden = false;
+    wechatCopy.disabled = false;
+  }
+});
 renderProjects();
 showRoute();
 window.addEventListener('pagehide', (event) => { if (!event.persisted) starfield?.destroy(); });

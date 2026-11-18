@@ -14,17 +14,18 @@ function mountCursorTrail() {
 
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const MAX_PARTICLES = 6; // Previous 11 / 2, rounded to a whole particle.
+  const BASE_PARTICLES = 6, MAX_PARTICLES = 12;
   const spacing = 44, linkDistance = 176, activationDistance = 11;
   const coneHalfAngle = Math.PI / 6, drag = 1.8;
   const particles = [];
   let width = 0, height = 0, frameId = 0, linkCount = 0, remainder = 0;
-  let nextSpacing = spacing;
-  const sampleSpacing = () => spacing * (.7 + Math.random() * .6);
+  let nextSpacing = spacing, motionSpeed = 0, fastMix = 0, particleLimit = BASE_PARTICLES;
+  const sampleSpacing = () => spacing * (1 + fastMix * .25) * (.7 + Math.random() * .6);
   let previous = null, mouse = null, head = null;
   let suspended = false, enabled = false;
   canvas.dataset.shape = 'scatter-radial';
-  canvas.dataset.maxParticles = String(MAX_PARTICLES);
+  canvas.dataset.maxParticles = String(BASE_PARTICLES);
+  canvas.dataset.fastMaxParticles = String(MAX_PARTICLES);
   canvas.dataset.activationDistance = String(activationDistance);
   canvas.dataset.spacing = String(spacing);
   canvas.dataset.coneDegrees = '60';
@@ -59,6 +60,9 @@ function mountCursorTrail() {
     head = null;
     remainder = linkCount = 0;
     nextSpacing = spacing;
+    motionSpeed = fastMix = 0;
+    particleLimit = BASE_PARTICLES;
+    canvas.dataset.maxParticles = String(particleLimit);
     context.clearRect(0, 0, width, height);
     state(reason);
   }
@@ -87,9 +91,10 @@ function mountCursorTrail() {
   }
 
   function emit(x, y, now) {
-    if (particles.length >= MAX_PARTICLES) particles.shift();
+    while (particles.length >= particleLimit) particles.shift();
     particles.push({
       x, y, born: now, updated: now,
+      released: false,
       // Keep each cone offset stable through its life, rather than noisy per frame.
       angleOffset: (Math.random() * 2 - 1) * coneHalfAngle,
       speed: 38 + Math.random() * 46,
@@ -119,7 +124,7 @@ function mountCursorTrail() {
       const distance = Math.hypot(dx, dy);
       particle.vx = particle.vy = 0;
       if (particle === head && mouse) {
-        // One of the six points marks the pointer, without easing or offset.
+      // One point marks the pointer exactly, even in the faster, denser trail.
         particle.x = mouse.x;
         particle.y = mouse.y;
       } else if (distance > activationDistance) {
@@ -140,39 +145,25 @@ function mountCursorTrail() {
     }
     if (!particles.length) { stop('idle'); return; }
 
-    // Sparse dots with short, readable chains; work stays bounded by the count cap.
-    const candidates = [], degree = new Uint8Array(particles.length);
-    const groups = particles.map((_, index) => index);
-    const root = index => { while (groups[index] !== index) index = groups[index]; return index; };
-    for (let a = 0; a < particles.length; a++) {
-      for (let b = a + 1; b < particles.length; b++) {
-        const distance = Math.hypot(particles[a].x - particles[b].x, particles[a].y - particles[b].y);
-        if (distance > 1 && distance < linkDistance) candidates.push({ a, b, distance });
-      }
-    }
-    candidates.sort((a, b) => a.distance - b.distance);
+    // Connect in emission order, preserving bends instead of nearest-neighbour
+    // shortcuts that flatten fast turns or join the wrong side of a loop.
     context.save();
     context.globalCompositeOperation = 'lighter';
     context.lineWidth = .85;
     context.lineCap = 'round';
     context.strokeStyle = '#a9d9f5';
     linkCount = 0;
-    for (const pair of candidates) {
-      if (linkCount >= MAX_PARTICLES - 1) break;
-      if (degree[pair.a] >= 2 || degree[pair.b] >= 2) continue;
-      const groupA = root(pair.a), groupB = root(pair.b);
-      // Short chains, never closed triangles or a densely connected web.
-      if (groupA === groupB) continue;
-      const a = particles[pair.a], b = particles[pair.b];
-      const alpha = Math.min(a.alpha, b.alpha) * .64 * (1 - (pair.distance / linkDistance) ** 2);
+    for (let index = 1; index < particles.length; index++) {
+      const a = particles[index - 1], b = particles[index];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (distance < 1 || distance >= linkDistance) continue;
+      const alpha = Math.min(a.alpha, b.alpha) * .64 * (1 - (distance / linkDistance) ** 2);
       if (alpha < .006) continue;
       context.globalAlpha = alpha;
       context.beginPath();
       context.moveTo(a.x, a.y);
       context.lineTo(b.x, b.y);
       context.stroke();
-      degree[pair.a]++; degree[pair.b]++;
-      groups[groupB] = groupA;
       linkCount++;
     }
     for (const particle of particles) {
@@ -192,14 +183,17 @@ function mountCursorTrail() {
     state('active');
   }
 
-  function move(event) {
-    if (!enabled || event.pointerType !== 'mouse') return;
+  function samplePointer(event) {
     const bounds = canvas.getBoundingClientRect();
     // Content/language changes can toggle scrollbars without a window resize.
     if (Math.abs(bounds.width - width) > .01 || Math.abs(bounds.height - height) > .01) resize();
-    const now = performance.now(), point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, time: now };
+    const now = performance.now(), sampleTime = event.timeStamp || now;
+    const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, time: sampleTime };
     mouse = point;
-    if (!previous || now - previous.time > 180) {
+    if (!previous || sampleTime - previous.time > 180) {
+      motionSpeed = fastMix = 0;
+      particleLimit = BASE_PARTICLES;
+      canvas.dataset.maxParticles = String(particleLimit);
       previous = point;
       remainder = 0;
       nextSpacing = sampleSpacing();
@@ -211,14 +205,32 @@ function mountCursorTrail() {
     const dx = point.x - previous.x, dy = point.y - previous.y;
     const distance = Math.hypot(dx, dy);
     if (distance < .1) return;
+    // High-polling mice can supply coalesced samples less than 4ms apart.
+    // Preserve that timing so their speed is not underestimated.
+    const elapsed = Math.max(.5, sampleTime - previous.time);
+    const speed = Math.min(7, distance / elapsed);
+    motionSpeed += (speed - motionSpeed) * (1 - Math.exp(-elapsed / (speed > motionSpeed ? 28 : 100)));
+    const mix = Math.max(0, Math.min(1, (motionSpeed - .65) / 2.35));
+    fastMix = mix * mix * (3 - 2 * mix);
+    particleLimit = BASE_PARTICLES + Math.round((MAX_PARTICLES - BASE_PARTICLES) * fastMix);
+    canvas.dataset.maxParticles = String(particleLimit);
+    canvas.dataset.motionSpeed = motionSpeed.toFixed(3);
     const directionX = dx / distance, directionY = dy / distance;
     // A large pointer jump emits near its arrival, not across the entire page.
-    const pathLength = Math.min(distance, spacing * MAX_PARTICLES);
+    const pathLength = Math.min(distance, spacing * (1 + fastMix * .25) * particleLimit);
     if (distance > pathLength) remainder = 0;
     const startX = point.x - directionX * pathLength, startY = point.y - directionY * pathLength;
     let traveled = nextSpacing - remainder;
     for (; traveled <= pathLength;) {
-      emit(startX + directionX * traveled, startY + directionY * traveled, now);
+      // Apply lateral variation when a head becomes a free particle. Applying
+      // it only at spawn would be erased by pointer anchoring on every event.
+      if (head && !head.released) {
+        const spread = (Math.random() * 2 - 1) * 18 * fastMix;
+        head.x -= directionY * spread;
+        head.y += directionX * spread;
+        head.released = true;
+      }
+      head = emit(startX + directionX * traveled, startY + directionY * traveled, now);
       nextSpacing = sampleSpacing();
       traveled += nextSpacing;
     }
@@ -232,6 +244,14 @@ function mountCursorTrail() {
     head.vx = head.vy = 0;
     if (particles.length && !frameId) frameId = requestAnimationFrame(render);
     if (particles.length) state('active');
+  }
+
+  function move(event) {
+    if (!enabled || event.pointerType !== 'mouse') return;
+    const samples = event.getCoalescedEvents?.() || [];
+    for (const sample of samples) samplePointer(sample);
+    // Coalesced samples may omit the final endpoint on some browsers.
+    samplePointer(event);
   }
 
   document.addEventListener('pointermove', move, { passive: true });
