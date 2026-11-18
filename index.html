@@ -39,7 +39,16 @@
         <h1 id="hero-title">张致远</h1>
         <p class="hero-role">美术 <span>/</span> 技术美术</p>
       </div>
-      <a class="hero-scroll" href="#home-projects"><span>向下浏览作品</span><span class="hero-scroll-arrow" aria-hidden="true">↓</span></a>
+      <a class="hero-scroll" href="#home-projects">
+        <span class="hero-scroll-orbit" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none" focusable="false">
+            <g class="hero-scroll-arcs"><path class="hero-scroll-arc-outer" d="M18 7.75A28 28 0 0 1 56.25 46"/><path class="hero-scroll-arc-inner" d="M44 52.78A24 24 0 0 1 11.22 20"/><circle class="hero-scroll-star" cx="18" cy="7.75" r="1.5"/></g>
+            <path class="hero-scroll-arrow" d="M32 19v25m-8-8 8 8 8-8"/>
+            <path class="hero-scroll-flow" d="M32 19v25m-8-8 8 8 8-8"/>
+          </svg>
+        </span>
+        <span class="hero-scroll-label">向下浏览作品</span>
+      </a>
     </section>
     <section class="home-featured shell" id="home-projects" data-view-panel="top" aria-labelledby="home-projects-title">
       <div class="home-featured-heading">

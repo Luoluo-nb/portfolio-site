@@ -3,6 +3,7 @@ import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
 import { projectDetails } from './project-details.js';
 import './player-nebula.js';
+import './image-viewer.js';
 
 const $ = id => document.getElementById(id);
 const announce = message => { $('detail-announcement').textContent = message; };
@@ -175,10 +176,11 @@ function renderBreakdown(detail) {
       if (item.wide) figure.classList.add('breakdown-wide');
       const open = document.createElement('a');
       open.href = item.src;
-      open.target = '_blank';
-      open.rel = 'noopener noreferrer';
       open.className = 'breakdown-image-link';
-      open.setAttribute('aria-label', `${item.caption}，在新标签页查看大图`);
+      open.dataset.imageCaption = item.caption;
+      open.setAttribute('aria-label', item.caption);
+      open.setAttribute('aria-haspopup', 'dialog');
+      open.setAttribute('aria-controls', 'image-preview');
       const image = document.createElement('img');
       image.src = item.src;
       image.alt = item.caption;
@@ -192,7 +194,7 @@ function renderBreakdown(detail) {
       label.textContent = item.caption;
       const action = document.createElement('span');
       action.className = 'breakdown-image-action';
-      action.textContent = '查看大图 ↗';
+      action.textContent = '预览大图';
       action.setAttribute('aria-hidden', 'true');
       caption.append(label, action);
       open.append(caption);

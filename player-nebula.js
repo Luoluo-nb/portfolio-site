@@ -1,108 +1,109 @@
-/* A small, transparent shader softens media edges without covering controls. */
+/* Actual alpha compositing, not a colored overlay. A small looping procedural
+   mask reveals the existing page background through cross-origin players. */
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const vertex = `attribute vec2 position;void main(){gl_Position=vec4(position,0.,1.);}`;
-const fragment = `
-precision mediump float;
-uniform vec2 resolution;
-uniform vec2 cssSize;
-uniform float time;
-uniform float live;
-float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
-float cloud(vec2 p){float v=0.;float a=.57;for(int i=0;i<3;i++){v+=noise(p)*a;p=mat2(1.6,-1.2,1.2,1.6)*p+3.1;a*=.46;}return v;}
-void main(){
- vec2 uv=gl_FragCoord.xy/resolution;
- vec2 px=uv*cssSize;
- float edge=min(min(px.x,cssSize.x-px.x),min(px.y,cssSize.y-px.y));
- float width=clamp(cssSize.y*.062,14.,38.);
- // Empty center and outermost edge: the effect is smoke, not a rectangular stroke.
- float d=edge/width;
- float band=smoothstep(0.,.3,d)*(1.-smoothstep(.8,2.2,d));
- vec2 p=px/max(cssSize.y,180.)*4.1;
- vec2 drift=vec2(time*.045,-time*.028);
- float warp=cloud(p*.65+drift);
- float n=cloud(p+vec2(warp*1.8,-warp)+drift);
- float wisps=cloud(p*2.3-vec2(time*.024,0.)+n);
- float density=smoothstep(.24,.76,n)*(.32+.68*wisps);
- float controls=mix(1.,smoothstep(48.,78.,px.y),live);
- float alpha=band*density*.34*controls;
- vec3 color=mix(vec3(.16,.36,.58),vec3(.39,.24,.56),smoothstep(.3,.8,warp));
- color+=vec3(.12,.2,.22)*wisps;
- gl_FragColor=vec4(color*alpha,alpha);
-}`;
-
-function attachNebula(root) {
-  let canvas, gl, program, buffer, uniforms, frame = 0, visible = false, last = 0, live = 0;
-  let width = 0, height = 0, failed = false;
-  const interval = matchMedia('(pointer: coarse)').matches ? 1000 / 14 : 50;
-  const stop = () => { cancelAnimationFrame(frame); frame = 0; if (canvas) canvas.dataset.running = 'false'; };
-  function draw(now) {
-    if (!gl || gl.isContextLost() || !width || !height) return;
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.useProgram(program);
-    gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
-    gl.uniform2f(uniforms.cssSize, width, height);
-    gl.uniform1f(uniforms.time, reducedMotion.matches ? 0 : now / 1000);
-    gl.uniform1f(uniforms.live, live);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
+const WIDTH = 256, HEIGHT = 144, FRAME_COUNT = 96, FPS = 8;
+const frames = [], instances = new Set();
+let canvas, context, controlTexture = '', building = false, buildFailed = false, pendingBuild = false, suspended = false;
+const smooth = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+// Fixed noise lattice avoids per-frame random jitter and expensive pixel hashes.
+const lattice = Float32Array.from({length:1024}, (_, i) => {
+  let n = Math.imul(i ^ 0x7f4a7c15, 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+});
+function noise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = smooth(0, 1, x - ix), fy = smooth(0, 1, y - iy);
+  const value = (a, b) => lattice[(a & 31) + (b & 31) * 32];
+  const a = value(ix, iy) * (1 - fx) + value(ix + 1, iy) * fx;
+  const b = value(ix, iy + 1) * (1 - fx) + value(ix + 1, iy + 1) * fx;
+  return a * (1 - fy) + b * fy;
+}
+function texture(index, controls = false) {
+  const image = context.createImageData(WIDTH, HEIGHT), pixels = image.data;
+  const phase = index / FRAME_COUNT * Math.PI * 2, tx = Math.cos(phase) * 1.3, ty = Math.sin(phase) * 1.3;
+  for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
+    const u = x / (WIDTH - 1), v = y / (HEIGHT - 1), offset = (y * WIDTH + x) * 4;
+    let alpha;
+    if (controls) {
+      alpha = smooth(0, .018, u) * smooth(0, .018, 1 - u) * smooth(.72, .90, v) * smooth(0, .025, 1 - v) * .82;
+    } else {
+      const dx = Math.min(u, 1 - u) * WIDTH / HEIGHT, dy = Math.min(v, 1 - v);
+      if (Math.min(dx, dy) >= .175) alpha = 1;
+      else {
+        const nx = u * 5.3 + tx, ny = v * 3.2 + ty;
+        const cloud = noise(nx, ny) * .68 + noise(nx * 2.02 + 7.3, ny * 2.02 + 13.1) * .32;
+        const feather = .095 + cloud * .08;
+        // Both edge distances reach zero at the boundary, so noise never creates
+        // an opaque outer rectangle. The product gently rounds the corners.
+        alpha = smooth(0, feather, dx) * smooth(0, feather, dy);
+      }
+    }
+    pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
+    pixels[offset + 3] = Math.round(alpha * 255);
   }
-  function tick(now) {
-    if (!visible || document.hidden || reducedMotion.matches || !canvas?.isConnected || failed) { stop(); return; }
-    if (now - last >= interval) { last = now; draw(now); }
-    canvas.dataset.running = 'true';
-    frame = requestAnimationFrame(tick);
+  context.putImageData(image, 0, 0);
+  return `url("${canvas.toDataURL('image/png')}")`;
+}
+function notify() { for (const instance of instances) instance.update(); }
+function queueBuild() {
+  if (pendingBuild || buildFailed || frames.length >= FRAME_COUNT || document.hidden || reducedMotion.matches || suspended) return;
+  pendingBuild = true;
+  const step = () => {
+    pendingBuild = false;
+    if (document.hidden || buildFailed || reducedMotion.matches || suspended) return;
+    try { for (let n = 0; n < 2 && frames.length < FRAME_COUNT; n++) frames.push(texture(frames.length)); }
+    catch { buildFailed = true; }
+    if (frames.length === FRAME_COUNT || buildFailed) { building = false; notify(); }
+    else queueBuild();
+  };
+  if ('requestIdleCallback' in window) requestIdleCallback(step, {timeout:250}); else setTimeout(step, 16);
+}
+function prepare() {
+  if (building || buildFailed || frames.length) return;
+  try {
+    canvas = document.createElement('canvas'); canvas.width = WIDTH; canvas.height = HEIGHT;
+    context = canvas.getContext('2d', {alpha:true});
+    if (!context) throw new Error('Mask canvas unavailable');
+    controlTexture = texture(0, true); frames.push(texture(0)); building = true; queueBuild();
+  } catch { buildFailed = true; }
+}
+
+function attachMask(root) {
+  let visible = false, timer = 0, lastFrame = -1, disposed = false;
+  const isFullscreen = () => document.fullscreenElement && (document.fullscreenElement === root || root.contains(document.fullscreenElement));
+  const canAnimate = () => !disposed && !suspended && visible && !document.hidden && !reducedMotion.matches && !isFullscreen() && frames.length === FRAME_COUNT;
+  function stop() { clearTimeout(timer); timer = 0; root.dataset.playerMaskRunning = 'false'; }
+  function apply(index) {
+    if (index === lastFrame || !frames[index]) return;
+    root.style.setProperty('--player-noise-mask', frames[index]);
+    root.dataset.playerMaskFrame = String(index); lastFrame = index;
+  }
+  function tick() {
+    timer = 0;
+    if (!canAnimate()) { stop(); return; }
+    apply(Math.floor(performance.now() / 1000 * FPS) % FRAME_COUNT);
+    root.dataset.playerMaskRunning = 'true'; timer = setTimeout(tick, 1000 / FPS);
   }
   function update() {
-    stop();
-    if (!gl || failed || !visible || document.hidden) return;
-    draw(performance.now());
-    if (!reducedMotion.matches) frame = requestAnimationFrame(tick);
+    stop(); if (disposed) return;
+    if (visible) prepare();
+    if (controlTexture) root.style.setProperty('--player-control-mask', controlTexture);
+    if (!frames.length) { root.dataset.playerMaskState = buildFailed ? 'fallback' : 'waiting'; return; }
+    root.dataset.playerMaskState = reducedMotion.matches ? 'static' : frames.length === FRAME_COUNT ? 'ready' : 'preparing';
+    if (!visible || document.hidden || isFullscreen()) return;
+    apply(reducedMotion.matches ? 0 : Math.floor(performance.now() / 1000 * FPS) % frames.length);
+    if (canAnimate()) tick();
   }
-  function resize() {
-    const bounds = root.getBoundingClientRect(); width = bounds.width; height = bounds.height;
-    if (!canvas || !width || !height) { stop(); return; }
-    // Soft clouds do not need full-screen device-pixel resolution.
-    const scale = Math.min(1, Math.sqrt(240000 / (width * height)));
-    const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    update();
-  }
-  function init() {
-    canvas = document.createElement('canvas'); canvas.className = 'player-nebula'; canvas.setAttribute('aria-hidden', 'true');
-    gl = canvas.getContext('webgl', {alpha:true, premultipliedAlpha:true, antialias:false, depth:false, stencil:false});
-    if (!gl) { failed = true; return; }
-    const shaders = [];
-    try {
-      for (const [type, source] of [[gl.VERTEX_SHADER, vertex], [gl.FRAGMENT_SHADER, fragment]]) {
-        const shader = gl.createShader(type); shaders.push(shader); gl.shaderSource(shader, source); gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error('Nebula shader unavailable');
-      }
-      program = gl.createProgram(); shaders.forEach(s => gl.attachShader(program, s)); gl.linkProgram(program);
-      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('Nebula program unavailable');
-      gl.useProgram(program); buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
-      const location = gl.getAttribLocation(program, 'position'); gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
-      uniforms = Object.fromEntries(['resolution','cssSize','time','live'].map(name => [name,gl.getUniformLocation(program,name)]));
-      canvas.addEventListener('webglcontextlost', () => { failed = true; stop(); canvas.hidden = true; });
-    } catch { failed = true; gl.deleteProgram(program); gl.deleteBuffer(buffer); }
-    finally { shaders.forEach(s => gl.deleteShader(s)); }
-  }
-  function sync() {
-    if (failed) return;
-    if (!canvas) init();
-    if (failed) return;
-    live = root.querySelector(':scope > iframe, :scope > video') ? 1 : 0;
-    if (!root.contains(canvas)) root.append(canvas);
-    canvas.dataset.live = String(live); resize();
-  }
-  const contentObserver = new MutationObserver(sync);
-  contentObserver.observe(root, {childList:true});
-  const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(root);
-  const visibilityObserver = new IntersectionObserver(entries => { visible = entries[0].isIntersecting; update(); }); visibilityObserver.observe(root);
-  document.addEventListener('visibilitychange', update);
-  reducedMotion.addEventListener('change', update);
-  window.addEventListener('pagehide', stop);
-  window.addEventListener('pageshow', update);
-  sync();
+  const observer = new IntersectionObserver(entries => { visible = entries[0].isIntersecting; update(); }); observer.observe(root);
+  const instance = {update, destroy() { disposed = true; stop(); observer.disconnect(); instances.delete(instance); }};
+  instances.add(instance); update();
 }
-document.querySelectorAll('.project-preview').forEach(attachNebula);
+document.querySelectorAll('.project-preview').forEach(attachMask);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) queueBuild(); notify(); });
+document.addEventListener('fullscreenchange', notify);
+reducedMotion.addEventListener('change', () => { queueBuild(); notify(); });
+window.addEventListener('pagehide', event => {
+  suspended = true;
+  if (!event.persisted) { for (const instance of [...instances]) instance.destroy(); }
+  else notify();
+});
+window.addEventListener('pageshow', () => { suspended = false; queueBuild(); notify(); });

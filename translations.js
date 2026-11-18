@@ -77,6 +77,7 @@ export const translations = {
   '已进入 Unreal Engine / 车辆': 'Opened Unreal Engine / Vehicle',
   '显示全部 Unreal Engine 作品': 'Showing all Unreal Engine works',
   '背景音乐': 'Background Music', '背景音乐控制': 'Background music controls', '音乐控制': 'Music controls',
+  '循环剪辑与响度调整': 'Loop edit and loudness adjustment',
   '音乐': 'Music', '音源说明': 'Music credits', '静音背景音乐': 'Mute background music', '取消背景音乐静音': 'Unmute background music',
   '音乐暂时无法加载，请稍后重试。': 'Music could not be loaded. Please try again later.',
   '观看 Bilibili 视频时暂停背景音乐。': 'Background music is paused while the Bilibili video is open.',
@@ -303,4 +304,17 @@ Object.assign(translations, {
   "地表材质通道输出": "Ground material outputs",
   "多组纹理采样混合": "Blending multiple texture samples",
   "Nanite 置换设置": "Nanite displacement settings"
+});
+
+Object.assign(translations, {
+  '预览大图': 'Preview image',
+  '图片预览': 'Image preview',
+  '关闭图片预览': 'Close image preview',
+  '图片细节，可滚动查看': 'Image details, scroll to explore',
+  '适合窗口': 'Fit to window',
+  '原始尺寸': 'Original size',
+  '滚动查看图片细节': 'Scroll to explore image details',
+  '点击空白处或按 Esc 关闭': 'Click outside or press Esc to close',
+  '图片加载失败，请关闭后重试。': 'The image could not load. Close the preview and try again.',
+  '正在加载图片…': 'Loading image…',
 });

@@ -17,11 +17,27 @@ html[lang=en] #top h1{font-size:clamp(48px,5.8vw,82px);letter-spacing:-.045em;ov
 #top .hero-role>span{color:#75c9f1;margin-inline:15px}
 /* A very faint atmospheric focus complements the existing animated starfield. */
 #top .hero-atmosphere{position:absolute;inset:12% -4% 14%;z-index:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,#589cdc08,transparent 53%),radial-gradient(ellipse at 74% 28%,#677ac609,transparent 45%);mask-image:radial-gradient(ellipse,#000 25%,transparent 72%);-webkit-mask-image:radial-gradient(ellipse,#000 25%,transparent 72%)}
-#top .hero-scroll{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;min-width:144px;min-height:60px;padding:8px 18px;color:#bad3e5;font-size:14px;font-weight:650;line-height:1.5;letter-spacing:.04em;white-space:nowrap;border:0;background:none;text-align:center}
-#top .hero-scroll:hover{color:#edf8ff;text-shadow:0 0 20px #8ad5ff5c}
-#top .hero-scroll:focus-visible{outline:2px solid var(--ice);outline-offset:4px}
-#top .hero-scroll-arrow{font-size:25px;line-height:1;color:var(--ice);animation:home-scroll-hint 2.4s ease-in-out infinite}
-@keyframes home-scroll-hint{0%,100%{transform:translateY(-2px);opacity:.55}50%{transform:translateY(3px);opacity:1}}
+#top .hero-scroll{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:16px;min-width:204px;min-height:76px;padding:6px 12px;color:#c8deed;font-size:14px;font-weight:650;line-height:1.5;letter-spacing:.04em;white-space:nowrap;border:0;border-radius:48px;background:none;text-align:left;transition:color .25s}
+#top .hero-scroll-orbit{position:relative;display:block;flex:none;width:64px;height:64px;isolation:isolate}
+#top .hero-scroll-orbit::before{content:'';position:absolute;inset:8px;z-index:-1;border-radius:50%;background:radial-gradient(circle,#65b8eb13,transparent 70%);transition:opacity .25s;opacity:.6;pointer-events:none}
+#top .hero-scroll-orbit svg{display:block;width:100%;height:100%;overflow:visible;stroke-linecap:round;stroke-linejoin:round}
+#top .hero-scroll-arcs{transform-origin:32px 32px;animation:home-orbit-turn 18s linear infinite}
+#top .hero-scroll-arc-outer{stroke:#8dcced4d;stroke-width:.7}
+#top .hero-scroll-arc-inner{stroke:#a8dcf380;stroke-width:.8}
+#top .hero-scroll-star{fill:#d4f3ff;stroke:none;filter:drop-shadow(0 0 3px #96ddffb3)}
+#top .hero-scroll-arrow{stroke:#b0ddf7;stroke-width:1.1}
+#top .hero-scroll-flow{stroke:#f0fbff;stroke-width:1.5;stroke-dasharray:12 76;stroke-dashoffset:12;animation:home-arrow-flow 3.4s ease-in-out infinite;filter:drop-shadow(0 0 3px #8dd9ff99)}
+#top .hero-scroll-label{position:relative;padding-bottom:5px;transition:transform .25s,text-shadow .25s}
+#top .hero-scroll-label::after{content:'';position:absolute;bottom:0;left:0;width:34px;height:1px;background:linear-gradient(90deg,#98d5f575,transparent);transform-origin:left;transition:width .25s,opacity .25s;opacity:.8}
+#top .hero-scroll:is(:hover,:focus-visible){color:#f1faff}
+#top .hero-scroll:is(:hover,:focus-visible) .hero-scroll-label{text-shadow:0 0 16px #8ad5ff40;transform:translateX(2px)}
+#top .hero-scroll:is(:hover,:focus-visible) .hero-scroll-label::after{width:100%;opacity:1}
+#top .hero-scroll:is(:hover,:focus-visible) .hero-scroll-orbit::before{opacity:1}
+#top .hero-scroll:is(:hover,:focus-visible) .hero-scroll-arc-outer{stroke:#a6defa80}
+#top .hero-scroll:is(:hover,:focus-visible) .hero-scroll-arc-inner{stroke:#daf3ffbd}
+#top .hero-scroll:focus-visible{outline:1px dashed #b7e7ff;outline-offset:5px}
+@keyframes home-orbit-turn{to{transform:rotate(360deg)}}
+@keyframes home-arrow-flow{0%{stroke-dashoffset:12;opacity:0}18%{opacity:1}72%{opacity:1}100%{stroke-dashoffset:-76;opacity:0}}
 .home-featured{position:relative;padding-top:60px;padding-bottom:80px;scroll-margin-top:0}
 .home-featured-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:32px;margin-bottom:34px}
 .home-featured-heading .section-kicker{margin-bottom:14px;font-size:13px;line-height:1.6;letter-spacing:.08em}
@@ -53,7 +69,8 @@ html[lang=en] #top h1{font-size:clamp(48px,5.8vw,82px);letter-spacing:-.045em;ov
   html[lang=en] #top h1{font-size:clamp(42px,11.5vw,60px);line-height:1.14;max-width:360px;margin-inline:auto}
   #top .hero-role{font-size:17px;letter-spacing:1px;margin-top:22px}
   #top .hero-role>span{margin-inline:8px}
-  #top .hero-scroll{bottom:21px;min-height:58px;font-size:13px}
+  #top .hero-scroll{bottom:18px;min-width:190px;min-height:68px;font-size:13px;gap:13px}
+  #top .hero-scroll-orbit{width:56px;height:56px}
   .home-featured{padding-top:36px;padding-bottom:48px}
   .home-featured-heading{align-items:flex-start;flex-direction:column;gap:16px;margin-bottom:24px}
   .home-featured-heading .section-kicker{font-size:12px;margin-bottom:12px}
@@ -71,7 +88,11 @@ html[lang=en] #top h1{font-size:clamp(48px,5.8vw,82px);letter-spacing:-.045em;ov
   #top h1{font-size:clamp(48px,10svh,66px)}
   html[lang=en] #top h1{font-size:clamp(34px,8.5svh,48px)}
   #top .hero-role{font-size:16px;letter-spacing:.8px;margin-top:15px}
-  #top .hero-scroll{bottom:12px;min-height:54px;gap:5px;font-size:13px}
-  #top .hero-scroll-arrow{font-size:22px}
+  #top .hero-scroll{bottom:8px;min-height:62px;gap:13px;font-size:13px}
+  #top .hero-scroll-orbit{width:50px;height:50px}
 }
-@media(prefers-reduced-motion:reduce){#top .hero-scroll-arrow{animation:none}}
+@media(prefers-reduced-motion:reduce){
+  #top .hero-scroll-arcs,#top .hero-scroll-flow{animation:none}
+  #top .hero-scroll-flow{opacity:0}
+  #top .hero-scroll,#top .hero-scroll-label,#top .hero-scroll-label::after,#top .hero-scroll-orbit::before{transition:none}
+}

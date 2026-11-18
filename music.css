@@ -22,6 +22,9 @@
 .music-credit{display:flex;flex-wrap:wrap;gap:4px 10px;flex:0 0 100%;margin:0;padding-bottom:18px;color:#8fa7bd;font-size:12px;line-height:1.7;letter-spacing:0}
 .detail-footer:has(.music-credit),.footer-bottom:has(.music-credit){flex-wrap:wrap;row-gap:8px}
 .music-credit>span:first-child{color:#afc2d2}
+.music-credit a{color:inherit;text-decoration:none;border:0;border-radius:0;padding:0;background:transparent;box-shadow:none}
+.music-credit a:hover{color:#d7f0ff;text-decoration:underline;text-underline-offset:3px}
+.music-credit a:focus-visible{outline:1px dashed #a1dfff9c;outline-offset:4px}
 @media(max-width:1199px){.header-tools{gap:8px}.music-volume-control{width:60px;flex-basis:60px;margin-left:3px}}
 @media(max-width:900px){.header{flex-wrap:wrap;height:126px;align-content:center;row-gap:0}.header>.brand,.header>nav{height:70px}.header-tools{width:100%;height:46px;justify-content:space-between;border-top:1px solid #28405d88}.music-volume-control{width:78px;flex-basis:78px;margin-left:5px}.header nav a{min-height:48px}.hero{padding-top:165px}.works-section[data-view-panel]{padding-top:158px}.about-section[data-view-panel]{padding-top:164px}.contact-section[data-view-panel]{padding-top:126px}.work-detail{padding-top:146px}html{scroll-padding-top:145px}#project-preview{scroll-margin-top:145px}}
 @media(max-width:380px){.music-controls{gap:0}.music-volume-control{width:54px;flex-basis:54px;margin-left:3px}.header-tools{gap:4px}.header>.brand,.header>nav{height:70px}}

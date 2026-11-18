@@ -1,9 +1,9 @@
 @import url('./player-controls.css');
-/* Posters and live players blend into the sky. Live-player masks retain a solid
-   lower control strip; no overlay intercepts the embedded player's controls. */
+/* Alpha masks reveal the real page background. No colored layer is drawn over
+   the video, and the same soft boundary is used on all four sides. */
 .project-preview,.detail-player{border:0;background:transparent;aspect-ratio:16/9;min-height:0;max-height:none;overflow:visible;isolation:isolate}
 .project-preview .poster-button{border:0;border-radius:0;background:transparent;overflow:visible}
-.project-preview .poster-button>img{display:block;width:100%;height:100%;object-fit:contain;filter:brightness(.83);transform:none;transition:filter .3s;-webkit-mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(0deg,transparent,#000 5%,#000 95%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(0deg,transparent,#000 5%,#000 95%,transparent);mask-composite:intersect}
+.project-preview .poster-button>img{display:block;width:100%;height:100%;object-fit:contain;filter:brightness(.83);transform:none;transition:filter .3s}
 .project-preview .poster-button:hover>img{transform:none;filter:brightness(.96)}
 .project-preview .poster-play{gap:13px;background:radial-gradient(ellipse 130px 105px at center,#05101a4d,transparent 75%);color:#e3f4ff;font-size:11px;font-weight:600;letter-spacing:2px;text-shadow:0 1px 10px #020816}
 .project-preview .play-triangle{display:grid;place-items:center;width:66px;height:66px;padding:0;border:1px solid #c5e6f34d;border-radius:50%;background:radial-gradient(circle,#0b1d2b5c,transparent 72%);backdrop-filter:none;box-shadow:0 0 28px #73c9ff0c;color:#e6f6ff;transition:border-color .2s,box-shadow .2s,background .2s}
@@ -11,15 +11,21 @@
 .project-preview .poster-button:hover .play-triangle{border-color:#ddf4ff96;box-shadow:0 0 35px #8edaff24;background:radial-gradient(circle,#102b3d73,transparent 74%)}
 .project-preview .poster-button:focus-visible{outline:none}
 .project-preview .poster-button:focus-visible .play-triangle{outline:1px solid #d5f3ff;outline-offset:5px}
-.project-preview>iframe,.project-preview>video{display:block;border:0;border-radius:0;background:#000;object-fit:contain;clip-path:none;-webkit-mask:none;mask:none;filter:none}
-.project-preview>iframe,.project-preview>video{
-  -webkit-mask-image:linear-gradient(to top,transparent,#000 3px),linear-gradient(to top,#000 48px,transparent 72px),linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(to bottom,transparent,#000 5%,#000);
-  -webkit-mask-composite:source-in,source-over,source-in;
-  mask-image:linear-gradient(to top,transparent,#000 3px),linear-gradient(to top,#000 48px,transparent 72px),linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent),linear-gradient(to bottom,transparent,#000 5%,#000);
-  mask-composite:intersect,add,intersect;
+.project-preview{--player-noise-mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);--player-control-mask:linear-gradient(transparent,transparent)}
+.project-preview>iframe,.project-preview>video{display:block;border:0;border-radius:0;background:#000;object-fit:contain;clip-path:none;filter:none}
+.project-preview>iframe,.project-preview>video,.project-preview .poster-button>img{
+  -webkit-mask-image:var(--player-noise-mask),linear-gradient(0deg,transparent,#000 15%,#000 85%,transparent);
+  mask-image:var(--player-noise-mask),linear-gradient(0deg,transparent,#000 15%,#000 85%,transparent);
+  -webkit-mask-composite:source-in;mask-composite:intersect;
+  -webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
 }
-.project-preview>iframe:fullscreen,.project-preview>video:fullscreen,.project-preview:fullscreen>iframe,.project-preview:fullscreen>video{-webkit-mask:none;mask:none}
-.project-preview>.player-nebula{position:absolute;inset:0;display:block;width:100%;height:100%;pointer-events:none;z-index:1}
-.project-preview>.player-nebula[hidden],.project-preview:fullscreen>.player-nebula{display:none}
+.project-preview[data-player-mask-frame]>iframe,.project-preview[data-player-mask-frame]>video,.project-preview[data-player-mask-frame] .poster-button>img{-webkit-mask-image:var(--player-noise-mask);mask-image:var(--player-noise-mask);-webkit-mask-composite:source-over;mask-composite:add}
+/* Interaction helps reveal native controls; the assistance still fades to zero
+   at the outer boundary and never leaves an opaque bottom strip. */
+.project-preview[data-player-mask-frame]:is(:hover,:focus-within)>iframe,.project-preview[data-player-mask-frame]:is(:hover,:focus-within)>video{
+  -webkit-mask-image:var(--player-control-mask),var(--player-noise-mask);mask-image:var(--player-control-mask),var(--player-noise-mask);
+  -webkit-mask-composite:source-over;mask-composite:add;
+}
+.project-preview>iframe:fullscreen,.project-preview>video:fullscreen,.project-preview:fullscreen>iframe,.project-preview:fullscreen>video{-webkit-mask:none!important;mask:none!important}
 @media(max-width:760px){.project-preview .play-triangle{width:56px;height:56px}.project-preview .play-triangle svg{width:25px;height:25px}.project-preview .poster-play{gap:10px;font-size:10px;letter-spacing:1.5px}}
 @media(prefers-reduced-motion:reduce){.project-preview .poster-button>img,.project-preview .play-triangle{transition:none}}

@@ -15,8 +15,8 @@ function mountCursorTrail() {
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const MAX_PARTICLES = 6; // Previous 11 / 2, rounded to a whole particle.
-  const spacing = 18, linkDistance = 72, activationDistance = 11;
-  const coneHalfAngle = Math.PI / 6, drag = 2.6;
+  const spacing = 44, linkDistance = 176, activationDistance = 11;
+  const coneHalfAngle = Math.PI / 6, drag = 1.8;
   const particles = [];
   let width = 0, height = 0, frameId = 0, linkCount = 0, remainder = 0;
   let nextSpacing = spacing;
@@ -94,7 +94,7 @@ function mountCursorTrail() {
       angleOffset: (Math.random() * 2 - 1) * coneHalfAngle,
       speed: 38 + Math.random() * 46,
       vx: 0, vy: 0,
-      life: 520 + Math.random() * 140,
+      life: 1500 + Math.random() * 400,
       radius: .7 + Math.random() * .45,
       alpha: .64,
     });

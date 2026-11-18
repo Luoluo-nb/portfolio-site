@@ -1,6 +1,6 @@
 import { mountMusicShader } from './music-shader.js';
 
-const source = './media/bgm-instrumental.mp3';
+const source = './media/bgm-resonance-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
 const ownerKey = 'portfolio-music-owner';
@@ -18,7 +18,7 @@ try {
   muted = Boolean(preference?.muted);
   const previous = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
   wanted = Boolean(previous?.playing);
-  resumeTime = Number(previous?.time) || 0;
+  resumeTime = previous?.source === source ? Number(previous.time) || 0 : 0;
 } catch { /* Music still works when browser storage is disabled. */ }
 
 const audio = new Audio();
@@ -37,10 +37,13 @@ let audioContext;
 let mediaSource;
 let analyser;
 let frequencyData;
+let previousSpectrum;
 let analysisPending;
 let analysisUnavailable = false;
 let sampledAt = 0;
-const levels = {bass: 0, mid: 0, treble: 0, active: false};
+const levels = {bass: 0, mid: 0, treble: 0, active: false, energy: 0, flux: 0, kick: 0, boost: 0, beatCount: 0, onsetTime: 0};
+let spectrumPrimed = false, audibleSince = 0, lastOnset = -1000, kickTarget = 0;
+let averageFlux = .012, fluxDeviation = .006, averageBass = 0;
 async function enableAnalysis() {
   if (analysisUnavailable || analysisPending || !wanted) return;
   const Context = window.AudioContext || window.webkitAudioContext;
@@ -52,8 +55,8 @@ async function enableAnalysis() {
     if (audioContext.state !== 'running') await audioContext.resume();
     if (audioContext.state !== 'running' || mediaSource) return;
     const nextAnalyser = audioContext.createAnalyser();
-    nextAnalyser.fftSize = 1024;
-    nextAnalyser.smoothingTimeConstant = 0.72;
+    nextAnalyser.fftSize = 2048;
+    nextAnalyser.smoothingTimeConstant = 0.28;
     nextAnalyser.minDecibels = -85;
     nextAnalyser.maxDecibels = -15;
     const nextData = new Uint8Array(nextAnalyser.frequencyBinCount);
@@ -64,6 +67,7 @@ async function enableAnalysis() {
       mediaSource.connect(nextAnalyser);
       analyser = nextAnalyser;
       frequencyData = nextData;
+      previousSpectrum = new Float32Array(nextData.length);
     } catch {
       // The media element is already attached: preserve a direct audible route.
       mediaSource.connect(audioContext.destination);
@@ -76,10 +80,13 @@ async function enableAnalysis() {
 }
 function getLevels() {
   const now = performance.now();
-  const seconds = Math.min(1, Math.max(0, (now - sampledAt) / 1000));
-  sampledAt = now;
   const active = Boolean(analyser && audioContext?.state === 'running' && wanted && !audio.paused
     && !audio.muted && audio.volume > 0 && !blocked && pageActive && !document.hidden);
+  // Multiple visual consumers share one sample, rather than flattening flux by
+  // repeatedly comparing the same FFT frame within a browser frame.
+  if (now - sampledAt < 16 && active === levels.active) return {...levels};
+  const seconds = Math.min(.12, Math.max(.001, (now - sampledAt) / 1000));
+  sampledAt = now;
   const targets = [0, 0, 0];
   if (active) {
     analyser.getByteFrequencyData(frequencyData);
@@ -89,8 +96,46 @@ function getLevels() {
       const end = Math.min(frequencyData.length - 1, Math.ceil(high / binHz));
       let energy = 0;
       for (let bin = begin; bin <= end; bin++) energy += (frequencyData[bin] / 255) ** 2;
-      targets[band] = Math.sqrt(energy / Math.max(1, end - begin + 1)) * audio.volume;
+      targets[band] = Math.sqrt(energy / Math.max(1, end - begin + 1));
     });
+    let lowFlux = 0, spectrumFlux = 0, lowBins = 0, allBins = 0;
+    for (let bin = 1; bin < frequencyData.length; bin++) {
+      const hz = bin * binHz, current = frequencyData[bin] / 255;
+      const increase = Math.max(0, current - previousSpectrum[bin]);
+      if (hz >= 35 && hz <= 220) { lowFlux += increase; lowBins++; }
+      if (hz >= 35 && hz <= 1800) { spectrumFlux += increase * increase; allBins++; }
+      previousSpectrum[bin] = current;
+    }
+    lowFlux /= Math.max(1, lowBins);
+    const flux = lowFlux * .75 + Math.sqrt(spectrumFlux / Math.max(1, allBins)) * .25;
+    if (!spectrumPrimed) {
+      spectrumPrimed = true; audibleSince = now; averageBass = targets[0]; averageFlux = .012; fluxDeviation = .006;
+    } else {
+      const threshold = Math.max(.012, averageFlux * 1.65 + fluxDeviation * 1.1);
+      if (now - audibleSince > 280 && now - lastOnset > 280 && flux > threshold
+          && lowFlux > .006 && targets[0] > Math.max(.06, averageBass * .85)) {
+        lastOnset = now; levels.onsetTime = now / 1000; levels.beatCount++;
+        kickTarget = Math.min(1, .48 + (flux - threshold) * 9);
+      }
+      const adapt = 1 - Math.exp(-seconds / 1.6);
+      fluxDeviation += (Math.abs(flux - averageFlux) - fluxDeviation) * adapt;
+      averageFlux += (flux - averageFlux) * adapt;
+      averageBass += (targets[0] - averageBass) * (1 - Math.exp(-seconds / 1.1));
+    }
+    // The detector uses source-relative changes, while visual amplitude still
+    // follows the audible volume, including existing native-video ducking.
+    const audibleGain = Math.min(1, Math.sqrt(audio.volume / .35));
+    levels.flux = Math.min(1, flux * 7) * audibleGain;
+    levels.energy = targets[0] * audibleGain;
+    if (now - lastOnset > 70) kickTarget *= Math.exp(-seconds / .24);
+    const nextKick = kickTarget * audibleGain;
+    levels.kick += (nextKick - levels.kick) * (1 - Math.exp(-seconds / (nextKick > levels.kick ? .035 : .22)));
+    const boost = Math.min(2.4, levels.kick * 2.1 + levels.flux * .45);
+    levels.boost += (boost - levels.boost) * (1 - Math.exp(-seconds / (boost > levels.boost ? .055 : .35)));
+    for (let band = 0; band < targets.length; band++) targets[band] *= audio.volume;
+  } else {
+    spectrumPrimed = false; audibleSince = 0; kickTarget = 0;
+    levels.energy = levels.flux = levels.kick = levels.boost = 0;
   }
   ['bass', 'mid', 'treble'].forEach((band, index) => {
     const easing = 1 - Math.exp(-seconds / (targets[index] > levels[band] ? 0.07 : 0.12));
@@ -101,6 +146,8 @@ function getLevels() {
   return {...levels};
 }
 window.PortfolioAudioAnalysis = Object.freeze({getLevels});
+audio.addEventListener('pause', () => getLevels());
+audio.addEventListener('volumechange', () => { if (audio.muted || audio.volume === 0) getLevels(); });
 // A resumed cross-page session can opt in on the visitor's next interaction.
 for (const event of ['pointerdown', 'keydown']) document.addEventListener(event, () => {
   if (wanted) enableAnalysis();
@@ -133,7 +180,7 @@ const creditTarget = document.querySelector('.detail-footer, .footer-bottom');
 if (creditTarget) {
   const credit = document.createElement('p');
   credit.className = 'music-credit';
-  credit.innerHTML = '<span>背景音乐</span><span data-no-translate>《永夜のパレード》 · JUMA / ケーキ姫☆優海</span>';
+  credit.innerHTML = '<span>背景音乐</span><a href="https://www.scottbuckley.com.au/library/resonance/" target="_blank" rel="noopener noreferrer" data-no-translate>Resonance · Scott Buckley</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>循环剪辑与响度调整</span>';
   creditTarget.append(credit);
 }
 const icon = path => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${path}</svg>`;
@@ -163,7 +210,7 @@ function draw() {
 function remember() {
   try {
     localStorage.setItem(preferenceKey, JSON.stringify({volume, muted}));
-    sessionStorage.setItem(sessionKey, JSON.stringify({playing: wanted, time: audio.currentTime || resumeTime, tabId}));
+    sessionStorage.setItem(sessionKey, JSON.stringify({playing: wanted, time: audio.currentTime || resumeTime, tabId, source}));
   } catch { /* Playback does not depend on storage. */ }
 }
 function claimAudio() {

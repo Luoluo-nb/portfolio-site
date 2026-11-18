@@ -27,6 +27,7 @@ uniform vec2 uViewSize;
 uniform vec2 uPointer;
 uniform float uTime;
 uniform vec3 uAudio;
+uniform vec2 uPulse; // kick envelope, immersive-home blend
 uniform float uLayers;
 
 const float TAU = 6.283185;
@@ -78,11 +79,29 @@ vec3 StarLayer(vec2 uv) {
       vec3 color = mix(vec3(luminance), originalColor, 0.22) * vec3(0.86, 0.93, 1.0);
       float twinkle = sin(uTime * 0.34 + n * TAU) * 0.22 + 0.78;
       // Only measured music bands affect this pulse; silence contributes zero.
-      float audioPulse = 1.0 + (uAudio.x * 0.08 + uAudio.z * 0.15) * (0.25 + size * 0.75);
+      float audioPulse = 1.0 + (uAudio.x * 0.08 + uAudio.z * 0.15 + uPulse.x * .10) * (0.25 + size * 0.75);
       col += star * size * color * twinkle * audioPulse;
     }
   }
   return col;
+}
+
+float rayNoise(vec2 p) {
+  vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(Hash21(i),Hash21(i+vec2(1.,0.)),f.x),mix(Hash21(i+vec2(0.,1.)),Hash21(i+vec2(1.)),f.x),f.y);
+}
+vec3 musicRays(vec2 uv) {
+  float strength=(uAudio.x*.06+uPulse.x*.20)*mix(.07,1.,uPulse.y);
+  if(strength<.0001)return vec3(0.);
+  vec2 ray=uv-vec2(-.48,.78);
+  float distance=length(ray),angle=atan(ray.x,-ray.y);
+  float cloud=rayNoise(vec2(angle*5.5+uTime*.016,distance*1.7-uTime*.025));
+  float strands=pow(max(0.,sin(angle*22.+cloud*2.4+uTime*.018)),7.);
+  strands+=pow(max(0.,sin(angle*11.-cloud*1.3-uTime*.012)),9.)*.34;
+  float falloff=exp(-distance*.85)*(1.-smoothstep(1.6,2.6,distance));
+  // Analytic shafts, no screen sampling or radial-blur passes. Rays stay in the
+  // dark background and become far quieter below the immersive first screen.
+  return vec3(.16,.28,.43)*strands*falloff*strength;
 }
 
 void main() {
@@ -104,6 +123,7 @@ void main() {
   }
   vec3 color = col * EXPOSURE;
   color = min(color / (1.0 + color * 1.7), vec3(0.42));
+  color += musicRays(uv);
   // Premultiplied output: do not attenuate the star light by alpha a second time.
   float alpha = max(max(color.r, color.g), color.b);
   gl_FragColor = vec4(color, alpha);
@@ -125,6 +145,11 @@ export class Starfield {
     this.frame = 0;
     this.lastDraw = 0;
     this.time = 0;
+    this.speedBoost = 0;
+    this.heroMix = 0;
+    this.heroTarget = 0;
+    this.sceneMeasuredAt = -1000;
+    this.audioLevels = null;
     this.resolutionScale = 1;
     this.frameTimes = [];
     this.listeners = [];
@@ -226,6 +251,7 @@ export class Starfield {
         pointer: gl.getUniformLocation(program, 'uPointer'),
         time: gl.getUniformLocation(program, 'uTime'),
         audio: gl.getUniformLocation(program, 'uAudio'),
+        pulse: gl.getUniformLocation(program, 'uPulse'),
         layers: gl.getUniformLocation(program, 'uLayers'),
       };
       this.maxSize = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), ...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
@@ -277,8 +303,9 @@ export class Starfield {
     gl.uniform2f(this.uniforms.pointer, this.pointer.x, this.pointer.y);
     gl.uniform1f(this.uniforms.time, this.time);
     const levels = !this.reducedMotion && this.pageActive && !document.hidden
-      ? window.PortfolioAudioAnalysis?.getLevels() : null;
+      ? this.audioLevels : null;
     gl.uniform3f(this.uniforms.audio, levels?.bass || 0, levels?.mid || 0, levels?.treble || 0);
+    gl.uniform2f(this.uniforms.pulse, levels?.kick || 0, this.heroMix);
     gl.uniform1f(this.uniforms.layers, this.layerCount);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -291,7 +318,22 @@ export class Starfield {
     if (elapsed >= 32) {
       this.lastDraw = now;
       const seconds = Math.min(elapsed, 100) / 1000;
-      this.time += seconds;
+      this.audioLevels = window.PortfolioAudioAnalysis?.getLevels() || null;
+      if (now - this.sceneMeasuredAt > 240) {
+        this.sceneMeasuredAt = now;
+        const hero = document.querySelector('#top');
+        const rect = hero && !hero.hidden ? hero.getBoundingClientRect() : null;
+        this.heroTarget = rect ? Math.max(0, Math.min(1, (rect.bottom - 100) / Math.max(innerHeight * .65, 1))) : 0;
+      }
+      this.heroMix += (this.heroTarget - this.heroMix) * (1 - Math.exp(-seconds / .35));
+      const targetBoost = this.audioLevels?.active ? (this.audioLevels.boost || 0) * (.35 + this.heroMix * .65) : 0;
+      this.speedBoost += (targetBoost - this.speedBoost) * (1 - Math.exp(-seconds / (targetBoost > this.speedBoost ? .075 : .42)));
+      // This clock belongs only to the background. Audio/video time is untouched.
+      this.time += seconds * (1 + Math.min(2.4, Math.max(0, this.speedBoost)));
+      this.canvas.dataset.visualTime = this.time.toFixed(3);
+      this.canvas.dataset.audioBoost = this.speedBoost.toFixed(3);
+      this.canvas.dataset.kick = (this.audioLevels?.kick || 0).toFixed(3);
+      this.canvas.dataset.heroMix = this.heroMix.toFixed(3);
       // Exponential easing is frame-rate independent; no input work on touch.
       const easing = 1 - Math.exp(-seconds * 4.5);
       this.pointer.x += (this.pointer.targetX - this.pointer.x) * easing;
@@ -321,6 +363,7 @@ export class Starfield {
 
   _sync() {
     this._stop();
+    if (!this.pageActive || document.hidden || this.reducedMotion) this.audioLevels = null;
     if (!this.ready || this.destroyed || !this.pageActive || document.hidden) return;
     this._draw();
     if (!this.paused && !this.reducedMotion) this.frame = requestAnimationFrame(this._tick);
