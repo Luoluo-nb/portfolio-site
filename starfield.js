@@ -14,7 +14,8 @@ void main() {
   gl_Position = vec4(aPosition, 0.0, 1.0);
 }`;
 
-const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .28});
+const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .12});
+const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
 
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -28,6 +29,8 @@ uniform vec2 uViewSize;
 // Smoothed pointer displacement in CSS pixels, bounded to a 10 px circle.
 uniform vec2 uPointer;
 uniform float uTime;
+uniform vec2 uRayOffset;
+uniform float uRayTime;
 uniform vec2 uPulse; // lagged snare, immersive-home blend
 uniform float uLayers;
 
@@ -91,19 +94,6 @@ float rayNoise(vec2 p) {
   vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
   return mix(mix(Hash21(i),Hash21(i+vec2(1.,0.)),f.x),mix(Hash21(i+vec2(0.,1.)),Hash21(i+vec2(1.)),f.x),f.y);
 }
-vec3 musicRays(vec2 uv) {
-  float strength=uPulse.x*.24*mix(.07,1.,uPulse.y);
-  if(strength<.0001)return vec3(0.);
-  vec2 ray=uv-vec2(-.48,.78);
-  float distance=length(ray),angle=atan(ray.x,-ray.y);
-  float cloud=rayNoise(vec2(angle*5.5+uTime*.016,distance*1.7-uTime*.025));
-  float strands=pow(max(0.,sin(angle*22.+cloud*2.4+uTime*.018)),7.);
-  strands+=pow(max(0.,sin(angle*11.-cloud*1.3-uTime*.012)),9.)*.34;
-  float falloff=exp(-distance*.85)*(1.-smoothstep(1.6,2.6,distance));
-  // Analytic shafts, no screen sampling or radial-blur passes. Rays stay in the
-  // dark background and become far quieter below the immersive first screen.
-  return vec3(.16,.28,.43)*strands*falloff*strength;
-}
 
 void main() {
   vec2 uv = (vUv - 0.5) * uResolution / max(uResolution.y, 1.0);
@@ -124,12 +114,51 @@ void main() {
   }
   vec3 color = col * EXPOSURE;
   color = min(color / (1.0 + color * 1.7), vec3(0.42));
-  color += musicRays(uv);
-  // Premultiplied output: do not attenuate the star light by alpha a second time.
-  float alpha = max(max(color.r, color.g), color.b);
-  gl_FragColor = vec4(color, alpha);
+  // RGB is the visible starfield; alpha is this scene's own light/occlusion
+  // buffer for the radial-scattering pass. It is not the final screen alpha.
+  vec2 lightVector=(vUv+uRayOffset-.5)*vec2(uResolution.x/uResolution.y,1.);
+  float emitter=exp(-dot(lightVector,lightVector)*24.)*.80;
+  float occlusion=smoothstep(.42,.62,rayNoise(vUv*18.+vec2(uRayTime*.03,0.)));
+  float source=clamp(dot(color,vec3(.2126,.7152,.0722))*5.+emitter*occlusion,0.,1.);
+  gl_FragColor = vec4(color, source);
 }
 `;
+
+// Adapted from the radial Godray code supplied by the user. Texture samples
+// come from our own offscreen scene, never from an embedded video.
+const RAY_FRAGMENT = `
+precision mediump float;
+varying mediump vec2 vUv;
+uniform sampler2D uScene;
+uniform vec2 uRayOffset;
+uniform float uSamples,uDensity;
+void main(){
+ vec2 tc=vUv;
+ vec2 delta=(vUv+uRayOffset-.5)*(uDensity/uSamples);
+ float color=texture2D(uScene,tc).a*.305104;
+ float illuminationDecay=1.;
+ for(int i=0;i<55;i++){
+  if(float(i)>=uSamples)break;
+  tc-=delta;
+  float sampleValue=texture2D(uScene,tc).a*.305104;
+  sampleValue*=illuminationDecay*.58767;
+  color+=sampleValue;
+  illuminationDecay*=.96815;
+ }
+ gl_FragColor=vec4(vec3(color*.21),1.);
+}`;
+const COMPOSITE_FRAGMENT = `
+precision mediump float;
+varying mediump vec2 vUv;
+uniform sampler2D uScene,uRays;
+uniform float uRayStrength;
+void main(){
+ vec3 color=texture2D(uScene,vUv).rgb;
+ color+=texture2D(uRays,vUv).rgb*vec3(.27,.48,.72)*uRayStrength;
+ color=min(color,vec3(.46));
+ float alpha=max(max(color.r,color.g),color.b);
+ gl_FragColor=vec4(color,alpha);
+}`;
 
 export class Starfield {
   constructor(canvas, { reducedMotion, onStatus = () => {} } = {}) {
@@ -181,6 +210,7 @@ export class Starfield {
       event.preventDefault();
       this.ready = false;
       this._stop();
+      this._releaseTargets();
       this.canvas.style.opacity = '0';
       this._status('lost');
     });
@@ -216,7 +246,8 @@ export class Starfield {
     });
     if (!gl) { this.canvas.style.opacity = '0'; this._status('unavailable'); return; }
     this.gl = gl;
-    let vertex, fragment, program, buffer;
+    let vertex, fragment, program, buffer, rayProgram, compositeProgram;
+    const extraShaders = [];
     try {
       const compile = (type, source) => {
         const shader = gl.createShader(type);
@@ -236,6 +267,7 @@ export class Starfield {
       if (!program) throw new Error('Unable to create starfield program.');
       gl.attachShader(program, vertex);
       gl.attachShader(program, fragment);
+      gl.bindAttribLocation(program, 0, 'aPosition');
       gl.linkProgram(program);
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || 'Starfield linking failed.');
       buffer = gl.createBuffer();
@@ -248,23 +280,40 @@ export class Starfield {
       gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
       this.program = program;
       this.buffer = buffer;
+      const makePass = source => {
+        const shader = compile(gl.FRAGMENT_SHADER, source); extraShaders.push(shader);
+        const pass = gl.createProgram(); gl.attachShader(pass, vertex); gl.attachShader(pass, shader);
+        gl.bindAttribLocation(pass, 0, 'aPosition'); gl.linkProgram(pass);
+        if (!gl.getProgramParameter(pass, gl.LINK_STATUS)) { const info = gl.getProgramInfoLog(pass); gl.deleteProgram(pass); throw new Error(info || 'Scattering pass failed.'); }
+        return pass;
+      };
+      this.rayProgram = rayProgram = makePass(RAY_FRAGMENT);
+      this.compositeProgram = compositeProgram = makePass(COMPOSITE_FRAGMENT);
       this.uniforms = {
         resolution: gl.getUniformLocation(program, 'uResolution'),
         viewSize: gl.getUniformLocation(program, 'uViewSize'),
         pointer: gl.getUniformLocation(program, 'uPointer'),
         time: gl.getUniformLocation(program, 'uTime'),
+        rayOffset: gl.getUniformLocation(program, 'uRayOffset'),
+        rayTime: gl.getUniformLocation(program, 'uRayTime'),
         pulse: gl.getUniformLocation(program, 'uPulse'),
         layers: gl.getUniformLocation(program, 'uLayers'),
       };
+      this.rayUniforms = Object.fromEntries(['Scene','RayOffset','Samples','Density'].map(n => [n,gl.getUniformLocation(rayProgram,'u'+n)]));
+      this.compositeUniforms = Object.fromEntries(['Scene','Rays','RayStrength'].map(n => [n,gl.getUniformLocation(compositeProgram,'u'+n)]));
       this.maxSize = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), ...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
       this.ready = true;
       this.canvas.style.opacity = this.originalOpacity;
       this._resize();
+      if (!this.ready) return;
       this._status('ready');
       this._sync();
     } catch (error) {
       if (buffer) gl.deleteBuffer(buffer);
       if (program) gl.deleteProgram(program);
+      if (rayProgram) gl.deleteProgram(rayProgram);
+      if (compositeProgram) gl.deleteProgram(compositeProgram);
+      this._releaseTargets();
       this.ready = false;
       this.canvas.style.opacity = '0';
       this._status('unavailable');
@@ -272,7 +321,26 @@ export class Starfield {
     } finally {
       if (vertex) gl.deleteShader(vertex);
       if (fragment) gl.deleteShader(fragment);
+      extraShaders.forEach(shader => gl.deleteShader(shader));
     }
+  }
+
+  _releaseTargets() {
+    for (const target of [this.sceneTarget,this.rayTarget]) if (target && this.gl && !this.gl.isContextLost()) {
+      this.gl.deleteTexture(target.texture); this.gl.deleteFramebuffer(target.framebuffer);
+    }
+    this.sceneTarget = this.rayTarget = null;
+  }
+
+  _makeTarget(width,height) {
+    const gl=this.gl,texture=gl.createTexture(),framebuffer=gl.createFramebuffer();
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE){gl.deleteTexture(texture);gl.deleteFramebuffer(framebuffer);throw new Error('Starfield target unavailable.');}
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null); return {texture,framebuffer,width,height};
   }
 
   _resize() {
@@ -282,6 +350,7 @@ export class Starfield {
     const area = Math.max(1, rect.width * rect.height);
     const compact = rect.width <= 600;
     this.layerCount = compact ? 4 : 8;
+    this.raySamples = compact ? RAY_QUALITY.mobileSamples : RAY_QUALITY.desktopSamples;
     const pixelBudget = compact ? 180000 : 520000;
     this.canvas.dataset.layers = String(this.layerCount);
     this.canvas.dataset.pixelBudget = String(pixelBudget);
@@ -292,23 +361,48 @@ export class Starfield {
       this.canvas.width = width;
       this.canvas.height = height;
     }
-    this.gl.viewport(0, 0, width, height);
+    const rayScale=Math.min(.5,Math.sqrt((compact?RAY_QUALITY.mobilePixels:RAY_QUALITY.desktopPixels)/(width*height)));
+    const rayWidth=Math.max(1,Math.floor(width*rayScale)),rayHeight=Math.max(1,Math.floor(height*rayScale));
+    if(!this.sceneTarget||this.sceneTarget.width!==width||this.sceneTarget.height!==height||this.rayTarget.width!==rayWidth||this.rayTarget.height!==rayHeight){
+      this._releaseTargets();
+      try{this.sceneTarget=this._makeTarget(width,height);this.rayTarget=this._makeTarget(rayWidth,rayHeight);}
+      catch(error){this._releaseTargets();this.ready=false;this._stop();this.canvas.style.opacity='0';this._status('unavailable');return;}
+    }
+    this.canvas.dataset.raySamples=String(this.raySamples); this.canvas.dataset.rayPixels=String(rayWidth*rayHeight);
     this._draw();
   }
 
   _draw() {
-    if (!this.ready || this.destroyed) return;
+    if (!this.ready || this.destroyed || !this.sceneTarget || !this.rayTarget) return;
     const gl = this.gl;
+    const levels = !this.reducedMotion && this.pageActive && !document.hidden ? this.audioLevels : null;
+    const lag=levels?.active?levels.snareLag||0:0;
+    const rayTime=this.baseTime*.16;
+    const rayOffset=[Math.sin(rayTime*.7)*.3,-Math.cos(rayTime*.2)*.3];
+    const rayStrength=lag*.24*(.06+this.heroMix*.94);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,this.sceneTarget.framebuffer);gl.viewport(0,0,this.sceneTarget.width,this.sceneTarget.height);
     gl.useProgram(this.program);
     gl.uniform2f(this.uniforms.resolution, this.canvas.width, this.canvas.height);
     gl.uniform2f(this.uniforms.viewSize, this.viewSize.width, this.viewSize.height);
     gl.uniform2f(this.uniforms.pointer, this.pointer.x, this.pointer.y);
     gl.uniform1f(this.uniforms.time, this.time);
-    const levels = !this.reducedMotion && this.pageActive && !document.hidden
-      ? this.audioLevels : null;
-    gl.uniform2f(this.uniforms.pulse, levels?.active ? levels.snareLag || 0 : 0, this.heroMix);
+    gl.uniform2f(this.uniforms.rayOffset,rayOffset[0],rayOffset[1]);gl.uniform1f(this.uniforms.rayTime,rayTime);
+    gl.uniform2f(this.uniforms.pulse, lag, this.heroMix);
     gl.uniform1f(this.uniforms.layers, this.layerCount);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if(rayStrength>.0001){
+      gl.bindFramebuffer(gl.FRAMEBUFFER,this.rayTarget.framebuffer);gl.viewport(0,0,this.rayTarget.width,this.rayTarget.height);gl.useProgram(this.rayProgram);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.sceneTarget.texture);gl.uniform1i(this.rayUniforms.Scene,0);
+      gl.uniform2f(this.rayUniforms.RayOffset,rayOffset[0],rayOffset[1]);gl.uniform1f(this.rayUniforms.Samples,this.raySamples);
+      gl.uniform1f(this.rayUniforms.Density,.926*(.95+lag*.1));gl.drawArrays(gl.TRIANGLES,0,3);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.useProgram(this.compositeProgram);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.sceneTarget.texture);gl.uniform1i(this.compositeUniforms.Scene,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.rayTarget.texture);gl.uniform1i(this.compositeUniforms.Rays,1);
+    gl.uniform1f(this.compositeUniforms.RayStrength,rayStrength);gl.drawArrays(gl.TRIANGLES,0,3);
+    this.canvas.dataset.rayStrength=rayStrength.toFixed(4);
+    this.canvas.dataset.rayPass=rayStrength>.0001?'radial-scatter':'idle';
   }
 
   _tick(now) {
@@ -318,7 +412,7 @@ export class Starfield {
     // A fixed background does not need to render at the display's refresh rate.
     if (elapsed >= 32) {
       this.lastDraw = now;
-      const seconds = Math.min(elapsed, 100) / 1000;
+      const seconds = Math.min(elapsed, 250) / 1000;
       this.audioLevels = window.PortfolioAudioAnalysis?.getLevels() || null;
       if (now - this.sceneMeasuredAt > 240) {
         this.sceneMeasuredAt = now;
@@ -395,6 +489,9 @@ export class Starfield {
       this.gl.clear(this.gl.COLOR_BUFFER_BIT);
       if (this.buffer) this.gl.deleteBuffer(this.buffer);
       if (this.program) this.gl.deleteProgram(this.program);
+      if (this.rayProgram) this.gl.deleteProgram(this.rayProgram);
+      if (this.compositeProgram) this.gl.deleteProgram(this.compositeProgram);
+      this._releaseTargets();
     }
     this.canvas.style.opacity = this.originalOpacity;
     this.ready = false;

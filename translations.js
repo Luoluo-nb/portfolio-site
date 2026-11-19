@@ -55,7 +55,7 @@ export const translations = {
   '去我的空间看看': 'Visit My Channel', 'Bilibili 空间': 'Bilibili Channel', '哔哩哔哩': 'Bilibili',
   '回到首页': 'Back to Home', '返回首页': 'Back to Home', '返回作品集': 'Back to Portfolio', '浏览更多作品': 'Browse More Works',
   '播放速度': 'Playback Speed', '1× 正常': '1× Normal', '播放作品': 'Play Project',
-  '关闭播放器': 'Close Player', '关闭': 'Close',
+  '关闭播放器': 'Close Player', '关闭': 'Close', '视频': 'Video',
   '关闭视频播放器后可播放音乐': 'Close the video player to play music',
   '关闭视频播放器后可播放音乐。': 'Close the video player to play music.',
   '打开视频': 'Open Video', '打开原视频': 'Open Original Video', '在 Bilibili 打开': 'Watch on Bilibili',

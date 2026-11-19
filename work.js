@@ -87,7 +87,7 @@ function play(startTime = project?.startTime ?? 0) {
       close.className = 'close-player';
       close.type = 'button';
       close.setAttribute('aria-label', '关闭播放器');
-      close.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 5 10 10M15 5 5 15"/></svg><span>关闭</span>';
+      close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-orbit" viewBox="0 0 40 40" focusable="false"><path d="M10 6.8A16.5 16.5 0 0 1 36.2 23M30 33.2A16.5 16.5 0 0 1 3.8 17"/></svg><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></span><span class="player-close-label">关闭</span>';
       close.addEventListener('click', () => { showPoster(); help(''); $('detail-player').querySelector('.poster-button').focus({preventScroll:true}); });
       $('detail-player').append(close);
       if (transferFocus) frame.focus({preventScroll:true});
@@ -230,7 +230,7 @@ if (project) {
   $('work-title').textContent = project.title;
   $('work-description').textContent = project.description || '';
   const seconds = Math.max(0, Math.round(project.duration || 0));
-  $('work-duration').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')} / 视频`;
+  $('work-duration').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.5V12l3.5 2"/></svg><span class="duration-value" data-no-translate>${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}</span><span class="duration-type">视频</span>`;
   document.title = `${project.title} · 张致远作品集`;
   $('work-source').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/${Number.isFinite(project.startTime) && project.startTime > 0 ? `?t=${project.startTime}` : ''}`;
   $('work-source').textContent = project.videoSrc ? '打开原视频 ↗' : '在 Bilibili 打开 ↗';

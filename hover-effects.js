@@ -1,6 +1,7 @@
 /* One WebGL atlas renders the selected controls and the hovered control.
    Activation cycles ring -> nebula -> flowing light; hover never advances it.
    The small 2D copies stay behind text and never intercept pointer input. */
+import './click-effects.js';
 const targets = '.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.action,.project-detail-link,.back-button,.detail-next-link,.video-chapters button';
 const selected = '.header nav a[aria-current="page"],.category-tabs button[aria-pressed="true"],.subcategory-row button[aria-pressed="true"],.language-switch button[aria-pressed="true"],.video-chapters button[aria-pressed="true"]';
 const fine = matchMedia('(hover:hover) and (pointer:fine)'), reduced = matchMedia('(prefers-reduced-motion:reduce)');
@@ -22,53 +23,45 @@ float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 float mist(vec2 p){return noise(p)*.57+noise(p*2.03+3.1)*.28+noise(p*4.07+7.9)*.15;}
 vec4 ring(vec2 p,vec2 ellipse){
- float r=length(ellipse),angle=atan(ellipse.y,ellipse.x);
- float grad=length(ellipse/uRadius)/max(r,.001);
- float d=(r-1.)/max(grad,.001);
- float rim=exp(-pow(d/.8,2.)),bloom=exp(-pow(d/2.8,2.));
- float arc=pow(.5+.5*cos(angle-uTime*.6),5.);
- float counter=pow(.5+.5*cos(angle+uTime*.35+2.4),9.);
- float light=rim*(.10+arc*.38+counter*.12)+bloom*(.025+arc*.035);
- float dust=pow(.5+.5*cos(angle*2.-uTime*.45+r*2.),4.);
- light+=dust*exp(-pow((r-1.15)*3.4,2.))*.025;
- float stars=0.;
- for(int i=0;i<8;i++){
-  float seed=float(i)+1.;
-  float phase=random(seed+9.)*6.283185+uTime*mix(.26,.48,random(seed+17.));
-  vec2 point=vec2(cos(phase),sin(phase))*uRadius*mix(1.10,1.38,random(seed));
-  float dist=length(p-point);
-  stars+=(exp(-dist*dist*1.5)+exp(-dist*dist*.14)*.10)*(.76+.24*sin(uTime*1.5+seed*2.6));
- }
- float alpha=light+stars*.64;
- vec3 tint=mix(vec3(.35,.69,1.),vec3(.88,.97,1.),clamp(stars+arc*.35,0.,1.));
- return vec4(tint,alpha);
+ // An eccentric open orbit has a deliberate gap, rather than a full oval rim.
+ vec2 q=(p-vec2(2.5,-1.5))/uRadius;
+ float r=length(q),a=atan(q.y,q.x),phase=uTime*.38;
+ float grad=length(q/uRadius)/max(r,.001),d=(r-1.)/max(grad,.001);
+ float open=smoothstep(-.34,.18,sin(a-phase));
+ float arc=pow(.5+.5*cos(a-phase-1.0),5.);
+ float light=(exp(-d*d/.65)*(.32+arc*.40)+exp(-d*d/6.)*.075)*open;
+ vec2 point=vec2(cos(phase+.38),sin(phase+.38))*uRadius+vec2(2.5,-1.5);
+ float star=exp(-dot(p-point,p-point)*1.2)+exp(-dot(p-point,p-point)*.12)*.15;
+ float inner=exp(-pow((r-.76)/.025,2.))*smoothstep(.1,.7,-sin(a-phase+.7))*.15;
+ return vec4(mix(vec3(.38,.72,1.),vec3(.94,.99,1.),clamp(arc+star,0.,1.)),light+inner+star*.78);
 }
 vec4 nebula(vec2 p,vec2 ellipse){
- // Open, broken cloud arms: no annular or elliptical envelope.
- float x=ellipse.x,y=ellipse.y;
- float cloud=mist(vec2(x*3.-uTime*.12,y*2.+uTime*.09));
- float curl=.65*sin(x*1.8+uTime*.23)+.12*sin(x*6.2-uTime*.32)-.2;
- float first=exp(-pow((y-curl+(cloud-.5)*.65)/.34,2.));
- float second=exp(-pow((y+.55*cos(x*1.6-uTime*.19)-.38+(cloud-.5)*.6)/.25,2.));
- float breaks=smoothstep(.24,.55,cloud);
- float envelope=1.-smoothstep(.65,1.5,abs(x));
- float alpha=(first*.25+second*.17)*(.18+breaks*.82)*envelope;
- vec3 tint=mix(vec3(.47,.41,.88),vec3(.53,.82,1.),clamp(cloud*.5+second*.5,0.,1.));
- return vec4(tint,alpha);
+ // A small spiral plus two asymmetric mist arms; there is no perimeter ring.
+ vec2 q=p/max(9.,uRadius.y),drift=vec2(sin(uTime*.22),cos(uTime*.18))*.08;
+ q+=drift;
+ float r=length(q),a=atan(q.y,q.x),cloud=mist(q*2.3+vec2(-uTime*.11,uTime*.08));
+ float spiral=pow(.5+.5*cos(a*2.0+r*6.4-uTime*.65+(cloud-.5)*2.),7.);
+ float envelope=exp(-r*r*.85)*smoothstep(.12,.45,r);
+ float wingY=ellipse.y-.48*sin(ellipse.x*2.4-uTime*.25);
+ float wing=exp(-wingY*wingY/0.08)*(1.-smoothstep(.35,1.4,abs(ellipse.x)))*smoothstep(.38,.68,cloud);
+ float alpha=spiral*envelope*.52+wing*.20;
+ // Keep the center of the glyphs calm and let the curl read around them.
+ alpha*=mix(.42,1.,smoothstep(.12,.68,abs(ellipse.y)));
+ return vec4(mix(vec3(.30,.54,.90),vec3(.63,.91,1.),spiral),alpha);
 }
 vec4 flowingLight(vec2 p,vec2 ellipse){
- float light=0.,tip=0.;
- for(int i=0;i<3;i++){
-  float line=float(i),x=ellipse.x;
-  float band=(line-1.)*8.;
-  float d=p.y+p.x*.29-band+sin(p.x*.055-uTime*.65+line*2.)*1.1;
-  float pulse=pow(.5+.5*cos(x*2.3-uTime*(.85+line*.14)+line*1.7),5.);
-  float avoidText=line==1.? .25:1.;
-  float envelope=(1.-smoothstep(.55,1.4,abs(x)))*avoidText;
-  light+=(exp(-d*d/1.1)*(.09+pulse*.35)+exp(-d*d/16.)*.065)*envelope;
-  tip+=pulse*envelope*.3;
+ float light=0.,stars=0.;
+ for(int i=0;i<2;i++){
+  float side=i==0?-1.:1.,x=ellipse.x;
+  float center=sin(uTime*.65+float(i)*2.4)*.67;
+  float y=side*uRadius.y*.83+sin(p.x*.035+uTime*.35)*.7;
+  float d=p.y-y;
+  float segment=exp(-pow((x-center)/.50,4.))*(1.-smoothstep(.75,1.28,abs(x)));
+  light+=(exp(-d*d/.48)*.56+exp(-d*d/8.)*.07)*segment;
+  vec2 star=p-vec2(center*uRadius.x,y);
+  stars+=(exp(-star.x*star.x/1.0-star.y*star.y/14.)+exp(-star.x*star.x/14.-star.y*star.y/1.0))*.29;
  }
- return vec4(mix(vec3(.34,.64,.98),vec3(.79,.96,1.),clamp(tip,0.,1.)),light);
+ return vec4(mix(vec3(.39,.75,1.),vec3(.94,.99,1.),clamp(stars*2.,0.,1.)),light+stars);
 }
 void main(){
  vec2 p=(vUv-uCenter)*uSize,ellipse=p/uRadius;
@@ -82,13 +75,15 @@ void main(){
 let gl,program,buffer,uniforms,ready=false,failed=false,lost=false,destroyed=false,suspended=false,blurred=false;
 let hover=null,focus=null,frame=0,refreshFrame=0,lastDraw=0,time=0,atlasHeight=1,activationTimer=0;
 const surfaces=new Map(),cleanups=[];
-const modeNames=['ring','nebula','flow'],modeStorageKey='portfolio-button-shader-v1',activated=new Map();
-let nextMode=0,rememberedModes={};
+const modeNames=['ring','nebula','flow'],modeStorageKey='portfolio-button-shader-v2',activated=new Map();
+// A fresh control already shows ring. Its first click must visibly advance it.
+let nextMode=1,rememberedModes={};
 try{
- const saved=JSON.parse(sessionStorage.getItem(modeStorageKey)||'null');
- if(saved&&Number.isInteger(saved.next)&&saved.next>=0&&saved.next<3)nextMode=saved.next;
+ const saved=JSON.parse(sessionStorage.getItem(modeStorageKey)||sessionStorage.getItem('portfolio-button-shader-v1')||'null');
  if(saved?.modes&&typeof saved.modes==='object'&&!Array.isArray(saved.modes))rememberedModes=saved.modes;
+ if(Object.keys(rememberedModes).length&&Number.isInteger(saved?.next)&&saved.next>=0&&saved.next<3)nextMode=saved.next;
 }catch{ /* Effects continue without session storage. */ }
+document.documentElement.dataset.interactionMode=modeNames[Object.keys(rememberedModes).length?(nextMode+2)%3:0];
 function modeKey(el){
  if(el.matches('.header nav a'))return 'nav:'+new URL(el.href,location.href).pathname;
  if(el.dataset.language)return 'language:'+el.dataset.language;
@@ -106,6 +101,7 @@ function modeOf(el){
 }
 function activate(el){
  const mode=nextMode;nextMode=(nextMode+1)%3;el.dataset.shaderMode=modeNames[mode];
+ document.documentElement.dataset.interactionMode=modeNames[mode];
  const key=modeKey(el);if(key)rememberedModes[key]=mode;
  // Only stable keys are stored, and old detail-page entries are bounded.
  const entries=Object.entries(rememberedModes);if(entries.length>80)rememberedModes=Object.fromEntries(entries.slice(-80));
@@ -162,7 +158,10 @@ function create(el){
 }
 function refresh(){
  refreshFrame=0;if(destroyed)return;
- for(const el of document.querySelectorAll(targets)){el.classList.add('fx-button');modeOf(el);}
+ for(const el of document.querySelectorAll(targets)){
+  el.classList.add('fx-button');modeOf(el);
+  const m=measure(el);if(m){el.style.setProperty('--fx-center-x',m.cx+'px');el.style.setProperty('--fx-center-y',m.cy+'px');el.style.setProperty('--fx-width',(m.rx*2+6)+'px');el.style.setProperty('--fx-height',(m.ry*2+6)+'px');}
+ }
  if(!allowed()){stop();clear();atlas.dataset.state=reduced.matches?'disabled-motion':'suspended';return;}
  const candidates=new Set(document.querySelectorAll(selected));
  for(const [el,until]of activated){if(!enabled(el)||until<=performance.now())activated.delete(el);else candidates.add(el);}

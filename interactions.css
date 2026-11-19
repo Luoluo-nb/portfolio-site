@@ -91,3 +91,21 @@
 @media(prefers-reduced-motion:reduce){.fx-button::after{animation:none!important}}
 
 .music-controls .music-button::before,.music-controls .music-button::after{display:none}
+
+/* One silhouette per mode; no shared oval glow is left behind the shader. */
+.fx-button[data-shader-active=true]::before{opacity:0!important}
+.fx-button:not([data-shader-active=true]):is([aria-current=page],[aria-pressed=true],:hover,:focus-visible)::after{
+  content:'';position:absolute;inset:auto;left:var(--fx-center-x,50%);top:var(--fx-center-y,50%);
+  width:var(--fx-width,70%);height:var(--fx-height,70%);transform:translate(-50%,-50%);
+  padding:0;border:0;border-radius:0;box-shadow:none;filter:none;pointer-events:none;z-index:-1;
+  -webkit-mask:none;mask:none;background-color:transparent;background-size:100% 100%;background-repeat:no-repeat;opacity:.75;
+}
+.fx-button[data-shader-mode=ring]:not([data-shader-active=true]):is([aria-current=page],[aria-pressed=true],:hover,:focus-visible)::after{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 48' fill='none'%3E%3Cpath d='M16 11C36-2 85 1 92 20C98 36 70 45 47 42' stroke='%239edfff' stroke-opacity='.65' stroke-width='1'/%3E%3Cpath d='M16 26C17 35 39 40 53 36' stroke='%235a99ce' stroke-opacity='.65' stroke-width='.8'/%3E%3Ccircle cx='16' cy='11' r='1.7' fill='%23e3f8ff'/%3E%3C/svg%3E");
+}
+.fx-button[data-shader-mode=nebula]:not([data-shader-active=true]):is([aria-current=page],[aria-pressed=true],:hover,:focus-visible)::after{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 48' fill='none'%3E%3Cpath d='M73 7C35-1 25 20 44 30C63 40 73 20 57 17C44 14 42 25 52 27M24 41C58 51 83 32 66 18C50 3 28 18 42 29' stroke='%2387c9f2' stroke-opacity='.45' stroke-width='2.3'/%3E%3Cpath d='M10 33C29 15 39 44 68 34L89 26' stroke='%23c3efff' stroke-opacity='.4' stroke-width='.8'/%3E%3C/svg%3E");
+}
+.fx-button[data-shader-mode=flow]:not([data-shader-active=true]):is([aria-current=page],[aria-pressed=true],:hover,:focus-visible)::after{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 48' fill='none'%3E%3Cpath d='M9 9H61M40 39H91' stroke='%2394dfff' stroke-opacity='.65' stroke-width='1'/%3E%3Cpath d='M25 4V14M20 9H30M74 34V44M69 39H79' stroke='%23edfcff' stroke-opacity='.8' stroke-width='1'/%3E%3C/svg%3E");
+}

@@ -145,7 +145,7 @@ function openPlayer(project, startTime = project.startTime ?? 0) {
     const close = element('button', 'close-player');
     close.type = 'button';
     close.setAttribute('aria-label', '关闭播放器');
-    close.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 5 10 10M15 5 5 15"/></svg><span>关闭</span>';
+    close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-orbit" viewBox="0 0 40 40" focusable="false"><path d="M10 6.8A16.5 16.5 0 0 1 36.2 23M30 33.2A16.5 16.5 0 0 1 3.8 17"/></svg><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></span><span class="player-close-label">关闭</span>';
     close.addEventListener('click', () => { replacePreview(createPoster(project)); $('playback-help').hidden = true; $('project-preview').querySelector('.poster-button').focus({preventScroll:true}); });
     $('project-preview').append(close);
     if (transferFocus) frame.focus({preventScroll:true});

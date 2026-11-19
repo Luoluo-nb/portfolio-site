@@ -46,7 +46,7 @@ let sampledAt = 0;
 const SNARE_ANALYSIS = Object.freeze({
   bodyHz: [180, 350], noiseHz: [1200, 6000], hatHz: [6000, 12000], kickHz: [35, 150],
   warmupSeconds: .28, refractorySeconds: .20, holdSeconds: .075,
-  bodyAttackSeconds: .08, attackSeconds: .05, releaseSeconds: .60, adaptiveSeconds: 1.8, speedGain: 2.0,
+  bodyAttackSeconds: .08, attackSeconds: .05, releaseSeconds: .60, adaptiveSeconds: 1.8, speedGain: 7.0,
 });
 const levels = {bass: 0, mid: 0, treble: 0, active: false,
   snare: 0, snareConfidence: 0, snareLag: 0, speed: 0, snareCount: 0, onsetTime: 0,
@@ -127,18 +127,20 @@ function getLevels() {
       bodyMean = .006; bodyDeviation = .003; noiseMean = .01; noiseDeviation = .005;
     } else {
       const bodyThreshold = Math.max(.005, bodyMean * .65 + bodyDeviation * .25);
-      const noiseThreshold = Math.max(.010, noiseMean * 1.6 + noiseDeviation * .9);
-      // Both drum-body attack and noisy mid/high attack must be present. A
-      // solitary sub-bass kick or top-heavy hat cannot satisfy this conjunction.
+      const noiseThreshold = Math.max(.006, noiseMean * 1.25 + noiseDeviation * .65);
+      // A noisy mid/high attack must coincide with drum-body energy. Sustained
+      // bass can mask its separate attack, so body presence is a soft qualifier.
+      // An isolated kick lacks the noisy attack; an isolated hat lacks the body.
       const balanced = bodyBand.energy > Math.max(.045, hatBand.energy * .18, noiseBand.energy * .12)
         && noiseBand.energy > Math.max(.05, hatBand.energy * .38)
-        && recentBodyAttack > noiseBand.flux * .06
         && noiseBand.flux > kickBand.flux * .06;
       // A short peak window tolerates the body/noise components landing in
       // adjacent FFT frames and a body partly masked by sustained bass.
-      if (balanced && recentBodyAttack > bodyThreshold && noiseBand.flux > noiseThreshold) {
-        const bodyStrength = Math.min(1, recentBodyAttack / Math.max(.014, bodyThreshold * 2));
-        const noiseStrength = Math.min(1, (noiseBand.flux / noiseThreshold - 1) / 2);
+      if (balanced && noiseBand.flux > noiseThreshold) {
+        const attack = Math.min(1, recentBodyAttack / Math.max(.014, bodyThreshold * 2));
+        const presence = Math.min(1, Math.max(0, (bodyBand.energy - .045) / .22));
+        const bodyStrength = Math.max(attack, presence * .72);
+        const noiseStrength = Math.min(1, (noiseBand.flux / noiseThreshold - 1) / 1.5);
         confidence = Math.sqrt(bodyStrength * noiseStrength);
       }
       if (now - audibleSince > SNARE_ANALYSIS.warmupSeconds * 1000
