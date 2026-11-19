@@ -1,6 +1,6 @@
 // Every short-lived particle drifts away from the current mouse independently.
 // Native cursor behavior is unchanged; this transparent canvas never takes hits.
-import { createCursorPrism } from './cursor-prism.js';
+import { createCursorPrism, CURSOR_REGION_COUNT } from './cursor-prism.js';
 import { createCursorFlock } from './cursor-flock.js';
 
 function mountCursorTrail() {
@@ -30,7 +30,7 @@ function mountCursorTrail() {
   let nextSpacing = spacing, motionSpeed = 0, fastMix = 0, particleLimit = BASE_PARTICLES;
   // Slow movement lays a closer chain; fast movement stretches new intervals.
   // The existing speed filter is shared, and stored points are never rearranged.
-  const regionSpacing = Array.from({ length: 7 }, () => ({ scale: .7 + Math.random() * .65, refreshed: performance.now() }));
+  const regionSpacing = Array.from({ length: CURSOR_REGION_COUNT }, () => ({ scale: .7 + Math.random() * .65, refreshed: performance.now() }));
   let spacingRegion = null;
   const regionRefreshMs = 200;
   const sampleSpacing = () => spacing * (.55 + fastMix * 1.05)
@@ -150,12 +150,14 @@ function mountCursorTrail() {
       const ripple = .5 + .5 * Math.sin(phase * 3 + .65 * Math.sin(phase * 2));
       const grain = .5 + .5 * Math.sin(phase * 11 + .45 * Math.sin(phase * 5));
       const light = .14 + .76 * crest + .10 * ripple * grain;
-      const violet = (.5 + .5 * Math.sin(phase + 2.1)) ** 8 * .15;
+      // A narrow blush crest complements the blue/white core without tinting
+      // the whole trail. Only the cached color changes; flow and alpha stay put.
+      const blush = (.5 + .5 * Math.sin(phase + .55)) ** 18 * .85;
       for (let y = 0; y < lineFlow.height; y++) {
         const i = (y * lineFlow.width + x) * 4;
-        image.data[i] = 92 + 139 * crest + 55 * violet;
-        image.data[i + 1] = 184 + 63 * crest - 65 * violet;
-        image.data[i + 2] = 255;
+        image.data[i] = (92 + 139 * crest) * (1 - blush) + 233 * blush;
+        image.data[i + 1] = (184 + 63 * crest) * (1 - blush) + 183 * blush;
+        image.data[i + 2] = 255 * (1 - blush) + 208 * blush;
         image.data[i + 3] = 255 * light;
       }
     }

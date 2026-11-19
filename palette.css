@@ -1,0 +1,77 @@
+/* Final colour composition: deep blue space, cold white typography, and small
+   blush accents. 6:3:1 describes emphasis, not a white background area quota. */
+body{background:var(--bg);color:var(--fg)}
+body::before{background:radial-gradient(.8px .8px at 12% 19%,#8bbcf238,transparent),radial-gradient(.8px .8px at 74% 31%,#f4f7ff32,transparent),radial-gradient(.7px .7px at 39% 65%,#e9b7d026,transparent),radial-gradient(.8px .8px at 87% 76%,#a5cafa34,transparent),radial-gradient(1px 1px at 65% 12%,#d6e4fb2c,transparent),radial-gradient(ellipse at 80% 8%,#17345b2b,transparent 64%),radial-gradient(ellipse at 12% 87%,#38233d19,transparent 62%);background-size:397px 443px,557px 541px,631px 727px,683px 499px,863px 769px,100% 100%,100% 100%}
+::selection{background:#3d5079;color:var(--fg)}
+.header{background:#080f24ec;border-bottom-color:rgb(var(--blue-rgb)/.12)}
+.header .brand-caption,.header>nav a{color:#d5e0f0}
+.header>nav a:hover,.header>nav a[aria-current=page]{color:var(--fg)}
+.header .language-switch button{color:var(--muted)}
+.header .language-switch button[aria-pressed=true]{color:var(--fg)}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):is([aria-current=page],[aria-pressed=true]){color:var(--fg);text-shadow:0 0 13px rgb(var(--pink-rgb)/.25)}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button):hover{color:var(--fg);background:radial-gradient(ellipse at center,rgb(var(--blue-rgb)/.04),transparent 72%)}
+:is(.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.video-chapters button)::before{background:radial-gradient(ellipse at center,rgb(var(--white-rgb)/.75),rgb(var(--pink-rgb)/.2) 36%,transparent 72%)}
+.action,.project-detail-link,.back-button{color:var(--fg);background:linear-gradient(115deg,#142b48b0,#0b172b9c);border-color:rgb(var(--blue-rgb)/.3)}
+.action:hover,.project-detail-link:hover,.back-button:hover{color:var(--fg);background:linear-gradient(115deg,#19324cbd,#191b3599);border-color:rgb(var(--pink-rgb)/.4);box-shadow:0 0 20px rgb(var(--blue-rgb)/.035)}
+.fx-button::before,.project-card::before{background:conic-gradient(from var(--edge-phase),transparent 0deg,transparent 195deg,#8bbcf218 245deg,#8bbcf2 285deg,#f4f7ff 307deg,#e9b7d080 324deg,transparent 350deg)}
+.fx-button:focus-visible,.back-button:focus-visible,.project-card:focus-visible{outline-color:var(--pink)}
+.category-tabs button,.subcategory-row button{color:#c3d1e5}
+.section-kicker,.eyebrow,.visual-label>span:first-child{color:var(--ice)}
+.signal{background:var(--fg);box-shadow:0 0 10px rgb(var(--blue-rgb)/.3)}
+h2>span{color:#d3deef}
+h2>i,.contact-inner h2 i{color:var(--pink)}
+.text-link,.project-credits,.about-role,.resume-role,.skill-item h4{color:var(--ice)}
+.text-link:hover,.project-credits a:hover{color:var(--pink)}
+.project-description,.muted,.resume-summary,.skill-item p,.selection-tip{color:var(--muted)}
+.works-section[data-view-panel]{background:linear-gradient(180deg,#101e385c,#080f243b)}
+.detail-breadcrumb{background:#080f24e8;border-bottom-color:rgb(var(--blue-rgb)/.12)}
+.detail-breadcrumb>span{color:var(--muted)}
+
+/* A white title remains the anchor; blush is confined to a slash and a moving
+   arc, with no new panel behind the immersive home view. */
+#top h1{color:var(--fg);background-image:linear-gradient(165deg,#fff 12%,#edf2fc 61%,#b5d1f3 100%);text-shadow:0 5px 38px rgb(var(--blue-rgb)/.075)}
+#top .hero-role{color:#c3d1e4}
+#top .hero-role>span{color:var(--pink)}
+#top .hero-atmosphere{background:radial-gradient(ellipse at 50% 50%,#719cdb08,transparent 53%),radial-gradient(ellipse at 74% 28%,#d59bc309,transparent 45%)}
+#top .hero-scroll{color:#d6e3f5}
+#top .hero-scroll-arc-inner{stroke:rgb(var(--pink-rgb)/.43)}
+#top .hero-scroll-star{fill:var(--fg);filter:drop-shadow(0 0 3px rgb(var(--pink-rgb)/.6))}
+#top .hero-scroll-flow{stroke:var(--fg)}
+#top .hero-scroll:is(:hover,:focus-visible) .hero-scroll-arc-inner{stroke:rgb(var(--pink-rgb)/.78)}
+#top .hero-scroll-label::after{background:linear-gradient(90deg,rgb(var(--blue-rgb)/.5),rgb(var(--pink-rgb)/.2),transparent)}
+.constellation-core{fill:var(--fg)}
+.transition-cassiopeia .constellation-links path{stroke:var(--pink)}
+.transition-cassiopeia .constellation-core{fill:#f3dce8}
+#home-project-grid .home-card-meta{color:var(--ice)}
+#home-project-grid .home-card-duration,#home-project-grid .home-card-detail{color:var(--muted)}
+#home-project-grid .card-copy strong{color:var(--fg)}
+#home-project-grid .project-card:is(:hover,:focus-visible) .card-arrow{color:var(--pink);filter:drop-shadow(0 0 8px rgb(var(--pink-rgb)/.24))}
+#project-grid .project-card[data-selected=true] .card-copy strong{color:var(--fg);text-shadow:0 0 12px rgb(var(--pink-rgb)/.18)}
+#project-grid .selection-nebula-layer-1{filter:hue-rotate(78deg) saturate(.66);opacity:.38}
+#project-grid .project-card:focus-visible{outline-color:var(--pink)}
+
+/* The music bar stays a fine line. Its small handle supplies one restrained
+   pink accent; native hit areas and the separate glyph renderer are unchanged. */
+.header .music-controls .music-button{color:var(--ice)}
+.header .music-controls .music-button:hover,.header .music-controls .music-button[aria-pressed=true]{color:var(--fg)}
+.music-controls input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(to right,#cfdef4c9 var(--music-volume),#8aa3c538 var(--music-volume))}
+.music-controls input[type=range]::-webkit-slider-thumb{border-color:#f5e5efc9;background:var(--pink);box-shadow:0 0 7px rgb(var(--pink-rgb)/.22)}
+.music-controls input[type=range]::-moz-range-progress{background:#cfdef4c9}
+.music-controls input[type=range]::-moz-range-thumb{border-color:#f5e5efc9;background:var(--pink);box-shadow:0 0 7px rgb(var(--pink-rgb)/.22)}
+.music-credit,.music-credit>span:first-child{color:var(--muted)}
+.music-credit a:hover{color:var(--fg)}
+.video-chapters.video-chapters>button{color:var(--muted)}
+.video-chapters.video-chapters>button[aria-pressed=true]{color:var(--fg)}
+.video-chapters.video-chapters>button[aria-pressed=true] .chapter-time{color:var(--pink)}
+.video-chapters.video-chapters>button[aria-pressed=true]::after{background:linear-gradient(90deg,transparent,#b9d3f6 18%,#e9b7d09c 70%,transparent)}
+
+.contact-method{color:var(--fg)}
+.contact-method-label,.contact-feedback{color:var(--muted)}
+.contact-method strong{color:var(--fg);background-image:radial-gradient(ellipse 2px 2px at 20% 50%,#fff 10%,#dbe7fc 45%,transparent 100%),radial-gradient(ellipse 3px 2px at 60% 38%,#fff 10%,#e9b7d0 50%,transparent 100%),linear-gradient(110deg,#ccd9ed 0%,#ccd9ed 28%,#f4f7ff 43%,#a8c9f3 49%,#f0d6e4 54%,#edf3ff 59%,#ccd9ed 72%)}
+.contact-method-arrow{color:var(--ice)}
+.contact-method:hover .contact-method-arrow,.contact-method.is-copied .contact-method-arrow{color:var(--pink)}
+.contact-method:is(:hover,:focus-visible,.is-copied) strong{filter:drop-shadow(0 0 9px rgb(var(--blue-rgb)/.18))}
+.contact-method:is(:hover,:focus-visible,.is-copied)::after{background:linear-gradient(90deg,transparent,#8bbcf245 25%,#e9b7d06b 45%,transparent 78%)}
+.contact-method:focus-visible{outline-color:rgb(var(--pink-rgb)/.55)}
+.footer-bottom,.detail-footer{color:var(--muted)}
+@media(forced-colors:active){.contact-method strong{background:none;color:ButtonText!important}#top h1{background:none;-webkit-text-fill-color:CanvasText}}

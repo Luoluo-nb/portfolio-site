@@ -2,6 +2,7 @@
    Activation cycles ring -> nebula -> flowing light; hover never advances it.
    The small 2D copies stay behind text and never intercept pointer input. */
 import './click-effects.js';
+import './ui-audio.js';
 const targets = '.header nav a,.category-tabs button,.subcategory-row button,.language-switch button,.action,.project-detail-link,.back-button,.detail-next-link,.video-chapters button';
 const selected = '.header nav a[aria-current="page"],.category-tabs button[aria-pressed="true"],.subcategory-row button[aria-pressed="true"],.language-switch button[aria-pressed="true"],.video-chapters button[aria-pressed="true"]';
 const fine = matchMedia('(hover:hover) and (pointer:fine)'), reduced = matchMedia('(prefers-reduced-motion:reduce)');
@@ -33,7 +34,9 @@ vec4 ring(vec2 p,vec2 ellipse){
  vec2 point=vec2(cos(phase+.38),sin(phase+.38))*uRadius+vec2(2.5,-1.5);
  float star=exp(-dot(p-point,p-point)*1.2)+exp(-dot(p-point,p-point)*.12)*.15;
  float inner=exp(-pow((r-.76)/.025,2.))*smoothstep(.1,.7,-sin(a-phase+.7))*.15;
- return vec4(mix(vec3(.38,.72,1.),vec3(.94,.99,1.),clamp(arc+star,0.,1.)),light+inner+star*.78);
+ vec3 tint=mix(vec3(.55,.74,.95),vec3(.96,.97,1.),clamp(arc+star,0.,1.));
+ tint=mix(tint,vec3(.91,.72,.82),pow(.5+.5*sin(a-phase+2.2),14.)*.54);
+ return vec4(tint,light+inner+star*.78);
 }
 vec4 nebula(vec2 p,vec2 ellipse){
  // A small spiral plus two asymmetric mist arms; there is no perimeter ring.
@@ -47,7 +50,9 @@ vec4 nebula(vec2 p,vec2 ellipse){
  float alpha=spiral*envelope*.52+wing*.20;
  // Keep the center of the glyphs calm and let the curl read around them.
  alpha*=mix(.42,1.,smoothstep(.12,.68,abs(ellipse.y)));
- return vec4(mix(vec3(.30,.54,.90),vec3(.63,.91,1.),spiral),alpha);
+ vec3 tint=mix(vec3(.40,.58,.86),vec3(.90,.94,1.),spiral);
+ tint=mix(tint,vec3(.91,.72,.82),smoothstep(.60,.83,cloud)*.52);
+ return vec4(tint,alpha);
 }
 vec4 flowingLight(vec2 p,vec2 ellipse){
  float light=0.,stars=0.;
@@ -61,7 +66,9 @@ vec4 flowingLight(vec2 p,vec2 ellipse){
   vec2 star=p-vec2(center*uRadius.x,y);
   stars+=(exp(-star.x*star.x/1.0-star.y*star.y/14.)+exp(-star.x*star.x/14.-star.y*star.y/1.0))*.29;
  }
- return vec4(mix(vec3(.39,.75,1.),vec3(.94,.99,1.),clamp(stars*2.,0.,1.)),light+stars);
+ vec3 tint=mix(vec3(.55,.74,.95),vec3(.96,.97,1.),clamp(stars*2.,0.,1.));
+ tint=mix(tint,vec3(.91,.72,.82),smoothstep(.48,.95,sin(ellipse.x*2.2-uTime*.65))*.38);
+ return vec4(tint,light+stars);
 }
 void main(){
  vec2 p=(vUv-uCenter)*uSize,ellipse=p/uRadius;

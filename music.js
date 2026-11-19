@@ -1,6 +1,6 @@
 import { mountMusicShader } from './music-shader.js';
 
-const source = './media/bgm-robot-loop.mp3';
+const source = './media/bgm-new-days-hope-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
 const ownerKey = 'portfolio-music-owner';
@@ -40,18 +40,22 @@ let previousSpectrum;
 let analysisPending;
 let analysisUnavailable = false;
 let sampledAt = 0;
-// Audio Analyze -> Select(snare-like onset) -> Lag -> Speed.
-// This is a spectral approximation, not instrument/source separation.
+// Spectral kick/snare onsets -> short attack/release -> integrated visual speed.
+// Positive flux rejects held tones; this is not instrument/source separation.
 const SNARE_ANALYSIS = Object.freeze({
   bodyHz: [180, 350], noiseHz: [1200, 6000], hatHz: [6000, 12000], kickHz: [35, 150],
-  warmupSeconds: .28, refractorySeconds: .20, holdSeconds: .075,
-  bodyAttackSeconds: .08, attackSeconds: .05, releaseSeconds: .60, adaptiveSeconds: 1.8, speedGain: 7.0,
+  warmupSeconds: .28, refractorySeconds: .20, kickRefractorySeconds: .22,
+  beatRefractorySeconds: .14, holdSeconds: .028,
+  bodyAttackSeconds: .08, attackSeconds: .012, releaseSeconds: .14, adaptiveSeconds: 1.8, speedGain: 12.0,
 });
 const levels = {bass: 0, mid: 0, treble: 0, active: false,
   snare: 0, snareConfidence: 0, snareLag: 0, speed: 0, snareCount: 0, onsetTime: 0,
-  snareBodyFlux: 0, snareNoiseFlux: 0};
+  snareBodyFlux: 0, snareNoiseFlux: 0, kick: 0, kickConfidence: 0, kickLag: 0, kickCount: 0,
+  kickFlux: 0, kickThreshold: 0, beat: 0, beatLag: 0, beatCount: 0, beatTime: 0, sampleId: 0};
 let spectrumPrimed = false, audibleSince = 0, lastOnset = -1000, heldSnare = 0;
 let bodyMean = .006, bodyDeviation = .003, noiseMean = .01, noiseDeviation = .005;
+let kickMean = .012, kickDeviation = .006, lastKick = -1000, heldKick = 0;
+let lastBeat = -1000, heldBeat = 0;
 let recentBodyAttack = 0;
 async function enableAnalysis() {
   if (analysisUnavailable || analysisPending || !wanted) return;
@@ -96,6 +100,7 @@ function getLevels() {
   if (now - sampledAt < 16 && active === levels.active) return {...levels};
   const seconds = Math.min(.12, Math.max(.001, (now - sampledAt) / 1000));
   sampledAt = now;
+  levels.sampleId++;
   const targets = [0, 0, 0];
   if (active) {
     analyser.getByteFrequencyData(frequencyData);
@@ -120,10 +125,11 @@ function getLevels() {
     for (const band of bands) { band.flux /= Math.max(1, band.count); band.energy = Math.sqrt(band.energy / Math.max(1, band.count)); }
     const [bodyBand, noiseBand, hatBand, kickBand] = bands;
     recentBodyAttack = Math.max(bodyBand.flux, recentBodyAttack * Math.exp(-seconds / SNARE_ANALYSIS.bodyAttackSeconds));
-    let confidence = 0;
+    let confidence = 0, kickConfidence = 0, accepted = 0;
     if (!spectrumPrimed) {
       spectrumPrimed = true; audibleSince = now;
       bodyMean = .006; bodyDeviation = .003; noiseMean = .01; noiseDeviation = .005;
+      kickMean = .012; kickDeviation = .006;
     } else {
       const bodyThreshold = Math.max(.005, bodyMean * .65 + bodyDeviation * .25);
       const noiseThreshold = Math.max(.006, noiseMean * 1.25 + noiseDeviation * .65);
@@ -145,30 +151,59 @@ function getLevels() {
       if (now - audibleSince > SNARE_ANALYSIS.warmupSeconds * 1000
           && now - lastOnset > SNARE_ANALYSIS.refractorySeconds * 1000 && confidence > .20) {
         lastOnset = now; levels.onsetTime = now / 1000; levels.snareCount++; heldSnare = confidence;
+        accepted = confidence;
+      }
+      // Low-band novelty needs both a fresh attack and sufficient body energy.
+      // Absolute and relative floors avoid retriggering a steady bass/sine tone.
+      const kickThreshold = Math.max(.012, kickMean * 1.6 + kickDeviation * .9, kickBand.energy * .035);
+      levels.kickThreshold = kickThreshold;
+      if (kickBand.energy > .08 && kickBand.flux > kickThreshold) {
+        kickConfidence = Math.min(1, (kickBand.flux / kickThreshold - 1) / 2)
+          * Math.min(1, kickBand.energy / .28);
+      }
+      if (now - audibleSince > SNARE_ANALYSIS.warmupSeconds * 1000
+          && now - lastKick > SNARE_ANALYSIS.kickRefractorySeconds * 1000 && kickConfidence > .20) {
+        lastKick = now; levels.kickCount++; heldKick = kickConfidence;
+        accepted = Math.max(accepted, kickConfidence);
+      }
+      // Components arriving in adjacent FFT frames belong to one audible hit.
+      if (accepted && now - lastBeat > SNARE_ANALYSIS.beatRefractorySeconds * 1000) {
+        lastBeat = now; levels.beatTime = now / 1000; levels.beatCount++;
+        heldBeat = .45 + .55 * accepted;
       }
       const adapt = 1 - Math.exp(-seconds / SNARE_ANALYSIS.adaptiveSeconds);
       bodyDeviation += (Math.abs(bodyBand.flux - bodyMean) - bodyDeviation) * adapt;
       noiseDeviation += (Math.abs(noiseBand.flux - noiseMean) - noiseDeviation) * adapt;
+      kickDeviation += (Math.abs(kickBand.flux - kickMean) - kickDeviation) * adapt;
       bodyMean += (bodyBand.flux - bodyMean) * adapt;
       noiseMean += (noiseBand.flux - noiseMean) * adapt;
+      kickMean += (kickBand.flux - kickMean) * adapt;
     }
     const audibleGain = Math.min(1, Math.sqrt(audio.volume / .35));
     levels.snareBodyFlux = bodyBand.flux; levels.snareNoiseFlux = noiseBand.flux;
     levels.snareConfidence = confidence;
-    // Select: hold the normalized snare onset briefly, then send zero to Lag.
+    levels.kickFlux = kickBand.flux; levels.kickConfidence = kickConfidence;
+    // Each impulse has a fast attack and a short decay; silence is never used
+    // as a clock reset and sustained FFT energy cannot hold the envelope high.
     levels.snare = now - lastOnset < SNARE_ANALYSIS.holdSeconds * 1000 ? heldSnare * audibleGain : 0;
-    const lagSeconds = levels.snare > levels.snareLag ? SNARE_ANALYSIS.attackSeconds : SNARE_ANALYSIS.releaseSeconds;
-    levels.snareLag += (levels.snare - levels.snareLag) * (1 - Math.exp(-seconds / lagSeconds));
-    if (levels.snareLag < .0001) levels.snareLag = 0;
-    // Speed: only the lagged snare drives this output; no raw FFT/bass bypass.
-    levels.speed = levels.snareLag * SNARE_ANALYSIS.speedGain;
+    levels.kick = now - lastKick < SNARE_ANALYSIS.holdSeconds * 1000 ? heldKick * audibleGain : 0;
+    levels.beat = now - lastBeat < SNARE_ANALYSIS.holdSeconds * 1000 ? heldBeat * audibleGain : 0;
+    for (const band of ['snare', 'kick', 'beat']) {
+      const lag = `${band}Lag`;
+      const lagSeconds = levels[band] > levels[lag] ? SNARE_ANALYSIS.attackSeconds : SNARE_ANALYSIS.releaseSeconds;
+      levels[lag] += (levels[band] - levels[lag]) * (1 - Math.exp(-seconds / lagSeconds));
+      if (levels[lag] < .0001) levels[lag] = 0;
+    }
+    levels.speed = levels.beatLag * SNARE_ANALYSIS.speedGain;
     for (let band = 0; band < targets.length; band++) targets[band] *= audio.volume;
   } else {
-    spectrumPrimed = false; audibleSince = 0; heldSnare = 0; recentBodyAttack = 0;
+    spectrumPrimed = false; audibleSince = 0; heldSnare = heldKick = heldBeat = 0; recentBodyAttack = 0;
     // Explicit user silence/backgrounding gates the chain. It does not integrate
     // a tail later on resume or reuse stale pre-pause FFT differences.
     levels.snare = levels.snareConfidence = levels.snareLag = levels.speed = 0;
     levels.snareBodyFlux = levels.snareNoiseFlux = 0;
+    levels.kick = levels.kickConfidence = levels.kickLag = levels.kickFlux = levels.kickThreshold = 0;
+    levels.beat = levels.beatLag = 0;
   }
   ['bass', 'mid', 'treble'].forEach((band, index) => {
     const easing = 1 - Math.exp(-seconds / (targets[index] > levels[band] ? 0.07 : 0.12));
@@ -178,7 +213,7 @@ function getLevels() {
   levels.active = active;
   return {...levels};
 }
-window.PortfolioAudioAnalysis = Object.freeze({getLevels, snareSettings:SNARE_ANALYSIS});
+window.PortfolioAudioAnalysis = Object.freeze({getLevels, snareSettings:SNARE_ANALYSIS, beatSettings:SNARE_ANALYSIS});
 audio.addEventListener('pause', () => getLevels());
 audio.addEventListener('volumechange', () => { if (audio.muted || audio.volume === 0) getLevels(); });
 // A resumed cross-page session can opt in on the visitor's next interaction.
@@ -213,7 +248,7 @@ const creditTarget = document.querySelector('.detail-footer, .footer-bottom');
 if (creditTarget) {
   const credit = document.createElement('p');
   credit.className = 'music-credit';
-  credit.innerHTML = '<span>背景音乐</span><a href="https://peritune.com/blog/2015/09/16/robot/" target="_blank" rel="noopener noreferrer" title="Robot — PeriTune" data-no-translate>Robot · PeriTune</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>格式转换与响度调整</span>';
+  credit.innerHTML = '<span>背景音乐</span><a href="https://soundcloud.com/keysofmoon/new-days-hope-upbeat-electronic-background-music-free-download" target="_blank" rel="noopener noreferrer" title="New Day’s Hope — Keys of Moon (Serjo De Lua)" data-no-translate>New Day’s Hope · Keys of Moon</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>循环剪辑与响度调整</span>';
   creditTarget.append(credit);
 }
 const icon = path => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${path}</svg>`;

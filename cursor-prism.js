@@ -1,9 +1,10 @@
 // Invisible Voronoi regions only divide pointer input into separate strokes.
 // This module never offsets points, clips the rendered trail, or draws a layer.
 const SEED_LAYOUT = Object.freeze([
-  [.23, .17], [.74, .20], [.12, .51], [.49, .47],
-  [.87, .55], [.29, .83], [.70, .85],
+  [.19, .19], [.72, .15], [.46, .48],
+  [.14, .84], [.81, .79],
 ].map(Object.freeze));
+export const CURSOR_REGION_COUNT = SEED_LAYOUT.length;
 const PARAM_EPSILON = 1e-10;
 
 export function createCursorPrism(canvas, context) {

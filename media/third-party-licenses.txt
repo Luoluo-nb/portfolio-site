@@ -55,20 +55,14 @@ SOFTWARE.
 
 Music attribution
 
-Robot — PeriTune / Sei Mutsuki
-Official loop version, originally published 2015-09-16.
-Track: https://peritune.com/blog/2015/09/16/robot/
-Official loop archive: https://peritune.com/loop/PerituneMaterial_Robot_loop.zip
-Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).
-License: https://creativecommons.org/licenses/by/4.0/
+New Day's Hope — Keys of Moon (Serjo De Lua)
+Official track: https://soundcloud.com/keysofmoon/new-days-hope-upbeat-electronic-background-music-free-download
+Official license-bearing track page: https://keysofmoon.bandcamp.com/track/new-days-hope-energy-upbeat-background
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
 
-The official track page explicitly licenses this work under CC BY 4.0.
-The official 2026-03-01 license transition notice confirms that tracks published
-through February 2026 remain under CC BY 4.0:
-https://peritune.com/blog/2026/03/01/terms-update/
-
-Website adaptation: original official OGG loop structure and sample count
-preserved without cuts or crossfades; constant gain adjustment to approximately
--20 LUFS and 128 kbps MP3 encoding with gapless metadata. No compression or limiter.
-This adapted audio is provided under CC BY 4.0, with attribution and the changes
-noted above. No endorsement by PeriTune is implied.
+Website adaptation: continuous 32.4–96.4s excerpt from the author's official free
+MP3, retained as a 64-second/32-bar loop. A 40ms circular smoothstep seam uses
+original pre/post-roll without shortening the loop. Constant gain -4.70dB,
+128kbps MP3 conversion, approximately -20.02 LUFS. No compression or limiter.
+The adapted audio remains available under CC BY 4.0. No endorsement implied.
