@@ -37,8 +37,9 @@ html[lang=en] .page-title{font-size:clamp(32px,4.5vw,60px);letter-spacing:-.04em
   .card-copy small,.home-project-grid .card-copy small{font-size:12px;margin-top:5px}
   .project-card .card-copy{padding:30px 12px 12px}
   .project-caption h3{font-size:23px}
-  .project-description,.detail-information p,.resume-summary,.skill-item p,.about-copy>.muted{font-size:15px}
-  .breakdown-heading>p:last-child,.breakdown-chapter-heading p,.breakdown-steps{font-size:15px}
+  .project-description,.detail-information p,.resume-summary,.skill-item p,.about-copy>.muted{font-size:1rem}
+  .breakdown-heading>p:last-child,.breakdown-chapter-heading p,.breakdown-steps{font-size:1rem}
+  .contact-method-label{font-size:14px}
   .detail-heading h1{font-size:28px;line-height:1.4;letter-spacing:0}
   .footer-bottom,.detail-footer{font-size:12px}
 }

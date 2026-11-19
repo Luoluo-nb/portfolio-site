@@ -30,14 +30,15 @@ audio.muted = muted;
 audio.hidden = true;
 document.body.append(audio);
 
-// Analyse only this soundtrack, after a user gesture. Playback remains a normal
-// media element when Web Audio is unavailable or cannot start.
+// Analyse only this soundtrack when playback is wanted and the page is active.
+// Native playback survives Web Audio permission/capability failures.
 let audioContext;
 let mediaSource;
 let analyser;
 let frequencyData;
 let previousSpectrum;
 let analysisPending;
+let analysisRequest = 0, activityGeneration = 0, playbackRequest = 0;
 let analysisUnavailable = false;
 let sampledAt = 0;
 // Spectral kick/snare onsets -> short attack/release -> integrated visual speed.
@@ -57,15 +58,31 @@ let bodyMean = .006, bodyDeviation = .003, noiseMean = .01, noiseDeviation = .00
 let kickMean = .012, kickDeviation = .006, lastKick = -1000, heldKick = 0;
 let lastBeat = -1000, heldBeat = 0;
 let recentBodyAttack = 0;
-async function enableAnalysis() {
-  if (analysisUnavailable || analysisPending || !wanted) return;
+const playbackAllowed = () => wanted && pageActive && !document.hidden;
+function suspendAnalysis() {
+  if (audioContext && audioContext.state !== 'closed') audioContext.suspend().catch(() => {});
+}
+function pausePlayback() {
+  playbackRequest++; activityGeneration++; analysisPending = 0;
+  audio.pause(); suspendAnalysis();
+}
+async function enableAnalysis(fromGesture = false) {
+  if (analysisUnavailable || (analysisPending && !fromGesture) || !playbackAllowed()) return;
   const Context = window.AudioContext || window.webkitAudioContext;
   if (!Context) { analysisUnavailable = true; return; }
-  analysisPending = true;
+  const request = ++analysisRequest, generation = activityGeneration;
+  analysisPending = request;
   try {
     if (!audioContext) audioContext = new Context({latencyHint: 'playback'});
     // Do not reroute audio into a context that has not successfully resumed.
-    if (audioContext.state !== 'running') await audioContext.resume();
+    // A denied/pending automatic resume can be retried on the next real gesture.
+    if (audioContext.state !== 'running') {
+      try { await audioContext.resume(); } catch { return; }
+    }
+    if (generation !== activityGeneration || !playbackAllowed()) {
+      if (!playbackAllowed()) suspendAnalysis();
+      return;
+    }
     if (audioContext.state !== 'running' || mediaSource) return;
     const nextAnalyser = audioContext.createAnalyser();
     nextAnalyser.fftSize = 2048;
@@ -87,9 +104,9 @@ async function enableAnalysis() {
       nextAnalyser.disconnect();
       analysisUnavailable = true;
     }
-  } catch {
-    analysisUnavailable = true;
-  } finally { analysisPending = false; }
+  } catch (error) {
+    analysisUnavailable = error.name !== 'NotAllowedError' && error.name !== 'AbortError';
+  } finally { if (analysisPending === request) analysisPending = 0; }
 }
 function getLevels() {
   const now = performance.now();
@@ -216,10 +233,10 @@ function getLevels() {
 window.PortfolioAudioAnalysis = Object.freeze({getLevels, snareSettings:SNARE_ANALYSIS, beatSettings:SNARE_ANALYSIS});
 audio.addEventListener('pause', () => getLevels());
 audio.addEventListener('volumechange', () => { if (audio.muted || audio.volume === 0) getLevels(); });
-// A resumed cross-page session can opt in on the visitor's next interaction.
+// Keep a gesture retry available if an automatic cross-page resume was denied.
 for (const event of ['pointerdown', 'keydown']) document.addEventListener(event, () => {
-  if (wanted) enableAnalysis();
-}, {once: true, passive: true});
+  if (wanted && (!mediaSource || audioContext?.state !== 'running')) enableAnalysis(true);
+}, {passive: true});
 const header = document.querySelector('.header');
 let tools = header.querySelector('.header-tools');
 if (!tools) {
@@ -285,27 +302,31 @@ function claimAudio() {
   try { localStorage.setItem(ownerKey, tabId); } catch {}
 }
 async function start() {
-  if (!wanted || document.hidden || !pageActive) return draw();
+  if (!playbackAllowed()) return draw();
+  const request = ++playbackRequest;
   unavailable = false;
   try {
-    if (mediaSource && audioContext.state !== 'running' && audioContext.state !== 'closed') {
-      // Browsers may suspend an existing graph while a page is in the background.
-      audioContext.resume().catch(() => {});
-    }
+    if (mediaSource) enableAnalysis();
     await audio.play();
-    if (!wanted || document.hidden || !pageActive) audio.pause();
-    else claimAudio();
+    if (request !== playbackRequest) {
+      if (!playbackAllowed()) audio.pause();
+      return;
+    }
+    if (!playbackAllowed()) pausePlayback();
+    else { claimAudio(); enableAnalysis(); }
   } catch (error) {
+    if (request !== playbackRequest) return;
     if (error.name === 'NotAllowedError') wanted = false;
     else if (error.name !== 'AbortError') { unavailable = true; wanted = false; }
+    if (!wanted) pausePlayback();
   }
   remember();
   draw();
 }
 toggle.addEventListener('click', () => {
   wanted = !wanted;
-  if (wanted) { enableAnalysis(); start(); }
-  else audio.pause();
+  if (wanted) { enableAnalysis(true); start(); }
+  else pausePlayback();
   remember();
   draw();
 });
@@ -347,7 +368,7 @@ audio.addEventListener('loadedmetadata', () => {
 });
 audio.addEventListener('play', draw);
 audio.addEventListener('pause', draw);
-audio.addEventListener('error', () => { unavailable = true; wanted = false; remember(); draw(); });
+audio.addEventListener('error', () => { unavailable = true; wanted = false; pausePlayback(); remember(); draw(); });
 let savedAt = 0;
 audio.addEventListener('timeupdate', () => {
   if (performance.now() - savedAt > 1500) { remember(); savedAt = performance.now(); }
@@ -359,15 +380,15 @@ new MutationObserver(records => {
   if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1 && (node.matches('video') || node.querySelector('video'))))) syncMedia();
 }).observe(document.querySelector('main'), {childList: true, subtree: true});
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { remember(); audio.pause(); }
+  if (document.hidden) { remember(); pausePlayback(); }
   else if (wanted) start();
 });
-window.addEventListener('pagehide', () => { pageActive = false; remember(); audio.pause(); });
+window.addEventListener('pagehide', () => { pageActive = false; remember(); pausePlayback(); });
 window.addEventListener('pageshow', event => { pageActive = true; if (event.persisted && wanted) start(); });
 window.addEventListener('storage', event => {
   if (event.key === ownerKey && event.newValue !== tabId && wanted) {
     wanted = false;
-    audio.pause();
+    pausePlayback();
     remember();
     draw();
   }

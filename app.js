@@ -324,7 +324,7 @@ function renderProjects() {
       $('project-grid').append(tile);
     }
     showEmpty();
-  } else if (!visible.includes(selected)) selectProject(visible.find(project => project.id === savedProjectId) || visible[0]);
+  } else if (!visible.includes(selected)) selectProject(visible.find(project => project.id === savedProjectId) || visible.find(project => project.id === 'ptcg-card') || visible[0]);
   saveSelection();
   document.querySelector('.header nav [data-view="works"]').href = `./portfolio.html${worksRoute()}`;
 }
@@ -351,7 +351,7 @@ function showRoute({focus = false} = {}) {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const fileView = { 'portfolio.html':'works', 'about.html':'about', 'contact.html':'contact' }[location.pathname.split('/').pop()];
   const nextView = fileView || (['works','about','contact'].includes(parts[0]) ? parts[0] : 'top');
-  const homeProjects = nextView === 'top' && parts[0] === 'home-projects';
+  const homeProjects = nextView === 'top' && ['home-projects', 'home-projects-title'].includes(parts[0]);
   const changedView = activeView !== nextView;
   // Hidden views must not keep playing audio. Keep local progress and selection.
   if (activeView === 'works' && nextView !== 'works') {
@@ -379,7 +379,12 @@ function showRoute({focus = false} = {}) {
   document.body.dataset.view = activeView;
   const labels = {top:'首页',works:'作品',about:'关于',contact:'联系'};
   document.title = `${labels[activeView]} · 张致远 — 美术 / 技术美术`;
-  if (homeProjects) $('home-projects').scrollIntoView({block:'start',behavior:focus && !reducedMotion.matches ? 'smooth' : 'instant'});
+  if (homeProjects) {
+    // The section starts with transition art; explicit navigation lands on its title.
+    const headerHeight = document.querySelector('.header').getBoundingClientRect().height;
+    const top = window.scrollY + $('home-projects-title').getBoundingClientRect().top - headerHeight - 24;
+    window.scrollTo({top:Math.max(0,top),left:0,behavior:focus && !reducedMotion.matches ? 'smooth' : 'instant'});
+  }
   else if (changedView || focus || activeView === 'top') window.scrollTo({top:0,left:0,behavior:'instant'});
   if (focus) {
     const heading = homeProjects ? $('home-projects-title') : $(activeView).querySelector('h1,h2');
@@ -392,7 +397,7 @@ document.addEventListener('click', event => {
   const link = event.target.closest('a[href^="#"]');
   if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   let route = link.getAttribute('href');
-  if (!/^#(top|home-projects|works(?:\/(unity|unreal|td)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
+  if (!/^#(top|home-projects(?:-title)?|works(?:\/(unity|unreal|td)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
   event.preventDefault();
   if (link.dataset.view === 'works') route = worksRoute();
   if (location.hash !== route) history.pushState(null, '', route);
