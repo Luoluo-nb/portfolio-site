@@ -55,13 +55,17 @@ SOFTWARE.
 
 Music attribution
 
-Resonance — Scott Buckley
-No End Melody alternative mix
-Track: https://www.scottbuckley.com.au/library/resonance/
-Source: https://www.scottbuckley.com.au/library/wp-content/uploads/2018/04/sb_resonance_altmix.mp3
+Neon — Scott Buckley
+No Melody alternative mix
+Track: https://www.scottbuckley.com.au/library/neon/
+Source: https://www.scottbuckley.com.au/library/wp-content/uploads/2019/09/sb_neon_nomelody.mp3
 Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)
 License: https://creativecommons.org/licenses/by/4.0/
 
-Website adaptation: trimmed long silence, 8-second equal-power loop crossfade,
-rotated loop start, fixed loudness adjustment, and MP3 encoding.
+Attribution: 'Neon' by Scott Buckley - released under CC-BY 4.0.
+www.scottbuckley.com.au
+
+Website adaptation: selected source interval 44–228.27 seconds, 8-second
+equal-power loop crossfade, rotated loop start, constant gain adjustment
+to approximately -20 LUFS, and 128 kbps MP3 encoding. No compression or limiter.
 No endorsement by the artist is implied.

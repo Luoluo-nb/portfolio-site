@@ -1,5 +1,13 @@
 // Chinese is the source language. Keep technical product names unchanged.
 export const translations = {
+  'UE 特效练习': 'UE VFX Study',
+  'Unreal Engine · 实时特效练习。': 'Unreal Engine · Real-time VFX study.',
+  '粒子上色与手势交互': 'Particle Shading & Gesture Interaction',
+  '为模型生成的粒子实例添加颜色与光照着色，结合手势输入进行交互。': 'Color and lighting shading for particle instances generated from a model, combined with gesture interaction.',
+  '模型基于马南的 bioxelnode 案例。': 'Model based on Ma Nan’s bioxelnode example.',
+  '为模型生成的粒子实例添加颜色与光照着色，结合手势输入进行交互。 模型基于马南的 bioxelnode 案例。': 'Color and lighting shading for particle instances generated from a model, combined with gesture interaction. Model based on Ma Nan’s bioxelnode example.',
+  'TD 与 UE 交互画笔': 'TD & UE Interactive Brush',
+  'TD 与 Unreal Engine 5.7 联动的交互画笔展示。': 'An interactive brush demonstration linking TD and Unreal Engine 5.7.',
   '下一个作品': 'Next Project',
   '作品导航': 'Project Navigation',
   '向下浏览作品': 'Explore Projects',
@@ -78,6 +86,7 @@ export const translations = {
   '显示全部 Unreal Engine 作品': 'Showing all Unreal Engine works',
   '背景音乐': 'Background Music', '背景音乐控制': 'Background music controls', '音乐控制': 'Music controls',
   '循环剪辑与响度调整': 'Loop edit and loudness adjustment',
+  '纯伴奏版 · 循环剪辑与响度调整': 'No Melody mix · Loop edit and loudness adjustment',
   '音乐': 'Music', '音源说明': 'Music credits', '静音背景音乐': 'Mute background music', '取消背景音乐静音': 'Unmute background music',
   '音乐暂时无法加载，请稍后重试。': 'Music could not be loaded. Please try again later.',
   '观看 Bilibili 视频时暂停背景音乐。': 'Background music is paused while the Bilibili video is open.',
@@ -331,5 +340,8 @@ Object.assign(translations, {
   '微信号': 'WeChat ID',
   '复制微信号': 'Copy WeChat ID',
   '微信号已复制': 'WeChat ID copied',
+  '复制邮箱': 'Copy email address', '复制电话号码': 'Copy phone number',
+  '个人空间': 'Profile', '已复制': 'Copied',
+  '无法自动复制，请复制已选中的内容。': 'Automatic copying is unavailable. Copy the selected text.',
   '无法自动复制，请复制已选中的微信号。': 'Automatic copying is unavailable. Copy the selected WeChat ID.',
 });

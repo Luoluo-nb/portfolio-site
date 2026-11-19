@@ -1,6 +1,6 @@
 import { mountMusicShader } from './music-shader.js';
 
-const source = './media/bgm-resonance-loop.mp3';
+const source = './media/bgm-neon-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
 const ownerKey = 'portfolio-music-owner';
@@ -8,7 +8,6 @@ let volume = 0.35;
 let muted = false;
 let wanted = false;
 let resumeTime = 0;
-let blocked = false;
 let unavailable = false;
 let pageActive = true;
 let tabId = `music-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -91,7 +90,7 @@ async function enableAnalysis() {
 function getLevels() {
   const now = performance.now();
   const active = Boolean(analyser && audioContext?.state === 'running' && wanted && !audio.paused
-    && !audio.muted && audio.volume > 0 && !blocked && pageActive && !document.hidden);
+    && !audio.muted && audio.volume > 0 && pageActive && !document.hidden);
   // Multiple visual consumers share one sample, rather than flattening flux by
   // repeatedly comparing the same FFT frame within a browser frame.
   if (now - sampledAt < 16 && active === levels.active) return {...levels};
@@ -214,7 +213,7 @@ const creditTarget = document.querySelector('.detail-footer, .footer-bottom');
 if (creditTarget) {
   const credit = document.createElement('p');
   credit.className = 'music-credit';
-  credit.innerHTML = '<span>背景音乐</span><a href="https://www.scottbuckley.com.au/library/resonance/" target="_blank" rel="noopener noreferrer" data-no-translate>Resonance · Scott Buckley</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>循环剪辑与响度调整</span>';
+  credit.innerHTML = '<span>背景音乐</span><a href="https://www.scottbuckley.com.au/library/neon/" target="_blank" rel="noopener noreferrer" data-no-translate>Neon · Scott Buckley</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>循环剪辑与响度调整</span>';
   creditTarget.append(credit);
 }
 const icon = path => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${path}</svg>`;
@@ -225,12 +224,12 @@ const silentIcon = icon('<path d="M4.5 9h3l4.5-3.5v13L7.5 15h-3Z"/><path d="m16 
 function draw() {
   const playing = wanted && !audio.paused;
   panel.dataset.playing = String(playing);
-  panel.dataset.blocked = String(blocked);
-  toggle.innerHTML = wanted && !blocked ? pauseIcon : playIcon;
-  toggle.disabled = blocked;
+  panel.dataset.blocked = 'false';
+  toggle.innerHTML = wanted ? pauseIcon : playIcon;
+  toggle.disabled = false;
   const action = wanted ? '暂停背景音乐' : '播放背景音乐';
   toggle.setAttribute('aria-label', action);
-  toggle.title = blocked ? '关闭视频播放器后可播放音乐' : action;
+  toggle.title = action;
   toggle.setAttribute('aria-pressed', String(wanted));
   mute.innerHTML = muted || volume === 0 ? silentIcon : soundIcon;
   mute.setAttribute('aria-pressed', String(muted));
@@ -238,7 +237,7 @@ function draw() {
   mute.setAttribute('aria-label', muteAction);
   mute.title = muteAction;
   slider.style.setProperty('--music-volume', `${Math.round(volume * 100)}%`);
-  status.textContent = unavailable ? '音乐暂时无法加载，请稍后重试。' : blocked && wanted ? '观看 Bilibili 视频时暂停背景音乐。' : playing ? '背景音乐正在播放' : '背景音乐已暂停';
+  status.textContent = unavailable ? '音乐暂时无法加载，请稍后重试。' : playing ? '背景音乐正在播放' : '背景音乐已暂停';
   musicShader?.refresh();
 }
 function remember() {
@@ -251,7 +250,7 @@ function claimAudio() {
   try { localStorage.setItem(ownerKey, tabId); } catch {}
 }
 async function start() {
-  if (!wanted || blocked || document.hidden || !pageActive) return draw();
+  if (!wanted || document.hidden || !pageActive) return draw();
   unavailable = false;
   try {
     if (mediaSource && audioContext.state !== 'running' && audioContext.state !== 'closed') {
@@ -259,7 +258,7 @@ async function start() {
       audioContext.resume().catch(() => {});
     }
     await audio.play();
-    if (!wanted || blocked || document.hidden || !pageActive) audio.pause();
+    if (!wanted || document.hidden || !pageActive) audio.pause();
     else claimAudio();
   } catch (error) {
     if (error.name === 'NotAllowedError') wanted = false;
@@ -294,12 +293,10 @@ function adjustVolume(target) {
   volumeAnimation = requestAnimationFrame(frame);
 }
 function syncMedia() {
-  const wasBlocked = blocked;
-  blocked = Boolean(document.querySelector('iframe[src^="https://player.bilibili.com/"]'));
+  // Embedded Bilibili playback never changes the visitor's BGM selection.
+  // Only audible native videos retain their existing volume ducking behavior.
   const nativeVideoPlaying = [...document.querySelectorAll('video')].some(video => !video.paused && !video.ended && !video.muted && video.volume > 0);
   adjustVolume(volume * (nativeVideoPlaying ? 0.18 : 1));
-  if (blocked) audio.pause();
-  else if (wasBlocked && wanted) start();
   draw();
 }
 slider.addEventListener('input', () => {
@@ -324,7 +321,7 @@ for (const event of ['play', 'pause', 'ended', 'volumechange']) {
   document.addEventListener(event, e => { if (e.target.tagName === 'VIDEO') syncMedia(); }, true);
 }
 new MutationObserver(records => {
-  if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1 && (node.matches('iframe,video') || node.querySelector('iframe,video'))))) syncMedia();
+  if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1 && (node.matches('video') || node.querySelector('video'))))) syncMedia();
 }).observe(document.querySelector('main'), {childList: true, subtree: true});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { remember(); audio.pause(); }
@@ -342,9 +339,9 @@ window.addEventListener('storage', event => {
 });
 musicShader = mountMusicShader(panel, () => ({
   playing: wanted && !audio.paused,
-  pauseIcon: wanted && !blocked,
+  pauseIcon: wanted,
   muted: muted || volume === 0,
-  blocked,
+  blocked: false,
 }), getLevels);
 draw();
 if (wanted) start();

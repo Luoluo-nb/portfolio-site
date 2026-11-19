@@ -70,7 +70,7 @@ function applyText(node) {
     const fragments = {
       'works-title': { '作品': 'Port', '集': 'folio' },
       'about-title': { '关于': 'About', '我': ' Me' },
-      'contact-title': { '保持': 'Get in ', '联系': 'Touch' },
+      'contact-title': { '联系': 'Contact' },
     };
     const fragment = fragments[heading?.id]?.[record.source.trim()];
     if (fragment !== undefined) rendered = fragment;

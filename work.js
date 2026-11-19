@@ -213,7 +213,7 @@ function renderBreakdown(detail) {
 }
 
 if (project) {
-  const platform = {unity:'Unity',unreal:'Unreal Engine'}[project.category] || '作品合集';
+  const platform = {unity:'Unity',unreal:'Unreal Engine',td:'TD'}[project.category] || '作品合集';
   const categoryRoute = project.category ? `/${project.category}` : '';
   const subcategoryRoute = project.subcategory === 'vehicle' ? '/vehicle' : '';
   const returnUrl = `./portfolio.html#works${categoryRoute}${subcategoryRoute}`;

@@ -13,7 +13,7 @@ let savedProjectId = null;
 try {
   const saved = JSON.parse(sessionStorage.getItem('portfolio-selection') || 'null');
   if (saved) {
-    activeCategory = ['unity','unreal'].includes(saved.category) ? saved.category : 'all';
+    activeCategory = ['unity','unreal','td'].includes(saved.category) ? saved.category : 'all';
     activeSubcategory = activeCategory === 'unreal' && saved.subcategory === 'vehicle' ? 'vehicle' : 'all';
     savedProjectId = saved.projectId;
   }
@@ -21,7 +21,7 @@ try {
 function saveSelection() {
   try { sessionStorage.setItem('portfolio-selection', JSON.stringify({category:activeCategory,subcategory:activeSubcategory,projectId:selected?.id})); } catch {}
 }
-const categoryName = (category) => ({unity:'UNITY',unreal:'UNREAL ENGINE'}[category] || '作品合集');
+const categoryName = (category) => ({unity:'UNITY',unreal:'UNREAL ENGINE',td:'TD'}[category] || '作品合集');
 const announce = (message) => { $('announcement').textContent = message; };
 
 let starfield;
@@ -200,7 +200,7 @@ function showEmpty() {
   state.append(element('div','empty-symbol','＋'),element('span','empty-kicker','新的作品'),element('h3','','作品待补充'),element('p','','此分类暂无作品。'));
   replacePreview(state);
   $('project-title').textContent = '等待下一次灵感登场';
-  $('project-platform').textContent = activeCategory === 'all' ? 'UNITY / UNREAL ENGINE' : categoryName(activeCategory);
+  $('project-platform').textContent = activeCategory === 'all' ? 'UNITY / UNREAL ENGINE / TD' : categoryName(activeCategory);
   $('project-description').textContent = '此分类的作品将在这里更新。';
   $('project-credits').replaceChildren();
   $('project-credits').hidden = true;
@@ -234,7 +234,13 @@ function renderProjects() {
     const minutes = Math.floor(duration / 60);
     const seconds = String(duration % 60).padStart(2,'0');
     label.append(element('strong','',project.title), element('small','',`${categoryName(project.category)} / ${minutes}:${seconds}`));
-    button.append(img,label);
+    const media = element('span', 'selection-card-media');
+    media.append(img);
+    const frame = element('span', 'selection-card-frame');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.setProperty('--frame-delay', `${-visible.indexOf(project) * 1.3}s`);
+    frame.innerHTML = '<svg viewBox="0 0 320 212" preserveAspectRatio="none" fill="none"><path class="selection-frame-corners" d="M1 39V13L13 1H64M258 1h49l12 12v26M319 173v26l-12 12h-49M64 211H13L1 199v-26"/><path class="selection-frame-flow" pathLength="100" d="M13 1H307L319 13V199L307 211H13L1 199V13Z"/><path class="selection-frame-glow" pathLength="100" d="M13 1H307L319 13V199L307 211H13L1 199V13Z"/><path class="selection-frame-star" pathLength="100" d="M13 1H307L319 13V199L307 211H13L1 199V13Z"/><path class="selection-frame-ticks" d="M74 1h13m5 0h3M233 211h13m-21 0h3"/></svg>';
+    button.append(media,label,frame);
     button.addEventListener('click', (event) => {
       // Touch users can preview first, then use the detail link or tap again.
       if (matchMedia('(hover: none)').matches && selected?.id !== project.id) {
@@ -249,12 +255,12 @@ function renderProjects() {
     $('project-grid').append(button);
   }
   if (!visible.length) {
-    const categories = activeCategory === 'all' ? ['unity','unreal'] : [activeCategory];
+    const categories = activeCategory === 'all' ? ['unity','unreal','td'] : [activeCategory];
     for (const category of categories) {
       const tile = element('div','empty-category');
       const copy = element('div');
-      copy.append(element('strong','',category === 'unity' ? 'Unity' : 'Unreal Engine'),element('small','','作品待补充'));
-      tile.append(element('span','',category === 'unity' ? 'U' : 'UE'),copy);
+      copy.append(element('strong','',{unity:'Unity',unreal:'Unreal Engine',td:'TD'}[category]),element('small','','作品待补充'));
+      tile.append(element('span','',{unity:'U',unreal:'UE',td:'TD'}[category]),copy);
       $('project-grid').append(tile);
     }
     showEmpty();
@@ -282,7 +288,7 @@ function worksRoute() {
   return activeCategory === 'all' ? '#works' : `#works/${activeCategory}${activeCategory === 'unreal' && activeSubcategory === 'vehicle' ? '/vehicle' : ''}`;
 }
 function showRoute({focus = false} = {}) {
-  const parts = location.hash.slice(1).split('/');
+  const parts = location.hash.replace(/^#\/?/, '').split('/');
   const fileView = { 'portfolio.html':'works', 'about.html':'about', 'contact.html':'contact' }[location.pathname.split('/').pop()];
   const nextView = fileView || (['works','about','contact'].includes(parts[0]) ? parts[0] : 'top');
   const homeProjects = nextView === 'top' && parts[0] === 'home-projects';
@@ -296,7 +302,7 @@ function showRoute({focus = false} = {}) {
     }
   }
   if (nextView === 'works' && parts[0] === 'works') {
-    const category = ['unity','unreal'].includes(parts[1]) ? parts[1] : 'all';
+    const category = ['unity','unreal','td'].includes(parts[1]) ? parts[1] : 'all';
     const subcategory = category === 'unreal' && parts[2] === 'vehicle' ? 'vehicle' : 'all';
     const changedFilter = category !== activeCategory || subcategory !== activeSubcategory;
     activeCategory = category;
@@ -326,7 +332,7 @@ document.addEventListener('click', event => {
   const link = event.target.closest('a[href^="#"]');
   if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   let route = link.getAttribute('href');
-  if (!/^#(top|home-projects|works(?:\/(unity|unreal)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
+  if (!/^#(top|home-projects|works(?:\/(unity|unreal|td)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
   event.preventDefault();
   if (link.dataset.view === 'works') route = worksRoute();
   if (location.hash !== route) history.pushState(null, '', route);
@@ -377,7 +383,7 @@ function createProjectLink(project) {
   const copy = element('span', 'card-copy');
   const meta = element('span', 'home-card-meta');
   const duration = Math.max(0, Math.round(project.duration || 0));
-  meta.append(element('span', '', project.category === 'unity' ? 'Unity' : 'Unreal Engine'), element('span', 'home-card-duration', `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2,'0')}`));
+  meta.append(element('span', '', {unity:'Unity',unreal:'Unreal Engine',td:'TD'}[project.category] || categoryName(project.category)), element('span', 'home-card-duration', `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2,'0')}`));
   const heading = element('span', 'home-card-heading');
   const arrow = element('span', 'card-arrow');
   arrow.innerHTML = '<svg viewBox="0 0 24 24" focusable="false"><path d="M6 18 18 6M7 6h11v11"/></svg>';
@@ -387,32 +393,36 @@ function createProjectLink(project) {
   card.append(media, copy);
   return card;
 }
-for (const project of projects.filter(item => item.category).slice(0, 4)) {
+const featuredProjectIds = ['ptcg-card', 'unreal-car', 'rain-vat', 'unreal-snow'];
+for (const project of featuredProjectIds.map(id => projects.find(item => item.id === id)).filter(Boolean)) {
   $('home-project-grid').append(createProjectLink(project));
 }
-const wechatCopy = $('wechat-copy');
-wechatCopy?.addEventListener('click', async () => {
-  if (wechatCopy.disabled) return;
-  wechatCopy.disabled = true;
-  const value = $('wechat-value');
-  const feedback = $('wechat-copy-feedback');
-  try {
-    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
-    await navigator.clipboard.writeText(value.textContent.trim());
-    feedback.textContent = '微信号已复制';
-  } catch {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(value);
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    value.focus({preventScroll:true});
-    feedback.textContent = '无法自动复制，请复制已选中的微信号。';
-  } finally {
-    feedback.hidden = false;
-    wechatCopy.disabled = false;
-  }
-});
+let copyFeedbackTimer;
+for (const contact of document.querySelectorAll('[data-copy-value]')) {
+  let copying = false;
+  contact.addEventListener('click', async () => {
+    if (copying) return;
+    copying = true;
+    const value = contact.querySelector('strong');
+    const feedback = $('contact-copy-feedback');
+    clearTimeout(copyFeedbackTimer);
+    feedback.textContent = '';
+    document.querySelectorAll('.contact-method.is-copied').forEach(item => item.classList.remove('is-copied'));
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(contact.dataset.copyValue);
+      contact.classList.add('is-copied');
+      feedback.textContent = '已复制';
+      copyFeedbackTimer = setTimeout(() => { contact.classList.remove('is-copied'); feedback.textContent = ''; }, 2000);
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(value);
+      selection?.removeAllRanges(); selection?.addRange(range);
+      feedback.textContent = '无法自动复制，请复制已选中的内容。';
+    } finally { copying = false; }
+  });
+}
 renderProjects();
 showRoute();
 window.addEventListener('pagehide', (event) => { if (!event.persisted) starfield?.destroy(); });

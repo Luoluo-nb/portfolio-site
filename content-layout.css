@@ -10,6 +10,31 @@
 .preview-column .project-caption h3{max-width:28ch;text-wrap:balance}
 .preview-column .project-caption .text-link{min-height:44px;display:inline-flex;align-items:center}
 .selection-tip{max-width:60ch}
+/* Selection panes keep a crisp silhouette, distinct from the feathered player. */
+#project-grid{gap:16px}
+#project-grid .project-card{border:0;border-radius:0;background:transparent;box-shadow:none;clip-path:none;overflow:visible;isolation:isolate}
+#project-grid .project-card::before{display:none}
+#project-grid .selection-card-media{position:absolute;inset:5px;display:block;overflow:hidden;clip-path:polygon(10px 0,calc(100% - 10px) 0,100% 10px,100% calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,0 calc(100% - 10px),0 10px);background:#080f1b}
+#project-grid .project-card img{filter:brightness(.78);transform:scale(1);transition:filter .3s,transform .45s}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) img{filter:brightness(.98);transform:scale(1.025)}
+#project-grid .project-card .card-copy{inset:auto 5px 5px;padding:38px 14px 16px;border-radius:0;background:linear-gradient(transparent,#071121dc 65%,#071121f0);clip-path:polygon(0 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,0 calc(100% - 10px))}
+#project-grid .project-card::after{display:none}
+#project-grid .selection-card-frame{position:absolute;inset:0;pointer-events:none;color:#74afce;transition:color .3s;z-index:2}
+#project-grid .selection-card-frame svg{display:block;width:100%;height:100%;overflow:visible}
+#project-grid .selection-card-frame path{vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
+.selection-frame-corners{stroke:currentColor;stroke-width:.8;opacity:.5;transition:opacity .3s}
+.selection-frame-flow{stroke:currentColor;stroke-width:1;stroke-dasharray:11 89;opacity:.36;animation:selection-orbit 10s linear infinite;animation-delay:var(--frame-delay)}
+.selection-frame-glow{stroke:#87ccf0;stroke-width:5;stroke-dasharray:.1 99.9;opacity:.12;animation:selection-orbit 10s linear infinite;animation-delay:var(--frame-delay)}
+.selection-frame-star{stroke:#c7edff;stroke-width:2.1;stroke-dasharray:.1 99.9;opacity:.66;animation:selection-orbit 10s linear infinite;animation-delay:var(--frame-delay)}
+.selection-frame-ticks{stroke:currentColor;stroke-width:1;opacity:.4}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-frame{color:#b2e3fc}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-frame-corners{opacity:.95;stroke-width:1.15}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-frame-flow{opacity:.85;stroke-dasharray:17 83}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-frame-glow{opacity:.3;stroke-width:7}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-frame-star{opacity:1;stroke-width:2.8}
+#project-grid .project-card:focus-visible{outline:1px dashed #9bdaf7;outline-offset:4px;box-shadow:none}
+@keyframes selection-orbit{to{stroke-dashoffset:-100}}
+@media(prefers-reduced-motion:reduce){#project-grid .selection-card-frame path{animation:none}#project-grid .project-card img,#project-grid .selection-card-frame{transition:none}#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) img{transform:none}}
 @media(min-width:601px) and (max-width:1100px){
   .works-layout{grid-template-columns:1fr;gap:38px}
   #project-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}

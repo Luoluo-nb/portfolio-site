@@ -36,9 +36,9 @@ function star(x,y,r,alpha){
  ctx.moveTo(x,y-r);ctx.lineTo(x,y-3);ctx.moveTo(x,y+3);ctx.lineTo(x,y+r);ctx.stroke();
 }
 function draw(b,now){
- const age=(now-b.born)/b.life,fade=(1-age)**1.6,spread=(1-(1-age)**2),radius=(b.touch?8:11)+spread*(b.touch?16:31);
- const alpha=fade*(b.touch?.27:.43);
- ctx.strokeStyle='#b4e7ff';ctx.fillStyle='#daf5ff';ctx.lineWidth=.85;ctx.lineCap='round';
+ const age=(now-b.born)/b.life,fade=(1-age)**1.6,spread=(1-(1-age)**2),radius=(b.touch?10:17.6)+spread*(b.touch?24:49.6);
+ const alpha=fade*(b.touch?.34:.66);
+ ctx.strokeStyle='#b4e7ff';ctx.fillStyle='#daf5ff';ctx.lineWidth=b.touch?.85:1.1;ctx.lineCap='round';
  if(b.mode===0){
   ctx.globalAlpha=alpha;ctx.beginPath();ctx.arc(b.x,b.y,radius,.25+age*.5,Math.PI*1.12+age*.5);ctx.stroke();
   ctx.globalAlpha=alpha*.65;ctx.beginPath();ctx.arc(b.x,b.y,radius*.77,Math.PI*1.28-age*.4,Math.PI*1.91-age*.4);ctx.stroke();
@@ -58,10 +58,16 @@ function draw(b,now){
   }
   if(!b.touch)star(b.x+radius*.8,b.y-radius*.45,4+fade*2,alpha*.65);
  }
- const count=b.touch?1:3;
+ // Brief radial star glints make expansion readable without a solid flash.
+ if(!b.touch)for(let i=0;i<4;i++){
+  const a=b.seed+i*Math.PI*.5,r=radius*.82;
+  const x=b.x+Math.cos(a)*r,y=b.y+Math.sin(a)*r;
+  star(x,y,3+fade*4,alpha*.7);
+ }
+ const count=b.touch?2:4;
  for(let i=0;i<count;i++){
   const a=b.seed+i*2.399+age*.24,r=radius*(.82+i*.13);
-  ctx.globalAlpha=alpha*.72;ctx.beginPath();ctx.arc(b.x+Math.cos(a)*r,b.y+Math.sin(a)*r,.75,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=alpha*.85;ctx.beginPath();ctx.arc(b.x+Math.cos(a)*r,b.y+Math.sin(a)*r,b.touch?.75:1,0,Math.PI*2);ctx.fill();
  }
 }
 function tick(now){
@@ -78,7 +84,10 @@ function emit(x,y,keyboard,touch){
  const rect=canvas.getBoundingClientRect();if(Math.abs(rect.width-width)>.01||Math.abs(rect.height-height)>.01)resize();
  const mode=Math.max(0,modeNames.indexOf(document.documentElement.dataset.interactionMode));
  while(bursts.length>=(touch?1:MAX_BURSTS))bursts.shift();
- bursts.push({x:x-rect.left,y:y-rect.top,born:performance.now(),life:touch?600:900,mode,touch,seed:Math.random()*Math.PI*2});
+ const born=performance.now();
+ bursts.push({x:x-rect.left,y:y-rect.top,born,life:touch?650:1000,mode,touch,seed:Math.random()*Math.PI*2});
+ // CSS viewport coordinates; the starfield maps them to its own render size.
+ window.dispatchEvent(new CustomEvent('portfolio:click-pulse',{detail:{x,y,time:born,touch}}));
  canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode=modeNames[mode];canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);
  if(!frame)frame=requestAnimationFrame(tick);state('active');
 }
@@ -105,6 +114,7 @@ listen(document,'click',e=>{
 },true);
 listen(window,'resize',()=>{stop('idle',true);resize();},{passive:true});
 listen(window,'blur',()=>stop('suspended',true));
+listen(document,'pointerout',e=>{if(e.pointerType==='mouse'&&!e.relatedTarget)stop('idle',true);});
 listen(document,'visibilitychange',availability);listen(reduced,'change',availability);
 export function destroyClickEffects(){if(destroyed)return;destroyed=true;stop('destroyed',true);cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
 listen(window,'pagehide',e=>{suspended=true;if(e.persisted)availability();else destroyClickEffects();});

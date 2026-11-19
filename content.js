@@ -24,10 +24,13 @@ export const profile = {
 // Bilibili 作品用 bvid / cid；本地视频用 videoSrc；references 提供参考与素材说明。
 // 播放器在点击播放按钮后加载。仅选择或悬停作品不会自动播放。
 export const projects = [
-  {id:'showreel-2026', title:'2026 技术美术作品集', category:'', description:'2026 · 技术美术作品集', bvid:'BV19hP9zvEh7', cid:36579050716, duration:208, cover:'./media/BV19hP9zvEh7.jpg'},
+  {id:'showreel-2026', title:'2026 技术美术作品集', category:'unity', description:'2026 · 技术美术作品集', bvid:'BV19hP9zvEh7', cid:36579050716, duration:208, cover:'./media/BV19hP9zvEh7.jpg'},
   {id:'ptcg-card', title:'卡面光学材质研究', category:'unity', description:'Unity / URP · 通过磨砂亮片、分区细线高光、双层视差与 Texture3D 角度采样，表现卡面涂层随视角和光照变化的反射。\n原画：WLOP。代码参考：Daniel Ilett、Sergej Lopatkin（Pokébox）。', bvid:'BV1kZsP6jEaa', startTime:1.7, duration:29, loop:false, videoChapters:[{label:'磨砂',time:0},{label:'细线',time:5},{label:'Texture3D',time:17}], cover:'./media/ptcg-card.jpg', references:[{label:'Daniel Ilett',url:'https://github.com/daniel-ilett/shaders-holo-card'},{label:'Pokébox',url:'https://github.com/selop/pokebox'}]},
-  {id:'studies-2025', title:'2025 作品与练习', category:'', description:'2025 · 作品与练习', bvid:'BV1Ja3tzsEXd', cid:30811095855, duration:516, cover:'./media/BV1Ja3tzsEXd.jpg'},
+  {id:'studies-2025', title:'2025 作品与练习', category:'td', description:'2025 · 作品与练习', bvid:'BV1Ja3tzsEXd', cid:30811095855, startTime:2.9, duration:516, cover:'./media/BV1Ja3tzsEXd.jpg'},
   {id:'unreal-car', title:'车辆材质与交互展示', category:'unreal', subcategory:'vehicle', description:"围绕车辆展示搭建车漆、水面与地面材质，结合按键变色、平面反射和接触涟漪，呈现材质与环境的交互。", bvid:'BV1oxd1BtEGy', cid:37683202347, duration:69, cover:'./media/BV1oxd1BtEGy.jpg'},
   {id:'rain-vat', title:'雨水材质与流体效果', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 车辆雨水、地面积水与降雨粒子。\n从世界法线分区、Flow Map 和涟漪法线，到 Niagara 粒子与 Houdini FLIP 序列帧的制作过程。', bvid:'BV1TCQEBtEJA', cid:37526242180, duration:20, cover:'./media/BV1TCQEBtEJA.jpg'},
   {id:'unreal-snow', title:'雪地交互与车轮沾雪', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 使用 Render Target 记录雪地交互，并将四个车轮的接触信息映射到轮胎材质。\n详情包含雪地自阴影、轮胎沾雪及蓝图参数的实现过程。', bvid:'BV1CZDzBCEyj', cid:37323869335, duration:40, cover:'./media/BV1CZDzBCEyj.jpg'},
+  {id:'unreal-vfx-study', title:'UE 特效练习', category:'unreal', description:'Unreal Engine · 实时特效练习。', bvid:'BV1Q8Kj6EEB4', startTime:8.9, duration:14, cover:'./media/BV1Q8Kj6EEB4.jpg'},
+  {id:'td-particle-gesture', title:'粒子上色与手势交互', category:'td', description:'为模型生成的粒子实例添加颜色与光照着色，结合手势输入进行交互。\n模型基于马南的 bioxelnode 案例。', bvid:'BV1tbiLBLExE', startTime:5.6, duration:84, cover:'./media/BV1tbiLBLExE.jpg'},
+  {id:'td-unreal-brush', title:'TD 与 UE 交互画笔', category:'td', description:'TD 与 Unreal Engine 5.7 联动的交互画笔展示。', bvid:'BV1g9xt6cEkk', cid:43243081546, startTime:6.1, duration:42, cover:'./media/BV1g9xt6cEkk.jpg'},
 ];
