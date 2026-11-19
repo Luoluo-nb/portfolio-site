@@ -228,7 +228,8 @@ if (project) {
     $('work-next-name').className = 'detail-next-name';
     nextCopy.append($('work-next-label'), $('work-next-name'));
     $('work-next').prepend(nextCopy);
-    $('work-next').querySelector('.detail-next-arrow').innerHTML = '<svg viewBox="0 0 32 20" focusable="false"><path d="M3 10h24m-7-6 7 6-7 6"/></svg>';
+    const nextShape = '<svg class="next-comet" viewBox="0 0 76 44" focusable="false"><path class="next-comet-envelope" d="M9 28C24 27 38 11 53 12C68 13 72 29 58 33C43 37 28 29 17 29"/><path class="next-comet-tail" d="M5 26C21 25 30 18 43 18"/><path class="next-comet-wake" pathLength="100" d="M5 26C21 25 30 18 43 18"/><path class="next-comet-guide" d="M44 23h18m-7-6 7 6-7 6"/><circle class="next-comet-spark" cx="62" cy="23" r="1.25"/></svg>';
+    for (const link of [$('work-next'), $('work-next-footer')]) link.querySelector('.detail-next-arrow').innerHTML = nextShape;
     $('work-next').hidden = $('work-next-navigation').hidden = false;
   }
   $('work-breadcrumb').textContent = project.title;

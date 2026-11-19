@@ -24,51 +24,61 @@ float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 float mist(vec2 p){return noise(p)*.57+noise(p*2.03+3.1)*.28+noise(p*4.07+7.9)*.15;}
 vec4 ring(vec2 p,vec2 ellipse){
- // An eccentric open orbit has a deliberate gap, rather than a full oval rim.
- vec2 q=(p-vec2(2.5,-1.5))/uRadius;
- float r=length(q),a=atan(q.y,q.x),phase=uTime*.38;
- float grad=length(q/uRadius)/max(r,.001),d=(r-1.)/max(grad,.001);
- float open=smoothstep(-.34,.18,sin(a-phase));
- float arc=pow(.5+.5*cos(a-phase-1.0),5.);
- float light=(exp(-d*d/.65)*(.32+arc*.40)+exp(-d*d/6.)*.075)*open;
- vec2 point=vec2(cos(phase+.38),sin(phase+.38))*uRadius+vec2(2.5,-1.5);
- float star=exp(-dot(p-point,p-point)*1.2)+exp(-dot(p-point,p-point)*.12)*.15;
- float inner=exp(-pow((r-.76)/.025,2.))*smoothstep(.1,.7,-sin(a-phase+.7))*.15;
- vec3 tint=mix(vec3(.55,.74,.95),vec3(.96,.97,1.),clamp(arc+star,0.,1.));
- tint=mix(tint,vec3(.91,.72,.82),pow(.5+.5*sin(a-phase+2.2),14.)*.54);
- return vec4(tint,light+inner+star*.78);
+ // Subtracted, offset ellipses form a crescent. Its open side stays empty;
+ // the asymmetric silhouette never turns into the same complete oval rim.
+ vec2 radius=uRadius*vec2(.96,.96),q=(p-vec2(-1.5,.5))/radius;
+ float r=length(q),a=atan(q.y,q.x),phase=uTime*.30;
+ vec2 cut=vec2(.27+.025*sin(phase),.055+.025*cos(phase*.7));
+ float inner=length(q-cut),grad=length(q/radius)/max(r,.001);
+ float d=(r-.94)/max(grad,.001);
+ float open=smoothstep(-.16,.29,-q.x+.12*q.y);
+ float crescent=(1.-smoothstep(.87,1.07,r))*smoothstep(.76,.99,inner);
+ float flow=pow(.5+.5*cos(a+phase-2.1),5.);
+ float rim=(exp(-d*d/.95)*(.31+.29*flow)+exp(-d*d/7.)*.065)*open;
+ float angle=3.08+sin(phase*.65)*1.05;
+ vec2 point=vec2(cos(angle),sin(angle))*radius*.94+vec2(-1.5,.5);
+ float glint=exp(-dot(p-point,p-point)/1.2)+exp(-dot(p-point,p-point)/9.)*.09;
+ vec3 tint=mix(vec3(.55,.74,.95),vec3(.96,.97,1.),clamp(flow*.8+glint,0.,1.));
+ tint=mix(tint,vec3(.91,.72,.82),smoothstep(.40,.94,q.y)*.35);
+ return vec4(tint,rim+crescent*.18+glint*.38);
 }
 vec4 nebula(vec2 p,vec2 ellipse){
- // A small spiral plus two asymmetric mist arms; there is no perimeter ring.
- vec2 q=p/max(9.,uRadius.y),drift=vec2(sin(uTime*.22),cos(uTime*.18))*.08;
- q+=drift;
- float r=length(q),a=atan(q.y,q.x),cloud=mist(q*2.3+vec2(-uTime*.11,uTime*.08));
- float spiral=pow(.5+.5*cos(a*2.0+r*6.4-uTime*.65+(cloud-.5)*2.),7.);
- float envelope=exp(-r*r*.85)*smoothstep(.12,.45,r);
- float wingY=ellipse.y-.48*sin(ellipse.x*2.4-uTime*.25);
- float wing=exp(-wingY*wingY/0.08)*(1.-smoothstep(.35,1.4,abs(ellipse.x)))*smoothstep(.38,.68,cloud);
- float alpha=spiral*envelope*.52+wing*.20;
- // Keep the center of the glyphs calm and let the curl read around them.
- alpha*=mix(.42,1.,smoothstep(.12,.68,abs(ellipse.y)));
- vec3 tint=mix(vec3(.40,.58,.86),vec3(.90,.94,1.),spiral);
- tint=mix(tint,vec3(.91,.72,.82),smoothstep(.60,.83,cloud)*.52);
+ // A slowly warped three-lobe shell, with sparse mist breaking its outline.
+ // The noise gradient bends the sampling domain rather than filling a petal panel.
+ vec2 q=ellipse,n=q*2.1+vec2(uTime*.075,-uTime*.055),e=vec2(.12,0.);
+ vec2 gradient=vec2(noise(n+e)-noise(n-e),noise(n+e.yx)-noise(n-e.yx));
+ q+=gradient*.16;
+ float r=length(q),a=atan(q.y,q.x),phase=uTime*.24;
+ float radius=.77+.17*cos(a*3.+phase)+.045*sin(a*5.-phase*.7);
+ float d=(r-radius)*max(uRadius.y,9.);
+ float cloud=mist(q*3.+vec2(-uTime*.10,uTime*.065));
+ float flow=pow(.5+.5*cos(a*3.-uTime*.62+r*2.),4.);
+ float broken=.38+.62*smoothstep(.28,.74,cloud);
+ float shell=exp(-d*d/1.65)*(.30+flow*.19)+exp(-d*d/13.)*.11;
+ float alpha=shell*broken*smoothstep(.35,.65,r);
+ alpha*=mix(.48,1.,smoothstep(.16,.62,abs(ellipse.y)));
+ vec3 tint=mix(vec3(.48,.67,.91),vec3(.96,.97,1.),flow*.8);
+ tint=mix(tint,vec3(.91,.72,.82),smoothstep(.59,.80,cloud)*.52);
  return vec4(tint,alpha);
 }
 vec4 flowingLight(vec2 p,vec2 ellipse){
- float light=0.,stars=0.;
+ // Two offset lens curves have unequal lengths/heights and travelling packets.
+ // Their separated tips are deliberately open: no closed ellipse or straight box.
+ float light=0.,peak=0.;
  for(int i=0;i<2;i++){
-  float side=i==0?-1.:1.,x=ellipse.x;
-  float center=sin(uTime*.65+float(i)*2.4)*.67;
-  float y=side*uRadius.y*.83+sin(p.x*.035+uTime*.35)*.7;
+  float side=i==0?1.:-1.,x=ellipse.x,shift=i==0?-.14:.22;
+  float nx=(x-shift)/1.24,bend=pow(max(0.,1.-nx*nx),.8);
+  float y=side*uRadius.y*((i==0?.17:.08)+(i==0?.70:.50)*bend)+p.x*.045;
   float d=p.y-y;
-  float segment=exp(-pow((x-center)/.50,4.))*(1.-smoothstep(.75,1.28,abs(x)));
-  light+=(exp(-d*d/.48)*.56+exp(-d*d/8.)*.07)*segment;
-  vec2 star=p-vec2(center*uRadius.x,y);
-  stars+=(exp(-star.x*star.x/1.0-star.y*star.y/14.)+exp(-star.x*star.x/14.-star.y*star.y/1.0))*.29;
+  float bounds=(1.-smoothstep(.63,1.20,abs(x-shift)));
+  float packet=pow(.5+.5*cos(x*3.-side*uTime*1.1+float(i)*1.8),8.);
+  float core=exp(-d*d/.68);
+  light+=(core*(.15+packet*.43)+exp(-d*d/6.)*.052)*bounds;
+  peak=max(peak,packet*core);
  }
- vec3 tint=mix(vec3(.55,.74,.95),vec3(.96,.97,1.),clamp(stars*2.,0.,1.));
- tint=mix(tint,vec3(.91,.72,.82),smoothstep(.48,.95,sin(ellipse.x*2.2-uTime*.65))*.38);
- return vec4(tint,light+stars);
+ vec3 tint=mix(vec3(.55,.74,.95),vec3(.96,.97,1.),peak);
+ tint=mix(tint,vec3(.91,.72,.82),pow(.5+.5*sin(ellipse.x*2.-uTime*.55),10.)*.38);
+ return vec4(tint,light);
 }
 void main(){
  vec2 p=(vUv-uCenter)*uSize,ellipse=p/uRadius;
