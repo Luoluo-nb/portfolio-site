@@ -55,17 +55,20 @@ SOFTWARE.
 
 Music attribution
 
-Neon — Scott Buckley
-No Melody alternative mix
-Track: https://www.scottbuckley.com.au/library/neon/
-Source: https://www.scottbuckley.com.au/library/wp-content/uploads/2019/09/sb_neon_nomelody.mp3
-Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)
+Robot — PeriTune / Sei Mutsuki
+Official loop version, originally published 2015-09-16.
+Track: https://peritune.com/blog/2015/09/16/robot/
+Official loop archive: https://peritune.com/loop/PerituneMaterial_Robot_loop.zip
+Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).
 License: https://creativecommons.org/licenses/by/4.0/
 
-Attribution: 'Neon' by Scott Buckley - released under CC-BY 4.0.
-www.scottbuckley.com.au
+The official track page explicitly licenses this work under CC BY 4.0.
+The official 2026-03-01 license transition notice confirms that tracks published
+through February 2026 remain under CC BY 4.0:
+https://peritune.com/blog/2026/03/01/terms-update/
 
-Website adaptation: selected source interval 44–228.27 seconds, 8-second
-equal-power loop crossfade, rotated loop start, constant gain adjustment
-to approximately -20 LUFS, and 128 kbps MP3 encoding. No compression or limiter.
-No endorsement by the artist is implied.
+Website adaptation: original official OGG loop structure and sample count
+preserved without cuts or crossfades; constant gain adjustment to approximately
+-20 LUFS and 128 kbps MP3 encoding with gapless metadata. No compression or limiter.
+This adapted audio is provided under CC BY 4.0, with attribution and the changes
+noted above. No endorsement by PeriTune is implied.

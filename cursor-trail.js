@@ -30,8 +30,28 @@ function mountCursorTrail() {
   let nextSpacing = spacing, motionSpeed = 0, fastMix = 0, particleLimit = BASE_PARTICLES;
   // Slow movement lays a closer chain; fast movement stretches new intervals.
   // The existing speed filter is shared, and stored points are never rearranged.
-  const sampleSpacing = () => spacing * (.55 + fastMix * 1.05) * (.7 + Math.random() * .6);
+  const regionSpacing = Array.from({ length: 7 }, () => ({ scale: .7 + Math.random() * .65, refreshed: performance.now() }));
+  let spacingRegion = null;
+  const regionRefreshMs = 200;
+  const sampleSpacing = () => spacing * (.55 + fastMix * 1.05)
+    * (regionSpacing[spacingRegion]?.scale ?? 1) * (.7 + Math.random() * .6);
+  function refreshRegionSpacing(now) {
+    for (let region = 0; region < regionSpacing.length; region++) {
+      const value = regionSpacing[region];
+      if (region === spacingRegion || now - value.refreshed < regionRefreshMs) continue;
+      value.scale = .7 + Math.random() * .65;
+      value.refreshed = now;
+    }
+  }
+  function lockSpacingRegion(region, now) {
+    if (region === spacingRegion) return;
+    refreshRegionSpacing(now);
+    if (spacingRegion !== null) regionSpacing[spacingRegion].refreshed = now;
+    spacingRegion = region;
+  }
   let previous = null, mouse = null, head = null;
+  let strokeSequence = 0, activeRegion = null, penGapRemaining = 0, boundaryBreaks = 0;
+  const penLiftDistance = 22, ringLife = 240;
   let suspended = false, enabled = false;
   canvas.dataset.shape = 'scatter-radial';
   canvas.dataset.retention = 'main-and-afterglow';
@@ -43,6 +63,10 @@ function mountCursorTrail() {
   canvas.dataset.spacing = String(spacing);
   canvas.dataset.coneDegrees = '60';
   canvas.dataset.linkDistance = String(linkDistance);
+  canvas.dataset.boundaryMode = 'voronoi-pen-lift';
+  canvas.dataset.penLiftDistance = String(penLiftDistance);
+  canvas.dataset.ringLife = String(ringLife);
+  canvas.dataset.regionSpacingRefresh = String(regionRefreshMs);
 
   const glow = document.createElement('canvas');
   glow.width = glow.height = 40;
@@ -80,6 +104,20 @@ function mountCursorTrail() {
   }
   const pointHaze = makePointLayer(64, false);
   const pointRing = makePointLayer(96, true);
+  // A fixed nucleus plus a smaller moving light layer give each star depth.
+  // Only these interior samples move; the point and its outer glow stay put.
+  const nucleus = document.createElement('canvas');
+  nucleus.width = nucleus.height = 48;
+  const nucleusContext = nucleus.getContext('2d');
+  if (nucleusContext) {
+    const gradient = nucleusContext.createRadialGradient(24, 24, 0, 24, 24, 24);
+    gradient.addColorStop(0, '#e4f5ff');
+    gradient.addColorStop(.4, '#afd9ed');
+    gradient.addColorStop(.78, '#487da8');
+    gradient.addColorStop(1, '#162f55');
+    nucleusContext.fillStyle = gradient;
+    nucleusContext.fillRect(0, 0, 48, 48);
+  }
   // A tiny reusable Gaussian strip gives each link a local halo. No full-canvas
   // blur or per-frame shadow filter is needed, and the sharp core stays intact.
   const lineGlow = document.createElement('canvas');
@@ -105,15 +143,21 @@ function mountCursorTrail() {
     canvas.dataset.afterglowParticles = String(particles.filter(p => p.retiredAt !== null).length);
     canvas.dataset.flockParticles = String(flock.getMetadata().count);
     canvas.dataset.segments = String(linkCount);
+    canvas.dataset.boundaryBreaks = String(boundaryBreaks);
+    canvas.dataset.region = String(activeRegion ?? '');
+    canvas.dataset.regionSpacing = String(regionSpacing[spacingRegion]?.scale ?? 1);
   }
 
-  function stop(reason) {
+  function stop(reason, releaseRegion = true) {
     if (frameId) cancelAnimationFrame(frameId);
     frameId = 0;
     particles.length = 0;
     previous = null;
     mouse = null;
     head = null;
+    activeRegion = null;
+    if (releaseRegion) lockSpacingRegion(null, performance.now());
+    penGapRemaining = boundaryBreaks = 0;
     remainder = linkCount = 0;
     nextSpacing = spacing;
     motionSpeed = fastMix = 0;
@@ -163,8 +207,10 @@ function mountCursorTrail() {
 
   function emit(x, y, now) {
     particles.push({
-      x, y, born: now, updated: now,
+      x, y, born: now, appeared: now, updated: now,
       flowId: ++flowSequence,
+      strokeId: strokeSequence,
+      parallaxX: 0, parallaxY: 0,
       retiredAt: null,
       released: false,
       // Keep each cone offset stable through its life, rather than noisy per frame.
@@ -182,6 +228,7 @@ function mountCursorTrail() {
   function render(now) {
     frameId = 0;
     if (!enabled || suspended || document.hidden) { stop('suspended'); return; }
+    refreshRegionSpacing(now);
     context.clearRect(0, 0, width, height);
     for (let index = particles.length - 1; index >= 0; index--) {
       const particle = particles[index], age = Math.max(0, now - particle.born);
@@ -196,6 +243,9 @@ function mountCursorTrail() {
       const dx = particle.x - (mouse?.x ?? particle.x);
       const dy = particle.y - (mouse?.y ?? particle.y);
       const distance = Math.hypot(dx, dy);
+      const interiorLag = 1 - Math.exp(-seconds / .14);
+      particle.parallaxX += (Math.max(-1, Math.min(1, -dx / 140)) - particle.parallaxX) * interiorLag;
+      particle.parallaxY += (Math.max(-1, Math.min(1, -dy / 140)) - particle.parallaxY) * interiorLag;
       particle.vx = particle.vy = 0;
       if (particle === head && mouse) {
       // One point marks the pointer exactly throughout the retained history.
@@ -232,12 +282,13 @@ function mountCursorTrail() {
         state('flock-only');
         return;
       }
-      stop('idle'); return;
+      // Invisible regions are refreshed lazily on the next input after the
+      // drawing loop sleeps. Keep the occupied region's spacing locked.
+      stop('idle', false); return;
     }
 
     // Connect in emission order, preserving bends instead of nearest-neighbour
     // shortcuts that flatten fast turns or join the wrong side of a loop.
-    prism.beginFrame(now);
     context.save();
     context.globalCompositeOperation = 'lighter';
     context.lineCap = 'round';
@@ -245,6 +296,7 @@ function mountCursorTrail() {
     linkCount = 0;
     for (let index = 1; index < particles.length; index++) {
       const sourceA = particles[index - 1], sourceB = particles[index];
+      if (sourceA.strokeId !== sourceB.strokeId) continue;
       const originalDistance = Math.hypot(sourceA.x - sourceB.x, sourceA.y - sourceB.y);
       if (originalDistance < 1 || originalDistance >= linkDistance) continue;
       const alpha = Math.min(sourceA.alpha, sourceB.alpha) * .78 * (1 - (originalDistance / linkDistance) ** 2);
@@ -252,37 +304,25 @@ function mountCursorTrail() {
       // Both original age and the afterglow's smooth exit already live in alpha.
       // Using that same weight avoids a width step when a point changes group.
       const taper = Math.pow(Math.min(1, Math.max(0, Math.min(sourceA.alpha, sourceB.alpha) / .64)), .55);
-      const fragments = prism.segment(sourceA, sourceB, mouse);
-      for (const fragment of fragments) {
-      const a = { ...sourceA, ...fragment.from, flowId: sourceA.flowId + (sourceB.flowId - sourceA.flowId) * fragment.t0 };
-      const b = { ...sourceB, ...fragment.to, flowId: sourceA.flowId + (sourceB.flowId - sourceA.flowId) * fragment.t1 };
+      const a = sourceA, b = sourceB;
       const distance = Math.hypot(b.x - a.x, b.y - a.y);
       if (distance < .01) continue;
-      context.lineWidth = 1.35 * taper;
+      context.lineWidth = .85 * taper;
       if (lineGlowContext) {
         context.save();
         context.translate(a.x, a.y);
         context.rotate(Math.atan2(b.y - a.y, b.x - a.x));
-        context.globalAlpha = alpha * .55;
-        const haloHeight = 14 * taper;
-        context.drawImage(lineGlow, fragment.t0 * lineGlow.width, 0,
-          (fragment.t1 - fragment.t0) * lineGlow.width, lineGlow.height,
-          0, -haloHeight / 2, distance, haloHeight);
+        context.globalAlpha = alpha * .42;
+        const haloHeight = 10 * taper;
+        context.drawImage(lineGlow, 0, -haloHeight / 2, distance, haloHeight);
         context.restore();
       }
-      context.globalAlpha = alpha * (1 - fragment.dispersion * 2);
+      context.globalAlpha = alpha;
       context.strokeStyle = '#b8e3ff';
       context.beginPath();
       context.moveTo(a.x, a.y);
       context.lineTo(b.x, b.y);
       context.stroke();
-      if (fragment.dispersion > 0) {
-        const nx = -(b.y - a.y) / distance * .65, ny = (b.x - a.x) / distance * .65;
-        context.save(); context.globalAlpha = alpha * fragment.dispersion;
-        context.translate(nx, ny); context.strokeStyle = '#70dfff'; context.stroke();
-        context.translate(-2 * nx, -2 * ny); context.strokeStyle = '#7899ff'; context.stroke();
-        context.restore();
-      }
       if (glowContext) {
         // Stable emission IDs make each light packet travel from the pointer
         // toward older points, even when points move between the two groups.
@@ -304,7 +344,6 @@ function mountCursorTrail() {
           context.restore();
         }
       }
-      }
       linkCount++;
     }
     for (const particle of particles) {
@@ -313,10 +352,11 @@ function mountCursorTrail() {
       const phase = (particle.flowId + now * .0024) % 8;
       const pulseDistance = Math.min(phase, 8 - phase);
       const pulse = Math.exp(-.5 * (pulseDistance / .45) ** 2);
-      const display = prism.point(particle.x, particle.y, mouse, particle.radius * 21 * spread);
-      if (pointRing) {
-        const diameter = particle.radius * 42 * spread;
-        context.globalAlpha = particle.alpha * .42;
+      const display = particle;
+      const ringAge = Math.max(0, now - particle.appeared);
+      if (pointRing && ringAge < ringLife) {
+        const diameter = particle.radius * 42 * spread * (.12 + .88 * Math.exp(-ringAge / 65));
+        context.globalAlpha = particle.alpha * .28 * (1 - ringAge / ringLife) ** 2;
         context.drawImage(pointRing, display.x - diameter / 2, display.y - diameter / 2, diameter, diameter);
       }
       if (pointHaze) {
@@ -325,21 +365,70 @@ function mountCursorTrail() {
         context.drawImage(pointHaze, display.x - diameter / 2, display.y - diameter / 2, diameter, diameter);
       }
       if (glowContext) {
-        const diameter = particle.radius * 11 * spread;
+        const diameter = particle.radius * 14 * spread;
         context.globalAlpha = particle.alpha * .55 * (1 + pulse * .15);
         context.drawImage(glow, display.x - diameter / 2, display.y - diameter / 2, diameter, diameter);
       }
-      context.globalAlpha = particle.alpha * (1 + pulse * .18);
-      context.fillStyle = '#e3f4ff';
+      const coreRadius = particle.radius * 2.1 * spread;
+      context.save();
       context.beginPath();
-      context.arc(display.x, display.y, particle.radius * .85 * spread, 0, Math.PI * 2);
-      context.fill();
+      context.arc(display.x, display.y, coreRadius, 0, Math.PI * 2);
+      context.clip();
+      context.globalAlpha = particle.alpha * (1 + pulse * .12);
+      if (nucleusContext) context.drawImage(nucleus, display.x - coreRadius, display.y - coreRadius, coreRadius * 2, coreRadius * 2);
+      else { context.fillStyle = '#cce8fa'; context.fill(); }
+      if (glowContext) {
+        const innerSize = coreRadius * 2.4;
+        context.globalAlpha = particle.alpha * .9;
+        context.drawImage(glow, display.x + particle.parallaxX * coreRadius * .48 - innerSize / 2,
+          display.y + particle.parallaxY * coreRadius * .48 - innerSize / 2, innerSize, innerSize);
+        context.globalAlpha = particle.alpha * .42;
+        context.drawImage(glow, display.x - particle.parallaxX * coreRadius * .25 - coreRadius,
+          display.y - particle.parallaxY * coreRadius * .25 - coreRadius, coreRadius * 2, coreRadius * 2);
+      }
+      context.restore();
     }
     context.restore();
-    prism.render(now, mouse);
     flock.render(now, mouse);
     frameId = requestAnimationFrame(render);
     state('active');
+  }
+
+  function continueStroke(start, end, now) {
+    const dx = end.x - start.x, dy = end.y - start.y, length = Math.hypot(dx, dy);
+    if (length < .001) return;
+    const directionX = dx / length, directionY = dy / length;
+    let skipped = 0;
+    if (penGapRemaining > 0) {
+      skipped = Math.min(length, penGapRemaining);
+      penGapRemaining -= skipped;
+      if (skipped >= length - .001) return;
+    }
+    const startX = start.x + directionX * skipped, startY = start.y + directionY * skipped;
+    const pathLength = length - skipped;
+    if (!head) {
+      strokeSequence++;
+      head = emit(startX, startY, now);
+      remainder = 0;
+      nextSpacing = sampleSpacing();
+    }
+    let traveled = nextSpacing - remainder;
+    for (; traveled <= pathLength;) {
+      if (!head.released) {
+        const spread = (Math.random() * 2 - 1) * 18 * fastMix;
+        head.x -= directionY * spread;
+        head.y += directionX * spread;
+        head.released = true;
+      }
+      head = emit(startX + directionX * traveled, startY + directionY * traveled, now);
+      nextSpacing = sampleSpacing();
+      traveled += nextSpacing;
+    }
+    remainder = pathLength - (traveled - nextSpacing);
+    head.x = end.x;
+    head.y = end.y;
+    head.born = head.updated = now;
+    head.vx = head.vy = 0;
   }
 
   function samplePointer(event) {
@@ -355,8 +444,13 @@ function mountCursorTrail() {
       canvas.dataset.maxParticles = String(particleLimit);
       retireOverflow(now);
       previous = point;
+      activeRegion = prism.regionAt(point.x, point.y);
+      lockSpacingRegion(activeRegion, now);
+      penGapRemaining = 0;
       remainder = 0;
       nextSpacing = sampleSpacing();
+      if (head) head.released = true;
+      strokeSequence++;
       head = emit(point.x, point.y, now);
       if (!frameId) frameId = requestAnimationFrame(render);
       state('active');
@@ -376,35 +470,25 @@ function mountCursorTrail() {
     canvas.dataset.maxParticles = String(particleLimit);
     retireOverflow(now);
     canvas.dataset.motionSpeed = motionSpeed.toFixed(3);
-    const directionX = dx / distance, directionY = dy / distance;
-    // Bound only a single abnormal jump to the viewport diagonal. Ordinary
-    // movement keeps its full path; no global particle-count cap is applied.
-    const pathLength = Math.min(distance, Math.hypot(width, height));
-    if (distance > pathLength) remainder = 0;
-    const startX = point.x - directionX * pathLength, startY = point.y - directionY * pathLength;
-    let traveled = nextSpacing - remainder;
-    for (; traveled <= pathLength;) {
-      // Apply lateral variation when a head becomes a free particle. Applying
-      // it only at spawn would be erased by pointer anchoring on every event.
-      if (head && !head.released) {
-        const spread = (Math.random() * 2 - 1) * 18 * fastMix;
-        head.x -= directionY * spread;
-        head.y += directionX * spread;
-        head.released = true;
-      }
-      head = emit(startX + directionX * traveled, startY + directionY * traveled, now);
-      nextSpacing = sampleSpacing();
-      traveled += nextSpacing;
+    // Region changes affect the input history once, just like lifting a pen.
+    // Old links never get re-clipped as they drift or as the pointer moves.
+    let start = previous;
+    const crossings = prism.crossings(previous, point, activeRegion);
+    for (const crossing of crossings) {
+      continueStroke(start, crossing, now);
+      if (head) head.released = true;
+      head = null;
+      remainder = 0;
+      penGapRemaining = penLiftDistance;
+      activeRegion = crossing.toRegion;
+      lockSpacingRegion(activeRegion, now);
+      boundaryBreaks++;
+      start = crossing;
     }
-    remainder = pathLength - (traveled - nextSpacing);
+    continueStroke(start, point, now);
     previous = point;
-    head = particles[particles.length - 1] || emit(point.x, point.y, now);
-    head.x = point.x;
-    head.y = point.y;
-    head.born = head.updated = now;
-    head.vx = head.vy = 0;
-    if (particles.length && !frameId) frameId = requestAnimationFrame(render);
-    if (particles.length) state('active');
+    if (!frameId) frameId = requestAnimationFrame(render);
+    state('active');
   }
 
   function move(event) {
@@ -416,7 +500,7 @@ function mountCursorTrail() {
   }
 
   document.addEventListener('pointermove', move, { passive: true });
-  document.documentElement.addEventListener('pointerleave', () => { previous = null; remainder = 0; if (mouse) mouse.active = false; flock.clear(); }, { passive: true });
+  document.documentElement.addEventListener('pointerleave', () => { previous = null; remainder = 0; lockSpacingRegion(null, performance.now()); if (mouse) mouse.active = false; flock.clear(); }, { passive: true });
   window.addEventListener('blur', () => { stop(enabled ? 'idle' : canvas.dataset.state); });
   window.addEventListener('resize', () => { if (enabled) { stop('idle'); resize(); } }, { passive: true });
   document.addEventListener('visibilitychange', availability);

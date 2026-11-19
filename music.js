@@ -1,6 +1,6 @@
 import { mountMusicShader } from './music-shader.js';
 
-const source = './media/bgm-neon-loop.mp3';
+const source = './media/bgm-robot-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
 const ownerKey = 'portfolio-music-owner';
@@ -213,7 +213,7 @@ const creditTarget = document.querySelector('.detail-footer, .footer-bottom');
 if (creditTarget) {
   const credit = document.createElement('p');
   credit.className = 'music-credit';
-  credit.innerHTML = '<span>背景音乐</span><a href="https://www.scottbuckley.com.au/library/neon/" target="_blank" rel="noopener noreferrer" data-no-translate>Neon · Scott Buckley</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>循环剪辑与响度调整</span>';
+  credit.innerHTML = '<span>背景音乐</span><a href="https://peritune.com/blog/2015/09/16/robot/" target="_blank" rel="noopener noreferrer" title="Robot — PeriTune" data-no-translate>Robot · PeriTune</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" data-no-translate>CC BY 4.0</a><span>格式转换与响度调整</span>';
   creditTarget.append(credit);
 }
 const icon = path => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${path}</svg>`;

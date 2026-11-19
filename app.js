@@ -209,11 +209,72 @@ function showEmpty() {
   $('project-link').textContent = 'Bilibili 空间 ↗';
   $('playback-help').hidden = true;
 }
+// Static noise displaces the edge mask once. Two complete noise color fields
+// flow behind it, so local wisps brighten and fade without moving the card shape.
+const selectionFrames = new Set();
+function syncSelectionFrame(frame) {
+  const moving = frame.dataset.visible === 'true' && !document.hidden && !reducedMotion.matches;
+  frame.dataset.motion = moving ? 'running' : 'paused';
+}
+const selectionFrameObserver = typeof IntersectionObserver === 'function'
+  ? new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      entry.target.dataset.visible = String(entry.isIntersecting);
+      syncSelectionFrame(entry.target);
+    }
+  }, {threshold:0}) : null;
+function syncSelectionFrames() { for (const frame of selectionFrames) syncSelectionFrame(frame); }
+reducedMotion.addEventListener('change', syncSelectionFrames);
+document.addEventListener('visibilitychange', syncSelectionFrames);
+function createSelectionFrame(index) {
+  const frame = element('span', 'selection-card-frame');
+  const id = `selection-nebula-${index}`;
+  frame.setAttribute('aria-hidden', 'true');
+  frame.dataset.visible = String(!selectionFrameObserver);
+  frame.style.setProperty('--nebula-delay', `${-index * 3.17}s`);
+  const layer = (n) => {
+    const layerId = `${id}-${n}`;
+    const texture = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="212" viewBox="0 0 320 212" preserveAspectRatio="none" fill="none">
+    <defs>
+      <linearGradient id="${layerId}-color" x1="0" y1="0" x2="320" y2="212" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#78bce4" stop-opacity=".15"/><stop offset=".2" stop-color="#a3dcff" stop-opacity=".85"/><stop offset=".44" stop-color="#6786c0" stop-opacity=".22"/><stop offset=".7" stop-color="#91c9f4" stop-opacity=".95"/><stop offset="1" stop-color="#83ace2" stop-opacity=".2"/>
+      </linearGradient>
+      <filter id="${layerId}-flow" x="-12" y="-12" width="344" height="236" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="${n ? '.026 .036' : '.018 .045'}" numOctaves="2" seed="${index * 2 + n + 13}" result="field"/>
+        <feDisplacementMap in="SourceGraphic" in2="field" scale="9" xChannelSelector="R" yChannelSelector="G" result="warped"/>
+        <feColorMatrix in="field" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  3.4 0 0 0 -1.13" result="wisps"/>
+        <feComposite in="warped" in2="wisps" operator="in" result="threads"/>
+        <feGaussianBlur in="threads" stdDeviation="1.45" result="halo"/>
+        <feMerge><feMergeNode in="halo"/><feMergeNode in="threads"/></feMerge>
+      </filter>
+    </defs>
+    <g class="selection-nebula-ribbons" filter="url(#${layerId}-flow)" stroke="url(#${layerId}-color)">
+      <path stroke-width="1.65" stroke-linecap="round" d="M7 34C3 13 12 6 34 7C98 3 160 11 224 6S315 2 314 33C318 78 310 130 315 177S296 206 265 205C199 210 141 201 77 206S4 212 6 177C2 128 10 83 7 34Z"/>
+      <path stroke-width=".85" opacity=".58" stroke-linecap="round" d="M12 39C6 17 19 11 42 12C111 7 176 14 240 10S308 17 308 43C312 91 306 130 310 170S289 201 254 200C185 205 117 197 62 202S10 192 12 162C6 118 15 78 12 39Z"/>
+    </g>
+  </svg>`;
+    if (n === 0) frame.style.maskImage = `url("data:image/svg+xml,${encodeURIComponent(texture)}")`;
+    const field = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+      <filter id="field" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="${n ? '.047 .031' : '.031 .055'}" numOctaves="2" seed="${index * 2 + n + 31}" stitchTiles="stitch"/>
+        <feColorMatrix type="matrix" values="0 0 0 0 ${n ? '.32' : '.65'}  0 0 0 0 ${n ? '.58' : '.88'}  0 0 0 0 1  3.8 0 0 0 -1.35"/>
+      </filter><rect width="128" height="128" filter="url(#field)"/>
+    </svg>`;
+    const surface = element('span', `selection-nebula-layer selection-nebula-layer-${n}`);
+    surface.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(field)}")`;
+    return surface;
+  };
+  frame.append(layer(0), layer(1));
+  selectionFrames.add(frame);
+  return frame;
+}
 function renderProjects() {
   const visible = projects.filter(project => (activeCategory === 'all' || project.category === activeCategory) && (activeCategory !== 'unreal' || activeSubcategory === 'all' || project.subcategory === activeSubcategory));
   $('ue-subcategories').hidden = activeCategory !== 'unreal';
   for (const item of document.querySelectorAll('[data-category]')) item.setAttribute('aria-pressed', String(item.dataset.category === activeCategory));
   for (const item of document.querySelectorAll('[data-subcategory]')) item.setAttribute('aria-pressed', String(item.dataset.subcategory === activeSubcategory));
+  selectionFrameObserver?.disconnect();
+  selectionFrames.clear();
   $('project-grid').replaceChildren();
   $('project-count').textContent = String(visible.length).padStart(2,'0');
   for (const project of visible) {
@@ -236,10 +297,7 @@ function renderProjects() {
     label.append(element('strong','',project.title), element('small','',`${categoryName(project.category)} / ${minutes}:${seconds}`));
     const media = element('span', 'selection-card-media');
     media.append(img);
-    const frame = element('span', 'selection-card-frame');
-    frame.setAttribute('aria-hidden', 'true');
-    frame.style.setProperty('--frame-delay', `${-visible.indexOf(project) * 1.3}s`);
-    frame.innerHTML = '<svg viewBox="0 0 320 212" preserveAspectRatio="none" fill="none"><path class="selection-frame-corners" d="M1 39V13L13 1H64M258 1h49l12 12v26M319 173v26l-12 12h-49M64 211H13L1 199v-26"/><path class="selection-frame-flow" pathLength="100" d="M13 1H307L319 13V199L307 211H13L1 199V13Z"/><path class="selection-frame-glow" pathLength="100" d="M13 1H307L319 13V199L307 211H13L1 199V13Z"/><path class="selection-frame-star" pathLength="100" d="M13 1H307L319 13V199L307 211H13L1 199V13Z"/><path class="selection-frame-ticks" d="M74 1h13m5 0h3M233 211h13m-21 0h3"/></svg>';
+    const frame = createSelectionFrame(visible.indexOf(project));
     button.append(media,label,frame);
     button.addEventListener('click', (event) => {
       // Touch users can preview first, then use the detail link or tap again.
@@ -253,6 +311,8 @@ function renderProjects() {
     // Keyboard focus previews; touch focus must leave the first-tap decision to click.
     button.addEventListener('focus', () => { if (button.matches(':focus-visible') && !$('project-preview').querySelector('iframe, video')) selectProject(project); });
     $('project-grid').append(button);
+    selectionFrameObserver?.observe(frame);
+    syncSelectionFrame(frame);
   }
   if (!visible.length) {
     const categories = activeCategory === 'all' ? ['unity','unreal','td'] : [activeCategory];
