@@ -29,8 +29,6 @@ uniform vec2 uViewSize;
 // Smoothed pointer displacement in CSS pixels, bounded to a 10 px circle.
 uniform vec2 uPointer;
 uniform float uTime;
-uniform vec2 uRayOffset;
-uniform float uRayTime;
 uniform vec2 uPulse; // lagged snare, immersive-home blend
 uniform float uLayers;
 
@@ -90,11 +88,6 @@ vec3 StarLayer(vec2 uv) {
   return col;
 }
 
-float rayNoise(vec2 p) {
-  vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-  return mix(mix(Hash21(i),Hash21(i+vec2(1.,0.)),f.x),mix(Hash21(i+vec2(0.,1.)),Hash21(i+vec2(1.)),f.x),f.y);
-}
-
 void main() {
   vec2 uv = (vUv - 0.5) * uResolution / max(uResolution.y, 1.0);
   vec2 pointer = uPointer / max(uViewSize.y, 1.0) * 0.7;
@@ -114,12 +107,10 @@ void main() {
   }
   vec3 color = col * EXPOSURE;
   color = min(color / (1.0 + color * 1.7), vec3(0.42));
-  // RGB is the visible starfield; alpha is this scene's own light/occlusion
-  // buffer for the radial-scattering pass. It is not the final screen alpha.
-  vec2 lightVector=(vUv+uRayOffset-.5)*vec2(uResolution.x/uResolution.y,1.);
-  float emitter=exp(-dot(lightVector,lightVector)*24.)*.80;
-  float occlusion=smoothstep(.42,.62,rayNoise(vUv*18.+vec2(uRayTime*.03,0.)));
-  float source=clamp(dot(color,vec3(.2126,.7152,.0722))*5.+emitter*occlusion,0.,1.);
+  // RGB is the visible starfield; alpha supplies only those same stars to
+  // radial scattering. No additional disc/light mass fills the dark sky.
+  // This bounded source is separate from the final screen alpha.
+  float source=clamp(dot(color,vec3(.2126,.7152,.0722))*5.,0.,1.);
   gl_FragColor = vec4(color, source);
 }
 `;
@@ -294,8 +285,6 @@ export class Starfield {
         viewSize: gl.getUniformLocation(program, 'uViewSize'),
         pointer: gl.getUniformLocation(program, 'uPointer'),
         time: gl.getUniformLocation(program, 'uTime'),
-        rayOffset: gl.getUniformLocation(program, 'uRayOffset'),
-        rayTime: gl.getUniformLocation(program, 'uRayTime'),
         pulse: gl.getUniformLocation(program, 'uPulse'),
         layers: gl.getUniformLocation(program, 'uLayers'),
       };
@@ -387,7 +376,6 @@ export class Starfield {
     gl.uniform2f(this.uniforms.viewSize, this.viewSize.width, this.viewSize.height);
     gl.uniform2f(this.uniforms.pointer, this.pointer.x, this.pointer.y);
     gl.uniform1f(this.uniforms.time, this.time);
-    gl.uniform2f(this.uniforms.rayOffset,rayOffset[0],rayOffset[1]);gl.uniform1f(this.uniforms.rayTime,rayTime);
     gl.uniform2f(this.uniforms.pulse, lag, this.heroMix);
     gl.uniform1f(this.uniforms.layers, this.layerCount);
     gl.drawArrays(gl.TRIANGLES, 0, 3);

@@ -72,48 +72,54 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-width: 100px;
-  min-height: 52px;
-  right: 12px;
-  top: 10px;
-  padding: 4px 12px 4px 4px;
+  gap: 7px;
+  min-width: 82px;
+  min-height: 44px;
+  right: max(8px, env(safe-area-inset-right, 0px));
+  top: max(8px, env(safe-area-inset-top, 0px));
+  padding: 0 10px;
   border: 0;
-  border-radius: 24px;
+  border-radius: 22px;
   color: #dcecf8;
-  background: radial-gradient(ellipse at 38% 50%, #061222a8 4%, #06122236 53%, transparent 77%);
+  background: #06122270;
   box-shadow: none;
   font: 650 14px/1.4 var(--font-ui);
-  text-shadow: 0 1px 7px #020814;
-  transition: color .2s, text-shadow .2s;
+  text-shadow: 0 1px 5px #020814;
+  touch-action: manipulation;
+  transition: color .2s, background-color .2s;
 }
 .project-preview.project-preview > .close-player .player-close-glyph {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 auto;
-  background: radial-gradient(circle,#84cffe0b,transparent 69%);
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  background: none;
 }
-.project-preview.project-preview > .close-player svg {
+/* Two quiet strokes occupy about18px; the button's touch target stays44px. */
+.project-preview.project-preview > .close-player .player-close-glyph::before,
+.project-preview.project-preview > .close-player .player-close-glyph::after {
+  content: '';
   position: absolute;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
-.project-preview.project-preview > .close-player .player-close-orbit{width:42px;height:42px;color:#9bd8f076;stroke-width:.8;transition:transform .5s cubic-bezier(.2,.7,.2,1),color .25s;transform:rotate(-15deg)}
-.project-preview.project-preview > .close-player .player-close-mark{width:21px;height:21px;color:#d9edf8;stroke-width:1.5;transition:transform .25s,color .25s}
-.project-preview.project-preview > .close-player .player-close-label{letter-spacing:.08em}
+.project-preview.project-preview > .close-player .player-close-glyph::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+.project-preview.project-preview > .close-player svg { display: none; }
+.project-preview.project-preview > .close-player .player-close-label { letter-spacing: .02em; }
 .project-preview.project-preview > .close-player:hover {
   color: #fff;
-  background: radial-gradient(ellipse at 38% 50%, #102b3e80, #0e304724 48%, transparent 78%);
-  text-shadow: 0 0 12px #90dfff66;
+  background-color: #102335a6;
 }
-.project-preview.project-preview > .close-player:is(:hover,:focus-visible) .player-close-orbit{color:#bcecffc7;transform:rotate(60deg);filter:drop-shadow(0 0 5px #80ccff32)}
-.project-preview.project-preview > .close-player:is(:hover,:focus-visible) .player-close-mark{color:#fff;transform:rotate(90deg)}
 .project-preview.project-preview > .close-player:focus-visible {
-  outline: 1px dashed #b7deed;
+  outline: 2px solid #b7deed;
   outline-offset: 3px;
 }
 
@@ -202,7 +208,21 @@
   .project-preview.project-preview > .poster-button .play-triangle { width: 58px; height: 58px; }
   .project-preview.project-preview > .poster-button .play-triangle svg { width: 28px; height: 28px; }
   .project-preview.project-preview > .poster-button .poster-play { font-size: 12px; gap: 9px; }
-  .project-preview.project-preview > .close-player { right: 3px; top: 2px; padding-inline: 9px; }
+  .project-preview.project-preview > .close-player {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    gap: 0;
+    right: max(6px, env(safe-area-inset-right, 0px));
+    top: max(6px, env(safe-area-inset-top, 0px));
+    background: radial-gradient(circle, #061222a8 0 15px, transparent 16px);
+  }
+  .project-preview.project-preview > .close-player:hover {
+    background: radial-gradient(circle, #102335c9 0 15px, transparent 16px);
+  }
+  .project-preview.project-preview > .close-player .player-close-label { display: none; }
   .video-chapters.video-chapters { column-gap: 16px; }
   .video-chapters.video-chapters > button { gap: 6px; font-size: 13px; }
 }

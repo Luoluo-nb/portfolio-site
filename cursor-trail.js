@@ -14,8 +14,11 @@ function mountCursorTrail() {
 
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const BASE_PARTICLES = 6, MAX_PARTICLES = 12;
-  const spacing = 44, linkDistance = 176, activationDistance = 11;
+  const BASE_PARTICLES = 6, MAX_PARTICLES = 12, afterglowLife = 800;
+  // Overflow becomes a fading afterglow, rather than disappearing at the cap.
+  // Scale both the sampled path and the time retained behind the pointer.
+  const rangeScale = 2.5;
+  const spacing = 44 * rangeScale, linkDistance = 176 * rangeScale, activationDistance = 11;
   const coneHalfAngle = Math.PI / 6, drag = 1.8;
   const particles = [];
   let width = 0, height = 0, frameId = 0, linkCount = 0, remainder = 0;
@@ -24,9 +27,12 @@ function mountCursorTrail() {
   let previous = null, mouse = null, head = null;
   let suspended = false, enabled = false;
   canvas.dataset.shape = 'scatter-radial';
+  canvas.dataset.retention = 'main-and-afterglow';
   canvas.dataset.maxParticles = String(BASE_PARTICLES);
   canvas.dataset.fastMaxParticles = String(MAX_PARTICLES);
+  canvas.dataset.afterglowLife = String(afterglowLife);
   canvas.dataset.activationDistance = String(activationDistance);
+  canvas.dataset.rangeScale = String(rangeScale);
   canvas.dataset.spacing = String(spacing);
   canvas.dataset.coneDegrees = '60';
   canvas.dataset.linkDistance = String(linkDistance);
@@ -43,11 +49,29 @@ function mountCursorTrail() {
     glowContext.fillStyle = gradient;
     glowContext.fillRect(0, 0, 40, 40);
   }
+  // A tiny reusable Gaussian strip gives each link a local halo. No full-canvas
+  // blur or per-frame shadow filter is needed, and the sharp core stays intact.
+  const lineGlow = document.createElement('canvas');
+  lineGlow.width = 64; lineGlow.height = 32;
+  const lineGlowContext = lineGlow.getContext('2d');
+  if (lineGlowContext) {
+    const image = lineGlowContext.createImageData(64, 32);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++) {
+      const vertical = (y - 15.5) / 5.7;
+      const end = Math.min(1, x / 5, (63 - x) / 5);
+      const i = (y * 64 + x) * 4;
+      image.data[i] = 128; image.data[i + 1] = 192; image.data[i + 2] = 255;
+      image.data[i + 3] = 84 * Math.exp(-.5 * vertical * vertical) * end;
+    }
+    lineGlowContext.putImageData(image, 0, 0);
+  }
 
   function state(value) {
     canvas.dataset.state = value;
     canvas.dataset.running = String(Boolean(frameId));
     canvas.dataset.particles = String(particles.length);
+    canvas.dataset.mainParticles = String(particles.filter(p => p.retiredAt === null).length);
+    canvas.dataset.afterglowParticles = String(particles.filter(p => p.retiredAt !== null).length);
     canvas.dataset.segments = String(linkCount);
   }
 
@@ -90,19 +114,31 @@ function mountCursorTrail() {
     resize();
   }
 
+  function retireOverflow(now) {
+    let excess = particles.reduce((count, p) => count + (p.retiredAt === null ? 1 : 0), 0) - particleLimit;
+    for (const particle of particles) {
+      if (excess <= 0) break;
+      if (particle.retiredAt !== null) continue;
+      // Keep position, velocity, alpha and original lifetime unchanged here.
+      particle.retiredAt = now;
+      excess--;
+    }
+  }
+
   function emit(x, y, now) {
-    while (particles.length >= particleLimit) particles.shift();
     particles.push({
       x, y, born: now, updated: now,
+      retiredAt: null,
       released: false,
       // Keep each cone offset stable through its life, rather than noisy per frame.
       angleOffset: (Math.random() * 2 - 1) * coneHalfAngle,
       speed: 38 + Math.random() * 46,
       vx: 0, vy: 0,
-      life: 1500 + Math.random() * 400,
+      life: (1500 + Math.random() * 400) * rangeScale,
       radius: .7 + Math.random() * .45,
       alpha: .64,
     });
+    retireOverflow(now);
     return particles[particles.length - 1];
   }
 
@@ -112,7 +148,8 @@ function mountCursorTrail() {
     context.clearRect(0, 0, width, height);
     for (let index = particles.length - 1; index >= 0; index--) {
       const particle = particles[index], age = Math.max(0, now - particle.born);
-      if (age >= particle.life) {
+      const retiredAge = particle.retiredAt === null ? 0 : Math.max(0, now - particle.retiredAt);
+      if (age >= particle.life || (particle.retiredAt !== null && retiredAge >= afterglowLife)) {
         if (particle === head) head = null;
         particles.splice(index, 1);
         continue;
@@ -124,7 +161,7 @@ function mountCursorTrail() {
       const distance = Math.hypot(dx, dy);
       particle.vx = particle.vy = 0;
       if (particle === head && mouse) {
-      // One point marks the pointer exactly, even in the faster, denser trail.
+      // One point marks the pointer exactly throughout the retained history.
         particle.x = mouse.x;
         particle.y = mouse.y;
       } else if (distance > activationDistance) {
@@ -141,7 +178,9 @@ function mountCursorTrail() {
         particle.x += particle.vx * seconds;
         particle.y += particle.vy * seconds;
       }
-      particle.alpha = Math.pow(1 - age / particle.life, 1.65) * .64;
+      const retiredProgress = Math.min(1, retiredAge / afterglowLife);
+      const afterglowWeight = 1 - retiredProgress * retiredProgress * (3 - 2 * retiredProgress);
+      particle.alpha = Math.pow(1 - age / particle.life, 1.65) * .64 * afterglowWeight;
     }
     if (!particles.length) { stop('idle'); return; }
 
@@ -149,16 +188,24 @@ function mountCursorTrail() {
     // shortcuts that flatten fast turns or join the wrong side of a loop.
     context.save();
     context.globalCompositeOperation = 'lighter';
-    context.lineWidth = .85;
+    context.lineWidth = 1.35;
     context.lineCap = 'round';
-    context.strokeStyle = '#a9d9f5';
+    context.strokeStyle = '#b8e3ff';
     linkCount = 0;
     for (let index = 1; index < particles.length; index++) {
       const a = particles[index - 1], b = particles[index];
       const distance = Math.hypot(a.x - b.x, a.y - b.y);
       if (distance < 1 || distance >= linkDistance) continue;
-      const alpha = Math.min(a.alpha, b.alpha) * .64 * (1 - (distance / linkDistance) ** 2);
+      const alpha = Math.min(a.alpha, b.alpha) * .78 * (1 - (distance / linkDistance) ** 2);
       if (alpha < .006) continue;
+      if (lineGlowContext) {
+        context.save();
+        context.translate(a.x, a.y);
+        context.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+        context.globalAlpha = alpha * .55;
+        context.drawImage(lineGlow, 0, -7, distance, 14);
+        context.restore();
+      }
       context.globalAlpha = alpha;
       context.beginPath();
       context.moveTo(a.x, a.y);
@@ -194,6 +241,7 @@ function mountCursorTrail() {
       motionSpeed = fastMix = 0;
       particleLimit = BASE_PARTICLES;
       canvas.dataset.maxParticles = String(particleLimit);
+      retireOverflow(now);
       previous = point;
       remainder = 0;
       nextSpacing = sampleSpacing();
@@ -214,10 +262,12 @@ function mountCursorTrail() {
     fastMix = mix * mix * (3 - 2 * mix);
     particleLimit = BASE_PARTICLES + Math.round((MAX_PARTICLES - BASE_PARTICLES) * fastMix);
     canvas.dataset.maxParticles = String(particleLimit);
+    retireOverflow(now);
     canvas.dataset.motionSpeed = motionSpeed.toFixed(3);
     const directionX = dx / distance, directionY = dy / distance;
-    // A large pointer jump emits near its arrival, not across the entire page.
-    const pathLength = Math.min(distance, spacing * (1 + fastMix * .25) * particleLimit);
+    // Bound only a single abnormal jump to the viewport diagonal. Ordinary
+    // movement keeps its full path; no global particle-count cap is applied.
+    const pathLength = Math.min(distance, Math.hypot(width, height));
     if (distance > pathLength) remainder = 0;
     const startX = point.x - directionX * pathLength, startY = point.y - directionY * pathLength;
     let traveled = nextSpacing - remainder;
