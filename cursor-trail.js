@@ -135,6 +135,33 @@ function mountCursorTrail() {
     lineGlowContext.putImageData(image, 0, 0);
   }
 
+  // A periodic one-dimensional material scrolls inside the thin line itself.
+  // Stable emission IDs share the UV at each joint, so removing an old point
+  // never restarts the flow on the surviving chain. No per-frame pixel writes.
+  const lineFlow = document.createElement('canvas');
+  lineFlow.width = 256; lineFlow.height = 4;
+  const lineFlowContext = lineFlow.getContext('2d');
+  const flowPeriod = 2.25, flowSpeed = .00145;
+  if (lineFlowContext) {
+    const image = lineFlowContext.createImageData(lineFlow.width, lineFlow.height);
+    for (let x = 0; x < lineFlow.width; x++) {
+      const phase = x / lineFlow.width * Math.PI * 2;
+      const crest = (.5 + .5 * Math.sin(phase)) ** 6;
+      const ripple = .5 + .5 * Math.sin(phase * 3 + .65 * Math.sin(phase * 2));
+      const grain = .5 + .5 * Math.sin(phase * 11 + .45 * Math.sin(phase * 5));
+      const light = .14 + .76 * crest + .10 * ripple * grain;
+      const violet = (.5 + .5 * Math.sin(phase + 2.1)) ** 8 * .15;
+      for (let y = 0; y < lineFlow.height; y++) {
+        const i = (y * lineFlow.width + x) * 4;
+        image.data[i] = 92 + 139 * crest + 55 * violet;
+        image.data[i + 1] = 184 + 63 * crest - 65 * violet;
+        image.data[i + 2] = 255;
+        image.data[i + 3] = 255 * light;
+      }
+    }
+    lineFlowContext.putImageData(image, 0, 0);
+  }
+
   function state(value) {
     canvas.dataset.state = value;
     canvas.dataset.running = String(Boolean(frameId));
@@ -317,32 +344,28 @@ function mountCursorTrail() {
         context.drawImage(lineGlow, 0, -haloHeight / 2, distance, haloHeight);
         context.restore();
       }
-      context.globalAlpha = alpha;
+      context.globalAlpha = alpha * (lineFlowContext ? .42 : 1);
       context.strokeStyle = '#b8e3ff';
       context.beginPath();
       context.moveTo(a.x, a.y);
       context.lineTo(b.x, b.y);
       context.stroke();
-      if (glowContext) {
-        // Stable emission IDs make each light packet travel from the pointer
-        // toward older points, even when points move between the two groups.
-        const travel = now * .0024, period = 8, interval = b.flowId - a.flowId;
-        const first = Math.ceil((a.flowId + travel) / period) * period - travel;
-        const packetLength = Math.min(70, Math.max(30, originalDistance * .38));
-        for (let pulse = 0; pulse < 2; pulse++) {
-          const center = first - pulse * period;
-          const position = (center - a.flowId) / interval * distance;
-          if (position < -packetLength / 2 || position > distance + packetLength / 2) continue;
-          context.save();
-          context.translate(a.x, a.y);
-          context.rotate(Math.atan2(b.y - a.y, b.x - a.x));
-          context.beginPath();
-          context.rect(0, -5, distance, 10);
-          context.clip();
-          context.globalAlpha = alpha * .9;
-          context.drawImage(glow, position - packetLength / 2, -3 * taper, packetLength, 6 * taper);
-          context.restore();
-        }
+      if (lineFlowContext) {
+        const interval = b.flowId - a.flowId;
+        const tileWidth = distance * flowPeriod / interval;
+        const phase = ((a.flowId + now * flowSpeed) % flowPeriod) / flowPeriod;
+        const coreWidth = .85 * taper;
+        context.save();
+        context.translate(a.x, a.y);
+        context.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+        context.beginPath();
+        context.rect(0, -coreWidth / 2, distance, coreWidth);
+        context.clip();
+        context.globalAlpha = Math.min(1, alpha * 1.75);
+        // Increasing phase carries the bright strands from newer to older IDs.
+        for (let x = -phase * tileWidth; x < distance; x += tileWidth)
+          context.drawImage(lineFlow, x, -coreWidth / 2, tileWidth, coreWidth);
+        context.restore();
       }
       linkCount++;
     }

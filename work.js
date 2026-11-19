@@ -87,7 +87,7 @@ function play(startTime = project?.startTime ?? 0) {
       close.className = 'close-player';
       close.type = 'button';
       close.setAttribute('aria-label', '关闭播放器');
-      close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-orbit" viewBox="0 0 40 40" focusable="false"><path d="M10 6.8A16.5 16.5 0 0 1 36.2 23M30 33.2A16.5 16.5 0 0 1 3.8 17"/></svg><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></span><span class="player-close-label">关闭</span>';
+      close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5 5 10 10m0-10L5 15"/></svg></span><span class="player-close-label">关闭</span>';
       close.addEventListener('click', () => { showPoster(); help(''); $('detail-player').querySelector('.poster-button').focus({preventScroll:true}); });
       $('detail-player').append(close);
       if (transferFocus) frame.focus({preventScroll:true});
@@ -223,6 +223,12 @@ if (project) {
     const nextUrl = `./work.html?id=${encodeURIComponent(nextProject.id)}`;
     $('work-next').href = $('work-next-footer').href = nextUrl;
     $('work-next-name').textContent = $('work-next-title').textContent = nextProject.title;
+    const nextCopy = document.createElement('span');
+    nextCopy.className = 'detail-next-compact-copy';
+    $('work-next-name').className = 'detail-next-name';
+    nextCopy.append($('work-next-label'), $('work-next-name'));
+    $('work-next').prepend(nextCopy);
+    $('work-next').querySelector('.detail-next-arrow').innerHTML = '<svg viewBox="0 0 32 20" focusable="false"><path d="M3 10h24m-7-6 7 6-7 6"/></svg>';
     $('work-next').hidden = $('work-next-navigation').hidden = false;
   }
   $('work-breadcrumb').textContent = project.title;

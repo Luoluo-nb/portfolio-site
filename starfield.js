@@ -18,7 +18,6 @@ const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .12});
 const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
 // Ambient scattering remains present without audio; snare adds a restrained lift.
 const RAY_RESPONSE = Object.freeze({homeBase:.32, contentBase:.065, snareBoost:.24, contentMusicGain:.06});
-const CLICK_REFRACTION = Object.freeze({maxPulses:3, durationMs:1050, touchDurationMs:850});
 
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -146,32 +145,8 @@ precision mediump float;
 varying mediump vec2 vUv;
 uniform sampler2D uScene,uRays;
 uniform float uRayStrength;
-uniform vec2 uClickView;
-// xy: normalized click position, z: age 0..1, w: strength (zero when unused).
-uniform vec4 uClickPulses[3];
-vec2 refractedUV(){
- vec2 displacement=vec2(0.);
- for(int i=0;i<3;i++){
-  vec4 pulse=uClickPulses[i];
-  if(pulse.w<=0.)continue;
-  vec2 delta=(vUv-pulse.xy)*uClickView;
-  float d=length(delta),age=pulse.z;
-  float radius=mix(125.,170.,pulse.w);
-  if(d>=radius)continue;
-  float reach=1.-smoothstep(radius*.65,radius,d);
-  float envelope=smoothstep(0.,.08,age)*(1.-smoothstep(.12,1.,age));
-  float core=1.-smoothstep(0.,radius*.85,d);
-  float zoom=.34*envelope*core*core*pulse.w;
-  float wave=(d-mix(10.,radius,age))/20.;
-  float ripple=wave*exp(-wave*wave*1.6)*19.*envelope*reach*pulse.w;
-  displacement+=-delta*zoom+delta/max(d,1.)*ripple;
- }
- // Three overlapping clicks can never displace the sky by more than 32px.
- displacement*=min(1.,32./max(length(displacement),.001));
- return clamp(vUv+displacement/max(uClickView,vec2(1.)),vec2(0.),vec2(1.));
-}
 void main(){
- vec2 uv=refractedUV();
+ vec2 uv=vUv;
  vec3 color=texture2D(uScene,uv).rgb;
  color+=texture2D(uRays,uv).rgb*vec3(.27,.48,.72)*uRayStrength;
  color=min(color,vec3(.46));
@@ -201,8 +176,6 @@ export class Starfield {
     this.heroTarget = 0;
     this.sceneMeasuredAt = -1000;
     this.audioLevels = null;
-    this.clickPulses = [];
-    this.clickUniforms = new Float32Array(CLICK_REFRACTION.maxPulses*4);
     this.resolutionScale = 1;
     this.frameTimes = [];
     this.listeners = [];
@@ -212,21 +185,12 @@ export class Starfield {
     this._tick = this._tick.bind(this);
 
     this._listen(document, 'visibilitychange', () => this._sync());
-    this._listen(window, 'portfolio:click-pulse', event => {
-      if (!this.ready || this.destroyed || this.paused || this.reducedMotion || !this.pageActive || document.hidden) return;
-      const {x,y,time,touch}=event.detail||{},now=performance.now();
-      if (![x,y,time].every(Number.isFinite) || time>now+20 || now-time>150) return;
-      const rect=this.canvas.getBoundingClientRect();
-      if (x<rect.left || x>rect.right || y<rect.top || y>rect.bottom) return;
-      while(this.clickPulses.length>=(touch?1:CLICK_REFRACTION.maxPulses))this.clickPulses.shift();
-      this.clickPulses.push({x:(x-rect.left)/Math.max(rect.width,1),y:1-(y-rect.top)/Math.max(rect.height,1),born:time,duration:touch?CLICK_REFRACTION.touchDurationMs:CLICK_REFRACTION.durationMs,strength:touch?.48:1});
-    });
     // Reduced motion still updates the static composition when navigating.
     this._listen(window, 'scroll', () => { if (this.reducedMotion) this._sync(); });
     this._listen(window, 'hashchange', () => { if (this.reducedMotion) queueMicrotask(() => this._sync()); });
-    this._listen(window, 'pagehide', () => { this.pageActive = false; this._clearClickPulses(); this._stop(); });
+    this._listen(window, 'pagehide', () => { this.pageActive = false; this._stop(); });
     this._listen(window, 'pageshow', () => { this.pageActive = true; this._sync(); });
-    this._listen(window, 'resize', () => { this._clearClickPulses(); this._resize(); });
+    this._listen(window, 'resize', () => { this._resize(); });
     this._listen(window, 'pointermove', event => {
       if (event.pointerType !== 'mouse' || !this.pointerQuery.matches || this.reducedMotion
           || this.paused || this.destroyed || document.hidden) return;
@@ -238,12 +202,11 @@ export class Starfield {
     });
     const releasePointer = () => { this.pointer.targetX = 0; this.pointer.targetY = 0; };
     this._listen(window, 'blur', releasePointer);
-    this._listen(window, 'blur', () => { this._clearClickPulses(); this._draw(); });
-    this._listen(document, 'pointerout', event => { if (event.pointerType==='mouse'&&!event.relatedTarget) { releasePointer(); this._clearClickPulses(); } });
+    this._listen(window, 'blur', () => { this._draw(); });
+    this._listen(document, 'pointerout', event => { if (event.pointerType==='mouse'&&!event.relatedTarget) { releasePointer(); } });
     this._listen(canvas, 'webglcontextlost', event => {
       event.preventDefault();
       this.ready = false;
-      this._clearClickPulses();
       this._stop();
       this._releaseTargets();
       this.canvas.style.opacity = '0';
@@ -333,8 +296,7 @@ export class Starfield {
         layers: gl.getUniformLocation(program, 'uLayers'),
       };
       this.rayUniforms = Object.fromEntries(['Scene','RayOffset','Samples','Density'].map(n => [n,gl.getUniformLocation(rayProgram,'u'+n)]));
-      this.compositeUniforms = Object.fromEntries(['Scene','Rays','RayStrength','ClickView'].map(n => [n,gl.getUniformLocation(compositeProgram,'u'+n)]));
-      this.compositeUniforms.ClickPulses=gl.getUniformLocation(compositeProgram,'uClickPulses[0]');
+      this.compositeUniforms = Object.fromEntries(['Scene','Rays','RayStrength'].map(n => [n,gl.getUniformLocation(compositeProgram,'u'+n)]));
       this.maxSize = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), ...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
       this.ready = true;
       this.canvas.style.opacity = this.originalOpacity;
@@ -412,12 +374,6 @@ export class Starfield {
     return rect ? Math.max(0, Math.min(1, (rect.bottom - 100) / Math.max(innerHeight * .65, 1))) : 0;
   }
 
-  _clearClickPulses() {
-    this.clickPulses.length=0;
-    this.clickUniforms.fill(0);
-    this.canvas.dataset.clickPulses='0';
-  }
-
   _draw() {
     if (!this.ready || this.destroyed || !this.sceneTarget || !this.rayTarget) return;
     const gl = this.gl;
@@ -447,13 +403,6 @@ export class Starfield {
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.useProgram(this.compositeProgram);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.sceneTarget.texture);gl.uniform1i(this.compositeUniforms.Scene,0);
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.rayTarget.texture);gl.uniform1i(this.compositeUniforms.Rays,1);
-    const now=performance.now();
-    this.clickPulses=this.clickPulses.filter(p=>now-p.born<p.duration);
-    this.clickUniforms.fill(0);
-    this.clickPulses.forEach((p,i)=>this.clickUniforms.set([p.x,p.y,Math.max(0,(now-p.born)/p.duration),p.strength],i*4));
-    gl.uniform2f(this.compositeUniforms.ClickView,this.viewSize.width,this.viewSize.height);
-    gl.uniform4fv(this.compositeUniforms.ClickPulses,this.clickUniforms);
-    this.canvas.dataset.clickPulses=String(this.clickPulses.length);
     gl.uniform1f(this.compositeUniforms.RayStrength,rayStrength);gl.drawArrays(gl.TRIANGLES,0,3);
     this.canvas.dataset.rayStrength=rayStrength.toFixed(4);
     this.canvas.dataset.rayBaseline=rayBaseline.toFixed(4);
@@ -517,7 +466,6 @@ export class Starfield {
 
   _sync() {
     this._stop();
-    if (!this.pageActive || document.hidden || this.reducedMotion || this.paused) this._clearClickPulses();
     if (!this.pageActive || document.hidden || this.reducedMotion) this.audioLevels = null;
     if (!this.ready || this.destroyed || !this.pageActive || document.hidden) return;
     this._draw();
@@ -532,7 +480,6 @@ export class Starfield {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    this._clearClickPulses();
     this._stop();
     this.resizeObserver?.disconnect();
     this.listeners.forEach(([target, type, callback]) => target.removeEventListener(type, callback));

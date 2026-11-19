@@ -1,4 +1,4 @@
-// 在这里填充个人介绍和作品。分类使用 unity 或 unreal；未确定引擎可留空。
+// 在这里填充个人介绍和作品。分类使用 unity、unreal 或 td。
 export const profile = {
   name: '张致远',
   about: '我是一名技术美术，专注于 Unity 与 Unreal Engine 的 Shader、实时特效和工具开发。工作覆盖汽车材质与交互展示、游戏材质优化、程序化资产及实时互动项目，连接视觉表现与技术实现。',
@@ -30,7 +30,6 @@ export const projects = [
   {id:'unreal-car', title:'车辆材质与交互展示', category:'unreal', subcategory:'vehicle', description:"围绕车辆展示搭建车漆、水面与地面材质，结合按键变色、平面反射和接触涟漪，呈现材质与环境的交互。", bvid:'BV1oxd1BtEGy', cid:37683202347, duration:69, cover:'./media/BV1oxd1BtEGy.jpg'},
   {id:'rain-vat', title:'雨水材质与流体效果', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 车辆雨水、地面积水与降雨粒子。\n从世界法线分区、Flow Map 和涟漪法线，到 Niagara 粒子与 Houdini FLIP 序列帧的制作过程。', bvid:'BV1TCQEBtEJA', cid:37526242180, duration:20, cover:'./media/BV1TCQEBtEJA.jpg'},
   {id:'unreal-snow', title:'雪地交互与车轮沾雪', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 使用 Render Target 记录雪地交互，并将四个车轮的接触信息映射到轮胎材质。\n详情包含雪地自阴影、轮胎沾雪及蓝图参数的实现过程。', bvid:'BV1CZDzBCEyj', cid:37323869335, duration:40, cover:'./media/BV1CZDzBCEyj.jpg'},
-  {id:'unreal-vfx-study', title:'UE 特效练习', category:'unreal', description:'Unreal Engine · 实时特效练习。', bvid:'BV1Q8Kj6EEB4', startTime:8.9, duration:14, cover:'./media/BV1Q8Kj6EEB4.jpg'},
   {id:'td-particle-gesture', title:'粒子上色与手势交互', category:'td', description:'为模型生成的粒子实例添加颜色与光照着色，结合手势输入进行交互。\n模型基于马南的 bioxelnode 案例。', bvid:'BV1tbiLBLExE', startTime:5.6, duration:84, cover:'./media/BV1tbiLBLExE.jpg'},
   {id:'td-unreal-brush', title:'TD 与 UE 交互画笔', category:'td', description:'TD 与 Unreal Engine 5.7 联动的交互画笔展示。', bvid:'BV1g9xt6cEkk', cid:43243081546, startTime:6.1, duration:42, cover:'./media/BV1g9xt6cEkk.jpg'},
 ];
