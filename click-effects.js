@@ -36,11 +36,11 @@ function availability(){
 }
 // One material contains exactly three travelling bands, with no center flash,
 // cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
-const RIPPLE_RADIUS=825,RIPPLE_SIZE=RIPPLE_RADIUS*2+42,RIPPLE_SPEED=1/3;
+const RIPPLE_RADIUS=825/1.9,RIPPLE_SIZE=RIPPLE_RADIUS*2+42,RIPPLE_SPEED=1/3/1.5;
 const RIPPLE_DELAY=.14/RIPPLE_SPEED,RIPPLE_DURATION=1.42/RIPPLE_SPEED,RIPPLE_EASE=1.35;
-// The first band is outermost. Keep the inner bands stronger, at one third
-// of the previous width range; expanding bands lose thickness independently.
-const RIPPLE_WIDTHS=[.18,.35,1].map(width=>width/3),RIPPLE_LIFE=(RIPPLE_DURATION+RIPPLE_DELAY*2)*1000;
+// The first band is outermost: multiply only its current width by nine.
+// Inner widths stay at one third; expanding bands lose thickness independently.
+const RIPPLE_WIDTHS=[.18,.35,1].map((width,index)=>width/3*(index===0?9:1)),RIPPLE_LIFE=(RIPPLE_DURATION+RIPPLE_DELAY*2)*1000;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
  const halfRadius=RIPPLE_RADIUS*.1;
@@ -49,7 +49,8 @@ function rippleWidthScale(radius){
 function rippleState(elapsed,index){
  const age=(elapsed-index*RIPPLE_DELAY)/RIPPLE_DURATION;
  if(age<=0||age>=1)return null;
- // The time scale reduces travel speed to one third. Ease-out makes its
+ // The time scale reduces travel speed to one third, then by another 1.5.
+ // Ease-out makes its
  // derivative decrease continuously to zero, without a late snap or stop.
  const radius=8+(RIPPLE_RADIUS-8)*(1-(1-age)**RIPPLE_EASE);
  return {age,radius,width:RIPPLE_WIDTHS[index]*rippleWidthScale(radius),
@@ -78,7 +79,7 @@ void main(){
    float baseWidth=(i==0?${RIPPLE_WIDTHS[0].toFixed(8)}:i==1?${RIPPLE_WIDTHS[1].toFixed(8)}:${RIPPLE_WIDTHS[2].toFixed(8)})*uScale;
    float index=float(i),age=(elapsed-index*${RIPPLE_DELAY})/${RIPPLE_DURATION};
    if(age<=0.||age>=1.)continue;
-   float radius=8.+${RIPPLE_RADIUS-8}.*(1.-pow(1.-age,${RIPPLE_EASE}));
+   float radius=8.+${(RIPPLE_RADIUS-8).toFixed(8)}*(1.-pow(1.-age,${RIPPLE_EASE}));
    float halfRadius=${(RIPPLE_RADIUS*.1).toFixed(8)};
    float widthScale=radius<=halfRadius?1.-.5*smoothstep(8.,halfRadius,radius):.5-.25*smoothstep(halfRadius,${RIPPLE_RADIUS.toFixed(1)},radius);
    float width=baseWidth*widthScale;
@@ -186,7 +187,7 @@ function createRippleRenderer(){
 const ripples=createRippleRenderer();let nextBurstId=0;
 canvas.dataset.renderer=ripples.mode;canvas.dataset.material='three-flowing-ripples';canvas.dataset.rippleCount='3';
 canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(',');canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='symmetric-sdf-cutouts';canvas.dataset.anchor='document';
-canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=String(RIPPLE_DURATION);canvas.dataset.widthHalfRadius=String(RIPPLE_RADIUS*.1);canvas.dataset.widthOrder='inner-thicker';
+canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=String(RIPPLE_DURATION);canvas.dataset.widthHalfRadius=String(RIPPLE_RADIUS*.1);canvas.dataset.widthOrder='outer-thicker';
 canvas.dataset.crossing='outer-rings-only';canvas.dataset.motion='circular-flow-only';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.clipMode='viewport-css-pixels';canvas.dataset.color='white';canvas.dataset.geometry='native-circular-clip';
 // Radial texture accumulation, restricted to the outer shell. The light origin
 // follows viewport pointer coordinates; the emitting rings stay in the document.
@@ -265,8 +266,8 @@ function drawBursts(now){
  for(const group of groups){
   group.sort((a,b)=>a.id-b.id);
   const scale=group[0].touch?.68:1,pad=RIPPLE_SIZE*scale*.5;
-  // Crop the sample domain, never stretch the geometry. An 825px ring may
-  // leave the screen without allocating its full 1692px-square bounding box.
+  // Crop the sample domain, never stretch the geometry. Rings may leave the
+  // screen without allocating their full RIPPLE_SIZE-square bounding box.
   const left=Math.max(Math.min(...group.map(b=>b.pageX))-pad,viewLeft),top=Math.max(Math.min(...group.map(b=>b.pageY))-pad,viewTop);
   const right=Math.min(Math.max(...group.map(b=>b.pageX))+pad,viewLeft+width),bottom=Math.min(Math.max(...group.map(b=>b.pageY))+pad,viewTop+height);
   const w=right-left,h=bottom-top,x=left-viewLeft,y=top-viewTop;
