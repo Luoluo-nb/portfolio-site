@@ -17,8 +17,9 @@ void main() {
 const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .24});
 const DEPTH_SPEED = Object.freeze({ambient: .010, audio: .030});
 const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
-// Ambient scattering remains present without audio; beats add a restrained lift.
-const RAY_RESPONSE = Object.freeze({homeBase:.32, contentBase:.065, snareBoost:.24, contentMusicGain:.06});
+// Godray is now local to the outer click ripple. The background stays crisp,
+// including during audio onsets; only depth travel responds to those onsets.
+const RAY_RESPONSE = Object.freeze({homeBase:0, contentBase:0, snareBoost:0, contentMusicGain:0});
 
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -37,9 +38,9 @@ uniform vec2 uPulse; // lagged beat, immersive-home blend
 uniform float uLayers;
 
 const float TAU = 6.283185;
-const float STAR_GLOW = 0.008;
+const float STAR_GLOW = 0.006;
 const float CANVAS_VIEW = 20.0;
-const float EXPOSURE = 0.32;
+const float EXPOSURE = 0.25;
 
 float Hash21(vec2 p) {
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -60,7 +61,7 @@ float Star(vec2 uv, float flare) {
   light += rays * flare * 2.0;
   // Ascending smoothstep is defined on every driver; shorter falloff prevents
   // broad overlapping glow while preserving the reference's fine star rays.
-  return light * (1.0 - smoothstep(0.035, 0.38, d));
+  return light * (1.0 - smoothstep(0.025, 0.24, d));
 }
 
 vec3 StarLayer(vec2 uv) {
@@ -75,7 +76,7 @@ vec3 StarLayer(vec2 uv) {
       if (n < 0.40) continue;
       float size = fract(n);
       vec2 starUV = gv - offset - vec2(n, fract(n * 34.0)) + 0.5;
-      if (dot(starUV, starUV) > 0.1444) continue;
+      if (dot(starUV, starUV) > 0.0576) continue;
       float flare = smoothstep(0.10, 0.90, size) * 0.10;
       float star = Star(starUV, flare);
       vec3 originalColor = (sin(vec3(0.2, 0.3, 0.9) * fract(n * 2345.2) * TAU) * 0.25 + 0.75)

@@ -66,3 +66,20 @@ MP3, retained as a 64-second/32-bar loop. A 40ms circular smoothstep seam uses
 original pre/post-roll without shortening the loop. Constant gain -4.70dB,
 128kbps MP3 conversion, approximately -20.02 LUFS. No compression or limiter.
 The adapted audio remains available under CC BY 4.0. No endorsement implied.
+
+
+Homepage transition shader attribution
+
+The Universe Within — Martijn Steinrucken / BigWings (2018)
+Original presentation: https://youtu.be/GAhu4ngQa48
+Author's tutorial: https://youtu.be/3CycKKJiwis
+License: Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported
+https://creativecommons.org/licenses/by-nc-sa/3.0/
+
+The shader supplied by the site owner is adapted in home-network.js. This
+adaptation retains the moving neighborhood connections, layered depth and
+sparkle, with thinner lines, a blue/white/pink palette, transparent composition,
+faster edge dissolution and a responsive, visibility-aware renderer. The
+original audio fog and timed blackout are omitted. The adapted module is
+distributed under the same CC BY-NC-SA 3.0 license. No endorsement implied.
+This license applies to this adapted effect, not to unrelated portfolio works.

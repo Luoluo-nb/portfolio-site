@@ -30,157 +30,190 @@ function availability(){
  stop(!ctx?'unsupported':reduced.matches?'disabled-motion':disabled?'suspended':'idle',true);
  if(!disabled)resize();
 }
-// Small cached cloud fields, not outlines: noise and a warped falloff produce
-// uneven wisps with transparent edges. Each click only transforms these sprites.
-function noise(x,y,seed){
- const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
- const hash=(a,b)=>{const n=Math.sin(a*127.1+b*311.7+seed*73.3)*43758.5453;return n-Math.floor(n);};
- const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
- return (hash(ix,iy)*(1-sx)+hash(ix+1,iy)*sx)*(1-sy)
-  +(hash(ix,iy+1)*(1-sx)+hash(ix+1,iy+1)*sx)*sy;
+// One material contains exactly three travelling bands, with no center flash,
+// cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
+const RIPPLE_SIZE=256,RIPPLE_DELAY=.14,RIPPLE_DURATION=1.04;
+const RIPPLE_WIDTHS=[4.8,1.8,.9],RIPPLE_LIFE=(RIPPLE_DURATION+RIPPLE_DELAY*2)*1000;
+const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+function rippleState(elapsed,index){
+ const age=(elapsed-index*RIPPLE_DELAY)/RIPPLE_DURATION;
+ if(age<=0||age>=1)return null;
+ return {age,radius:8+102*(1-(1-age)**1.35),width:RIPPLE_WIDTHS[index],
+  opacity:smooth(0,.06,age)*(1-age)**.62*[.94,.66,.49][index]};
 }
-const clouds=Array.from({length:4},(_,seed)=>{
- const sprite=document.createElement('canvas');sprite.width=sprite.height=96;
- const paint=sprite.getContext('2d');if(!paint)return null;
- const pixels=paint.createImageData(96,96);
- const tint=seed===3?[139,132,241]:seed===1?[100,169,250]:[133,214,255];
- for(let y=0;y<96;y++)for(let x=0;x<96;x++){
-  const px=(x+.5-48)/48,py=(y+.5-48)/48,r=Math.hypot(px,py),angle=Math.atan2(py,px);
-  const swirl=angle+r*2.2+seed*.8,u=Math.cos(swirl)*r,v=Math.sin(swirl)*r;
-  const field=noise(u*3.3+7,v*3.3+11,seed)*.57+noise(u*7.1,v*7.1,seed+3)*.29+noise(u*15,v*15,seed+7)*.14;
-  const shape=r*(1+.14*Math.sin(angle*3+seed)+.09*Math.sin(angle*5-seed));
-  const edge=Math.max(0,Math.min(1,(1-r)/.14));
-  const body=Math.max(0,1-shape*shape)**1.65;
-  const density=Math.max(0,field-.30)*1.6*body*edge*edge*(3-2*edge);
-  const i=(y*96+x)*4;
-  pixels.data[i]=tint[0]+field*24;pixels.data[i+1]=tint[1]+field*12;pixels.data[i+2]=tint[2];
-  pixels.data[i+3]=255*density*(seed===3?.62:1);
- }
- paint.putImageData(pixels,0,0);return sprite;
-});
-const flash=document.createElement('canvas');flash.width=flash.height=32;
-const flashContext=flash.getContext('2d');
-if(flashContext){const light=flashContext.createRadialGradient(16,16,0,16,16,16);light.addColorStop(0,'rgba(224,247,255,.65)');light.addColorStop(.25,'rgba(128,209,255,.24)');light.addColorStop(1,'rgba(105,164,255,0)');flashContext.fillStyle=light;flashContext.fillRect(0,0,32,32);}
-// A periodic height field is differentiated into an actual RG normal texture.
-// B retains height for erosion; the fragment shader uses RG to displace its UVs.
-const NORMAL_SIZE=64,SHELL_SIZE=192;
-const normalPixels=new Uint8Array(NORMAL_SIZE*NORMAL_SIZE*4);
-const materialHeight=(u,v)=>.5+.17*Math.sin(Math.PI*2*(u*3+v*2)+.8*Math.sin(Math.PI*2*v))+.12*Math.sin(Math.PI*2*(u*7-v*4)+Math.sin(Math.PI*4*u))+.075*Math.sin(Math.PI*2*(u*13+v*9));
-for(let y=0;y<NORMAL_SIZE;y++)for(let x=0;x<NORMAL_SIZE;x++){
- const u=x/NORMAL_SIZE,v=y/NORMAL_SIZE,e=1/NORMAL_SIZE;
- const nx=(materialHeight(u-e,v)-materialHeight(u+e,v))*3.7,ny=(materialHeight(u,v-e)-materialHeight(u,v+e))*3.7,length=Math.hypot(nx,ny,1),i=(y*NORMAL_SIZE+x)*4;
- normalPixels[i]=Math.round((nx/length*.5+.5)*255);normalPixels[i+1]=Math.round((ny/length*.5+.5)*255);normalPixels[i+2]=Math.round(materialHeight(u,v)*255);normalPixels[i+3]=255;
-}
-const SHELL_FRAGMENT=`precision mediump float;
-varying vec2 vUv;uniform sampler2D uNormal;uniform float uAge,uSeed,uVariant,uNormalStrength;
-const float TAU=6.2831853;
-float band(float distance,float thickness){return 1.-smoothstep(.18,1.35,abs(distance)/thickness);}
+const RIPPLE_FRAGMENT=`precision mediump float;
+varying vec2 vUv;uniform vec2 uSize;uniform float uCount,uScale,uPixel;
+uniform vec4 uPulse[3];uniform float uSeed[3];
 void main(){
- vec2 p=(vUv-.5)*2.;float r=length(p),angle=atan(p.y,p.x),age=clamp(uAge,0.,1.);
- float expansion=1.-pow(1.-age,2.1),radius=.09+.70*expansion;
- // Angular UV wraps around the shell, radial UV scrolls through the material.
- vec2 uv=vec2(angle/TAU*2.+uSeed*.13+age*.12,r*1.8-age*.48+uVariant*.19);
- vec3 source=texture2D(uNormal,uv).rgb;vec2 normalRG=(source.rg*2.-1.)*uNormalStrength;
- vec2 warpedUV=uv+normalRG*.115;
- vec3 material=texture2D(uNormal,warpedUV+vec2(age*.035,-age*.06)).rgb;
- float thickness=.042+.045*(.5+.5*sin(angle*3.+material.b*6.+age*2.));
- float shellRadius=radius+(material.b-.5)*.075+normalRG.y*.018;
- float distance=r-shellRadius,profile=distance/thickness;
- float erosion=smoothstep(.19,.52,material.b+normalRG.x*.10);
- float mask=band(distance,thickness*(distance<0.?1.25:.78))*erosion;
- float innerFold=band(distance+thickness*.88,thickness*.30)*smoothstep(.40,.64,material.b)*.16;
- vec3 normal=normalize(vec3(normalRG*.5+normalize(p+vec2(.0001))*clamp(profile,-1.,1.)*.65,sqrt(max(.02,1.-profile*profile))+.3));
- float lighting=.28+.72*max(0.,dot(normal,normalize(vec3(-.45,.62,.8))));
- float crest=pow(max(0.,1.-abs(profile-.18)),2.);
- // Small radial channel offsets and a low-amplitude grating only tint local crests.
- float separation=.0045*(.45+abs(normalRG.x));
- vec3 channelMask=vec3(band(distance+separation,thickness),band(distance,thickness),band(distance-separation,thickness));
- float grating=.5+.5*sin(angle*16.+material.b*27.-age*5.);
- float pink=smoothstep(.72,.95,grating)*smoothstep(.38,.64,material.b)*.90*(.65+.35*smoothstep(.15,.85,abs(profile)));
- vec3 color=mix(vec3(.40,.72,1.),vec3(.95,.98,1.),.15+crest*lighting*.60);
- color=mix(color,vec3(1.,.62,.82),pink);
- color=color*(.45+lighting*.55)+crest*lighting*vec3(.12,.14,.16);
- color*=mix(vec3(1.),channelMask,.32);
- float halo=exp(-pow(distance/(thickness*2.8),2.))*erosion*.075;
- float fade=pow(max(0.,1.-age),.86)*smoothstep(.015,.075,age);
- float alpha=(mask*.88+innerFold+halo)*fade*(1.-smoothstep(.91,.99,r));
- gl_FragColor=vec4(color,alpha);
+ vec2 point=vec2(vUv.x,1.-vUv.y)*uSize;
+ float field=10000.,width=1.,fade=0.,contact=0.,rays=0.;vec3 color=vec3(0.);
+ for(int pulse=0;pulse<3;pulse++){
+  if(float(pulse)>=uCount)continue;
+  vec2 p=(point-uPulse[pulse].xy)/uScale;
+  float r=length(p),angle=atan(p.y,p.x),elapsed=uPulse[pulse].z,seed=uSeed[pulse];
+  float localField=10000.,localWidth=1.,localFade=0.;vec3 localColor=vec3(0.);
+  for(int i=0;i<3;i++){
+   float index=float(i),age=(elapsed-index*${RIPPLE_DELAY})/${RIPPLE_DURATION};
+   if(age<=0.||age>=1.)continue;
+   float radius=8.+102.*(1.-pow(1.-age,1.35));
+   float bandWidth=i==0?4.8:i==1?1.8:.9;
+   float strength=i==0?.94:i==1?.66:.49,phase=elapsed+index*.31;
+   float slow=sin(angle*3.-phase*4.3+seed),fast=sin(angle*7.+phase*6.3-seed*.6);
+   float warp=(slow*1.35+fast*.55)*(i==0?1.:.55);
+   float distance=r-radius-warp,thickness=bandWidth*(1.+slow*.18+fast*.08),profile=distance/thickness;
+   float streamA=.5+.5*sin(angle*5.-phase*8.2+sin(angle*3.+phase*2.7)*.65+profile*2.3+seed);
+   float streamB=.5+.5*sin(angle*11.+phase*5.5+sin(angle*7.-phase*3.1)*.8-profile*3.2);
+   float flow=pow(streamA,.65)*.62+streamB*.38,d=(abs(distance)-thickness*.5)*uScale;
+   if(i==0){
+    float outside=distance-thickness*.5;
+    float beam=smoothstep(.76,.99,streamA)*smoothstep(.25,.9,streamB);
+    rays+=beam*smoothstep(.3,1.6,outside)*(1.-smoothstep(7.,14.,outside))*exp(-max(outside,0.)/6.)
+      *smoothstep(0.,.06,age)*pow(1.-age,.62)*.13;
+   }
+   // A pulse keeps its three separate circles: no soft union between these.
+   if(d<localField){
+    localField=d;localWidth=thickness*uScale;
+    localFade=smoothstep(0.,.06,age)*pow(1.-age,.62)*strength*(.76+flow*.24);
+    localColor=mix(vec3(.26,.59,1.),vec3(.94,.985,1.),.12+flow*.83);
+    float pink=smoothstep(.87,.995,streamB)*smoothstep(.25,.8,abs(profile))*.18;
+    localColor=mix(localColor,vec3(1.,.69,.85),pink);
+   }
+  }
+  if(localField>999.)continue;
+  if(field>999.){field=localField;width=localWidth;fade=localFade;color=localColor;}
+  else{
+   // Polynomial smooth-min joins DIFFERENT click fields. Highlight only the
+   // nearby contact surfaces, never the whole tile or a pulse's central hole.
+   float k=7.5*uScale,h=clamp(.5+.5*(localField-field)/k,0.,1.);
+   float joint=4.*h*(1.-h)*(1.-smoothstep(1.,8.*uScale,max(abs(field),abs(localField))));
+   joint*=min(1.,min(fade,localFade)/.35);
+   contact=max(contact,joint);
+   field=mix(localField,field,h)-k*h*(1.-h);
+   width=mix(localWidth,width,h);fade=mix(localFade,fade,h);color=mix(localColor,color,h);
+  }
+ }
+ float core=1.-smoothstep(-.6*uPixel,.85*uPixel,field);
+ float halo=exp(-pow(max(field,0.)/(width*.8+1.4+contact),2.))*.105;
+ float alpha=min(.97,(core+halo)*fade+core*contact*.16);
+ color=mix(color,vec3(.985,.995,1.),contact*.85);
+ float rayAlpha=min(.075,rays)*(1.-alpha);
+ gl_FragColor=vec4((color*alpha+vec3(.52,.78,1.)*rayAlpha)/max(.0001,alpha+rayAlpha),alpha+rayAlpha);
 }`;
-function createShellRenderer(){
- const surface=document.createElement('canvas');surface.width=surface.height=SHELL_SIZE;
+// CPU fallback samples the same signed bands and smooth union at a bounded
+// resolution. Angular lookups avoid evaluating many sine fields per pixel.
+function bandTable(elapsed,index,seed){
+ const ring=rippleState(elapsed,index);if(!ring)return null;
+ const values=[],phase=elapsed+index*.31;
+ for(let n=0;n<=256;n++){
+  const angle=n/256*Math.PI*2,slow=Math.sin(angle*3-phase*4.3+seed),fast=Math.sin(angle*7+phase*6.3-seed*.6);
+  const radius=ring.radius+(slow*1.35+fast*.55)*(index===0?1:.55),width=ring.width*(1+slow*.18+fast*.08);
+  const a=angle*5-phase*8.2+Math.sin(angle*3+phase*2.7)*.65+seed;
+  const b=angle*11+phase*5.5+Math.sin(angle*7-phase*3.1)*.8;
+  values.push({radius,width,a,b});
+ }
+ return {values,opacity:ring.opacity,index};
+}
+function createRippleRenderer(){
+ const surface=document.createElement('canvas');
  const gl=surface.getContext('webgl',{alpha:true,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,preserveDrawingBuffer:false});
- let program=null,buffer=null,texture=null,uniforms=null,lost=false;
+ let program=null,buffer=null,uniforms=null,lost=false;
  const cached=new Map();
  function initialize(){
   if(!gl)return false;
   const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){gl.deleteShader(shader);return null;}return shader;};
-  const vertex=compile(gl.VERTEX_SHADER,'attribute vec2 aPosition;varying vec2 vUv;void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}'),fragment=compile(gl.FRAGMENT_SHADER,SHELL_FRAGMENT);
+  const vertex=compile(gl.VERTEX_SHADER,'attribute vec2 aPosition;varying vec2 vUv;void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}'),fragment=compile(gl.FRAGMENT_SHADER,RIPPLE_FRAGMENT);
   if(!vertex||!fragment){if(vertex)gl.deleteShader(vertex);if(fragment)gl.deleteShader(fragment);return false;}
   program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(vertex);gl.deleteShader(fragment);
   if(!gl.getProgramParameter(program,gl.LINK_STATUS)){gl.deleteProgram(program);program=null;return false;}
   gl.useProgram(program);buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(program,'aPosition');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-  texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,NORMAL_SIZE,NORMAL_SIZE,0,gl.RGBA,gl.UNSIGNED_BYTE,normalPixels);
-  uniforms=Object.fromEntries(['uAge','uSeed','uVariant','uNormalStrength','uNormal'].map(name=>[name,gl.getUniformLocation(program,name)]));gl.uniform1i(uniforms.uNormal,0);gl.viewport(0,0,SHELL_SIZE,SHELL_SIZE);gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);return true;
+  uniforms=Object.fromEntries(['Size','Count','Scale','Pixel','Pulse[0]','Seed[0]'].map(name=>[name,gl.getUniformLocation(program,'u'+name)]));
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);return true;
  }
  initialize();
  if(gl){listen(surface,'webglcontextlost',e=>{e.preventDefault();lost=true;});listen(surface,'webglcontextrestored',()=>{lost=!initialize();});}
- const sample=(u,v)=>{const x=((u%1+1)%1)*NORMAL_SIZE,y=((v%1+1)%1)*NORMAL_SIZE,ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;return [0,1,2].map(c=>{const at=(a,b)=>normalPixels[((b%NORMAL_SIZE)*NORMAL_SIZE+a%NORMAL_SIZE)*4+c]/255;return(at(ix,iy)*(1-fx)+at(ix+1,iy)*fx)*(1-fy)+(at(ix,iy+1)*(1-fx)+at(ix+1,iy+1)*fx)*fy;});};
- function fallback(age,variant,strength){
-  const step=Math.min(19,Math.floor(age*20)),key=`${variant}:${step}:${strength?1:0}`;if(cached.has(key))return cached.get(key);
-  const sprite=document.createElement('canvas');sprite.width=sprite.height=112;const paint=sprite.getContext('2d');if(!paint)return null;const pixels=paint.createImageData(112,112),a=(step+.5)/20,spread=1-(1-a)**2.1,rad=.09+.70*spread,fade=(1-a)**.86*Math.min(1,a/.075);
-  for(let y=0;y<112;y++)for(let x=0;x<112;x++){
-   const px=(x+.5-56)/56,py=(y+.5-56)/56,r=Math.hypot(px,py);if(Math.abs(r-rad)>.29)continue;
-   const angle=Math.atan2(py,px),u=angle/Math.PI+a*.12,v=r*1.8-a*.48+variant*.19,n=sample(u,v),nx=(n[0]*2-1)*strength,ny=(n[1]*2-1)*strength,m=sample(u+nx*.115+a*.035,v+ny*.115-a*.06);
-   const thick=.042+.045*(.5+.5*Math.sin(angle*3+m[2]*6+a*2)),d=r-rad-(m[2]-.5)*.075-ny*.018,profile=d/thick,t=Math.max(0,Math.min(1,(Math.abs(profile)/(d<0?1.25:.78)-.18)/1.17)),erosion=Math.max(0,Math.min(1,(m[2]+nx*.10-.19)/.33));
-   const mask=(1-t*t*(3-2*t))*erosion,halo=Math.exp(-((d/(thick*2.8))**2))*erosion*.075,light=.56+.28*Math.sin(angle+1.2)+.1*ny,crest=Math.max(0,1-Math.abs(profile-.18))**2,i=(y*112+x)*4;
-   const smooth=(a,b,x)=>{const k=Math.max(0,Math.min(1,(x-a)/(b-a)));return k*k*(3-2*k);},pink=smooth(.72,.95,.5+.5*Math.sin(angle*16+m[2]*27-a*5))*smooth(.38,.64,m[2])*.90*(.65+.35*smooth(.15,.85,Math.abs(profile))),white=.15+crest*light*.60,shade=.45+light*.55,innerFold=(1-smooth(.18,1.35,Math.abs(d+thick*.88)/(thick*.30)))*smooth(.40,.64,m[2])*.16;
-   pixels.data[i]=255*((.40+.55*white)*(1-pink)+pink)*shade+255*crest*light*.12;pixels.data[i+1]=255*((.72+.26*white)*(1-pink)+.62*pink)*shade+255*crest*light*.14;pixels.data[i+2]=255*(1-.18*pink)*shade+255*crest*light*.16;pixels.data[i+3]=255*(mask*.88+innerFold+halo)*fade*(1-smooth(.91,.99,r));
+ function fallback(group,w,h,scale,now){
+  const step=Math.floor((now-group[0].born)/50),key=group.map(b=>b.id).join(',')+':'+step;
+  if(cached.has(key))return cached.get(key);
+  const sprite=document.createElement('canvas'),ratio=Math.min(.7,Math.sqrt(12000/(w*h)));
+  sprite.width=Math.max(1,Math.floor(w*ratio));sprite.height=Math.max(1,Math.floor(h*ratio));
+  const paint=sprite.getContext('2d');if(!paint)return null;
+  const data=paint.createImageData(sprite.width,sprite.height),pixel=Math.max(w/sprite.width,h/sprite.height),k=7.5*scale;
+  const sampleTime=group[0].born+(step+.5)*50;
+  const tables=group.map(b=>({x:b.localX,y:b.localY,bands:[0,1,2].map(i=>bandTable((sampleTime-b.born)/1000,i,b.seed))}));
+  for(let y=0;y<sprite.height;y++)for(let x=0;x<sprite.width;x++){
+   const px=(x+.5)/sprite.width*w,py=(y+.5)/sprite.height*h;
+   let field=10000,bandWidth=1,fade=0,contact=0,red=0,green=0,blue=0,rays=0;
+   for(const pulse of tables){
+    const dx=(px-pulse.x)/scale,dy=(py-pulse.y)/scale,r=Math.hypot(dx,dy),angle=(Math.atan2(dy,dx)/Math.PI/2+1)%1*256;
+    const at=Math.floor(angle),fraction=angle-at;
+    let localField=10000,localWidth=1,localFade=0,lr=0,lg=0,lb=0;
+    for(const band of pulse.bands){
+     if(!band)continue;const a=band.values[at],b=band.values[at+1],mix=(key)=>a[key]+(b[key]-a[key])*fraction;
+     const width=mix('width'),distance=r-mix('radius'),d=(Math.abs(distance)-width*.5)*scale;if(d>=localField)continue;
+     const profile=distance/width,streamA=.5+.5*Math.sin(mix('a')+profile*2.3),streamB=.5+.5*Math.sin(mix('b')-profile*3.2);
+     const flow=streamA**.65*.62+streamB*.38,white=.12+flow*.83,pink=smooth(.87,.995,streamB)*smooth(.25,.8,Math.abs(profile))*.18;
+     if(band.index===0){const outside=distance-width*.5;rays+=smooth(.76,.99,streamA)*smooth(.25,.9,streamB)*smooth(.3,1.6,outside)*(1-smooth(7,14,outside))*Math.exp(-Math.max(outside,0)/6)*band.opacity/.94*.13;}
+     localField=d;localWidth=width*scale;localFade=band.opacity*(.76+flow*.24);
+     lr=(.26+.68*white)*(1-pink)+pink;lg=(.59+.395*white)*(1-pink)+.69*pink;lb=1-.15*pink;
+    }
+    if(localField>999)continue;
+    if(field>999){field=localField;bandWidth=localWidth;fade=localFade;red=lr;green=lg;blue=lb;}
+    else{
+     const blend=Math.max(0,Math.min(1,.5+.5*(localField-field)/k));
+     const joint=4*blend*(1-blend)*(1-smooth(1,8*scale,Math.max(Math.abs(field),Math.abs(localField))))*Math.min(1,Math.min(fade,localFade)/.35);
+     contact=Math.max(contact,joint);field=localField*(1-blend)+field*blend-k*blend*(1-blend);
+     bandWidth=localWidth*(1-blend)+bandWidth*blend;fade=localFade*(1-blend)+fade*blend;
+     red=lr*(1-blend)+red*blend;green=lg*(1-blend)+green*blend;blue=lb*(1-blend)+blue*blend;
+    }
+   }
+   const core=1-smooth(-.6*pixel,.85*pixel,field),halo=Math.exp(-((Math.max(field,0)/(bandWidth*.8+1.4+contact))**2))*.105;
+   const alpha=Math.min(.97,(core+halo)*fade+core*contact*.16),i=(y*sprite.width+x)*4,white=contact*.85;
+   const rayAlpha=Math.min(.075,rays)*(1-alpha),total=alpha+rayAlpha,denominator=Math.max(.0001,total);
+   data.data[i]=((red*(1-white)+.985*white)*alpha+.52*rayAlpha)/denominator*255;data.data[i+1]=((green*(1-white)+.995*white)*alpha+.78*rayAlpha)/denominator*255;data.data[i+2]=((blue*(1-white)+white)*alpha+rayAlpha)/denominator*255;data.data[i+3]=total*255;
   }
-  paint.putImageData(pixels,0,0);cached.set(key,sprite);return sprite;
+  paint.putImageData(data,0,0);if(cached.size>=32)cached.delete(cached.keys().next().value);cached.set(key,sprite);return sprite;
  }
- return {get mode(){return gl&&program&&!lost&&!gl.isContextLost()?'webgl':'cached';},get cacheSize(){return cached.size;},draw(age,seed,variant,strength=1){
-  if(age>=1)return null;
-  if(this.mode==='cached')return fallback(age,variant,strength);
-  gl.useProgram(program);gl.uniform1f(uniforms.uAge,age);gl.uniform1f(uniforms.uSeed,seed);gl.uniform1f(uniforms.uVariant,variant);gl.uniform1f(uniforms.uNormalStrength,strength);gl.drawArrays(gl.TRIANGLES,0,6);return surface;
- },destroy(){cached.clear();if(gl){if(texture)gl.deleteTexture(texture);if(buffer)gl.deleteBuffer(buffer);if(program)gl.deleteProgram(program);}program=null;}};
+ return {get mode(){return gl&&program&&!lost&&!gl.isContextLost()?'webgl':'cached';},get cacheSize(){return cached.size;},draw(group,w,h,scale,now){
+  if(this.mode==='cached')return fallback(group,w,h,scale,now);
+  const ratio=Math.min(1,Math.sqrt(140000/(w*h))),pw=Math.max(1,Math.floor(w*ratio)),ph=Math.max(1,Math.floor(h*ratio));
+  if(surface.width!==pw)surface.width=pw;if(surface.height!==ph)surface.height=ph;
+  const pulses=new Float32Array(12),seeds=new Float32Array(3);
+  group.forEach((b,i)=>{pulses.set([b.localX,b.localY,(now-b.born)/1000,0],i*4);seeds[i]=b.seed;});
+  gl.viewport(0,0,pw,ph);gl.useProgram(program);gl.uniform2f(uniforms.Size,w,h);gl.uniform1f(uniforms.Count,group.length);gl.uniform1f(uniforms.Scale,scale);gl.uniform1f(uniforms.Pixel,Math.max(w/pw,h/ph));
+  gl.uniform4fv(uniforms['Pulse[0]'],pulses);gl.uniform1fv(uniforms['Seed[0]'],seeds);gl.drawArrays(gl.TRIANGLES,0,6);
+  canvas.dataset.maxTilePixels=String(Math.max(Number(canvas.dataset.maxTilePixels)||0,pw*ph));return surface;
+ },destroy(){cached.clear();if(gl){if(buffer)gl.deleteBuffer(buffer);if(program)gl.deleteProgram(program);}program=null;}};
 }
-const shell=createShellRenderer();
-canvas.dataset.renderer=shell.mode;canvas.dataset.material='polar-normal-shell';canvas.dataset.normalTexture=`${NORMAL_SIZE}x${NORMAL_SIZE}`;canvas.dataset.shellPixels=String(SHELL_SIZE*SHELL_SIZE);
-function draw(b,now){
- const age=Math.max(0,Math.min(1,(now-b.born)/b.life));
- const fade=(1-age)**.95,spread=1-(1-age)**1.3,attack=Math.min(1,age/.07);
- const size=b.touch?.62:1,count=b.touch?2:3;
- ctx.save();ctx.globalCompositeOperation='screen';
- for(let i=0;i<count;i++){
-  const sprite=clouds[(i+b.variant)%clouds.length];if(!sprite)continue;
-  const turn=(i%2?-.28:.34)*age,angle=b.seed+i*2.399+turn;
-  const distance=spread*(9+i*4.1)*size;
-  const diameter=(25+spread*58)*(.78+i*.085)*size;
-  ctx.save();ctx.translate(b.x+Math.cos(angle)*distance,b.y+Math.sin(angle)*distance*.82);
-  ctx.rotate(b.seed+i*.71+turn);ctx.scale(1,.78+(i%3)*.11);
-  ctx.globalAlpha=fade*attack*(b.touch?.16:.23);
-  ctx.drawImage(sprite,-diameter/2,-diameter/2,diameter,diameter);ctx.restore();
+const ripples=createRippleRenderer();let nextBurstId=0;
+canvas.dataset.renderer=ripples.mode;canvas.dataset.material='three-flowing-ripples';canvas.dataset.rippleCount='3';
+canvas.dataset.rippleDelays='0,140,280';canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='cross-click-smooth-union';canvas.dataset.anchor='document';
+function drawBursts(now){
+ const groups=[];
+ for(const burst of bursts){
+  const group=[burst],pad=RIPPLE_SIZE*(burst.touch?.68:1);
+  for(let i=groups.length-1;i>=0;i--)if(groups[i].some(a=>group.some(b=>Math.abs(a.pageX-b.pageX)<pad&&Math.abs(a.pageY-b.pageY)<pad))){group.push(...groups.splice(i,1)[0]);}
+  groups.push(group);
  }
- const shellAge=(now-b.born)/(b.touch?690:900),material=shell.draw(shellAge,b.seed,b.variant);
- if(material){const diameter=SHELL_SIZE*size;ctx.globalAlpha=b.touch?.85:1;ctx.drawImage(material,b.x-diameter/2,b.y-diameter/2,diameter,diameter);}
- canvas.dataset.renderer=shell.mode;
- if(flashContext){const diameter=(14+spread*11)*size;ctx.globalAlpha=Math.exp(-age*15)*(b.touch?.22:.32);ctx.drawImage(flash,b.x-diameter/2,b.y-diameter/2,diameter,diameter);}
- // A restrained trace of dust belongs to the slower translucent underlayer.
- ctx.fillStyle='#c9edff';
- for(let i=0;i<(b.touch?1:3);i++){
-  const angle=b.seed+i*2.399+age*(i%2?-.5:.65),radius=(5+spread*(23+i*4))*size;
-  ctx.globalAlpha=fade*attack*(b.touch?.12:.18);
-  ctx.beginPath();ctx.arc(b.x+Math.cos(angle)*radius,b.y+Math.sin(angle)*radius*.84,(.55+(i%3)*.13)*size,0,Math.PI*2);ctx.fill();
+ let visibleGroups=0;
+ for(const group of groups){
+  const scale=group[0].touch?.68:1,pad=RIPPLE_SIZE*scale*.5;
+  const left=Math.min(...group.map(b=>b.pageX))-pad,top=Math.min(...group.map(b=>b.pageY))-pad;
+  const w=Math.max(...group.map(b=>b.pageX))+pad-left,h=Math.max(...group.map(b=>b.pageY))+pad-top;
+  const rect=canvas.getBoundingClientRect(),x=left-scrollX-rect.left,y=top-scrollY-rect.top;
+  if(x+w<0||y+h<0||x>width||y>height)continue;
+  group.forEach(b=>{b.localX=b.pageX-left;b.localY=b.pageY-top;});
+  const material=ripples.draw(group,w,h,scale,now);if(!material)continue;
+  ctx.save();ctx.globalCompositeOperation='source-over';ctx.globalAlpha=group[0].touch?.82:1;ctx.drawImage(material,x,y,w,h);ctx.restore();visibleGroups++;
  }
- ctx.restore();
+ canvas.dataset.renderer=ripples.mode;canvas.dataset.groups=String(visibleGroups);
 }
 function tick(now){
  frame=0;if(destroyed||suspended||document.hidden||reduced.matches){stop(reduced.matches?'disabled-motion':'suspended',true);return;}
  if(now-lastDraw>=1000/30){
   lastDraw=now;ctx.clearRect(0,0,width,height);
   for(let i=bursts.length-1;i>=0;i--)if(now-bursts[i].born>=bursts[i].life)bursts.splice(i,1);
-  for(const burst of bursts)draw(burst,now);
+  drawBursts(now);
  }
  if(bursts.length){frame=requestAnimationFrame(tick);state('active');}else stop();
 }
@@ -189,8 +222,9 @@ function emit(x,y,keyboard,touch){
  const rect=canvas.getBoundingClientRect();if(Math.abs(rect.width-width)>.01||Math.abs(rect.height-height)>.01)resize();
  while(bursts.length>=(touch?1:MAX_BURSTS))bursts.shift();
  const born=performance.now();
- bursts.push({x:x-rect.left,y:y-rect.top,born,life:touch?780:1000,touch,seed:Math.random()*Math.PI*2,variant:Math.floor(Math.random()*4)});
- canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='layered-shell-burst';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(touch?1:MAX_BURSTS);
+ const variant=Math.floor(Math.random()*4);
+ bursts.push({id:++nextBurstId,pageX:x+scrollX,pageY:y+scrollY,born,life:RIPPLE_LIFE,touch,seed:variant*1.37,variant});
+ canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='three-flowing-ripples';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(touch?1:MAX_BURSTS);
  if(!frame)frame=requestAnimationFrame(tick);state('active');
 }
 listen(document,'pointerdown',e=>{
@@ -208,16 +242,17 @@ listen(document,'click',e=>{
  if(!keyboard&&gesture&&(gesture.dragged||gesture.ignored||performance.now()-gesture.time>1000))return;
  const r=keyboard?el.getBoundingClientRect():null;
  const x=keyboard?r.left+r.width/2:e.clientX,y=keyboard?r.top+r.height/2:e.clientY;
+ const pageX=x+scrollX,pageY=y+scrollY;
  const touch=!keyboard&&(gesture?.touch||coarse.matches);
- // Spawn the cloud on the next frame, after the control's activation handlers,
+ // Spawn the ripples on the next frame, after the control's activation handlers,
  // without delaying native clicks or navigation.
- const id=requestAnimationFrame(()=>{pending.delete(id);emit(x,y,keyboard,touch);});pending.add(id);gesture=null;
+ const id=requestAnimationFrame(()=>{pending.delete(id);emit(pageX-scrollX,pageY-scrollY,keyboard,touch);});pending.add(id);gesture=null;
 },true);
 listen(window,'resize',()=>{stop('idle',true);resize();},{passive:true});
 listen(window,'blur',()=>stop('suspended',true));
 listen(document,'pointerout',e=>{if(e.pointerType==='mouse'&&!e.relatedTarget)stop('idle',true);});
 listen(document,'visibilitychange',availability);listen(reduced,'change',availability);
-export function destroyClickEffects(){if(destroyed)return;destroyed=true;stop('destroyed',true);shell.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
+export function destroyClickEffects(){if(destroyed)return;destroyed=true;stop('destroyed',true);ripples.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
 listen(window,'pagehide',e=>{suspended=true;if(e.persisted)availability();else destroyClickEffects();});
 listen(window,'pageshow',()=>{suspended=false;availability();});
 availability();

@@ -82,6 +82,7 @@ export const translations = {
   '已进入 Unreal Engine / Vehicle': 'Opened Unreal Engine / Vehicle',
   '已进入 Unreal Engine / 车辆': 'Opened Unreal Engine / Vehicle',
   '显示全部 Unreal Engine 作品': 'Showing all Unreal Engine works',
+  '星网改编': 'Network effect adapted from',
   '背景音乐': 'Background Music', '背景音乐控制': 'Background music controls', '音乐控制': 'Music controls',
   '循环剪辑与响度调整': 'Loop edit and loudness adjustment',
   '纯伴奏版 · 循环剪辑与响度调整': 'No Melody mix · Loop edit and loudness adjustment',

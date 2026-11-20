@@ -24,6 +24,7 @@
   <script type="module" src="./i18n.js"></script>
   <script type="module" src="./music.js"></script>
   <script type="module" src="./app.js"></script>
+  <script type="module" src="./home-network.js"></script>
 </head>
 <body>
   <canvas id="starfield-canvas" aria-hidden="true"></canvas>
@@ -52,42 +53,13 @@
       </a>
     </section>
     <section class="home-featured shell" id="home-projects" data-view-panel="top" aria-labelledby="home-projects-title" hidden>
-      <div class="home-transition" aria-hidden="true">
-        <svg class="transition-constellation transition-ursa" data-constellation="ursa-major" viewBox="32 18 350 140" fill="none" preserveAspectRatio="xMidYMid meet" focusable="false">
-          <defs><radialGradient id="transition-ursa-glow"><stop stop-color="#b8e4ff" stop-opacity=".36"/><stop offset=".25" stop-color="#91c8ef" stop-opacity=".13"/><stop offset="1" stop-color="#80b5ee" stop-opacity="0"/></radialGradient></defs>
-          <g class="constellation-links">
-            <path d="M75 42 58 107" style="--link-delay:-1s"/><path d="M58 107 142 127" style="--link-delay:-3.4s"/><path d="M142 127 160 67" style="--link-delay:-6.1s"/><path d="M160 67 75 42" style="--link-delay:-8.2s"/>
-            <path d="M160 67 232 51" style="--link-delay:-2.3s"/><path d="M232 51 298 70" style="--link-delay:-5.2s"/><path d="M298 70 355 126" style="--link-delay:-9.4s"/>
-          </g>
-          <g class="constellation-stars">
-            <g class="constellation-star" data-star="dubhe" style="--star-delay:-2.1s;--star-period:8.7s"><circle cx="75" cy="42" r="14" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="75" cy="42" r="2.3"/></g>
-            <g class="constellation-star" data-star="merak" style="--star-delay:-5.7s;--star-period:10.1s"><circle cx="58" cy="107" r="10" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="58" cy="107" r="1.65"/></g>
-            <g class="constellation-star" data-star="phecda" style="--star-delay:-3.2s;--star-period:7.8s"><circle cx="142" cy="127" r="9" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="142" cy="127" r="1.5"/></g>
-            <g class="constellation-star" data-star="megrez" style="--star-delay:-7.8s;--star-period:11.4s"><circle cx="160" cy="67" r="7.5" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="160" cy="67" r="1.15"/></g>
-            <g class="constellation-star" data-star="alioth" style="--star-delay:-1.5s;--star-period:9.6s"><circle cx="232" cy="51" r="12" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="232" cy="51" r="2"/></g>
-            <g class="constellation-star" data-star="mizar" style="--star-delay:-4.3s;--star-period:8.2s"><circle cx="298" cy="70" r="10.5" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="298" cy="70" r="1.75"/></g>
-            <g class="constellation-star" data-star="alkaid" style="--star-delay:-6.6s;--star-period:10.8s"><circle cx="355" cy="126" r="13" fill="url(#transition-ursa-glow)"/><circle class="constellation-core" cx="355" cy="126" r="2.1"/></g>
-          </g>
-        </svg>
-        <svg class="transition-constellation transition-cassiopeia" data-constellation="cassiopeia" viewBox="8 16 274 124" fill="none" preserveAspectRatio="xMidYMid meet" focusable="false">
-          <defs><radialGradient id="transition-cassiopeia-glow"><stop stop-color="#c6dcff" stop-opacity=".28"/><stop offset=".3" stop-color="#93b3ed" stop-opacity=".1"/><stop offset="1" stop-color="#849cdb" stop-opacity="0"/></radialGradient></defs>
-          <g class="constellation-links">
-            <path d="M32 38 86 108" style="--link-delay:-8s"/><path d="M86 108 143 53" style="--link-delay:-3s"/><path d="M143 53 199 116" style="--link-delay:-6s"/><path d="M199 116 258 42" style="--link-delay:-1s"/>
-          </g>
-          <g class="constellation-stars">
-            <g class="constellation-star" style="--star-delay:-3s;--star-period:10s"><circle cx="32" cy="38" r="10" fill="url(#transition-cassiopeia-glow)"/><circle class="constellation-core" cx="32" cy="38" r="1.7"/></g>
-            <g class="constellation-star" style="--star-delay:-7s;--star-period:12s"><circle cx="86" cy="108" r="12" fill="url(#transition-cassiopeia-glow)"/><circle class="constellation-core" cx="86" cy="108" r="2"/></g>
-            <g class="constellation-star" style="--star-delay:-1s;--star-period:9s"><circle cx="143" cy="53" r="9" fill="url(#transition-cassiopeia-glow)"/><circle class="constellation-core" cx="143" cy="53" r="1.45"/></g>
-            <g class="constellation-star" style="--star-delay:-5s;--star-period:11s"><circle cx="199" cy="116" r="10.5" fill="url(#transition-cassiopeia-glow)"/><circle class="constellation-core" cx="199" cy="116" r="1.8"/></g>
-            <g class="constellation-star" style="--star-delay:-9s;--star-period:12.6s"><circle cx="258" cy="42" r="8" fill="url(#transition-cassiopeia-glow)"/><circle class="constellation-core" cx="258" cy="42" r="1.25"/></g>
-          </g>
-        </svg>
-      </div>
+      <div class="home-transition" aria-hidden="true"></div>
       <div class="home-featured-heading">
         <div><h2 id="home-projects-title" tabindex="-1">精选作品</h2></div>
         <a class="text-link" href="./portfolio.html">全部作品 ↗</a>
       </div>
       <div id="home-project-grid" class="project-grid home-project-grid" aria-label="精选作品"></div>
+      <p class="home-effect-credit"><span>星网改编</span><a href="https://youtu.be/GAhu4ngQa48" target="_blank" rel="noopener noreferrer" data-no-translate>The Universe Within · BigWings</a><a href="https://creativecommons.org/licenses/by-nc-sa/3.0/" target="_blank" rel="license noopener noreferrer" data-no-translate>CC BY-NC-SA 3.0</a></p>
     </section>
     <section class="works-section" id="works" data-view-panel="works" aria-labelledby="works-title">
       <div class="section-head shell"><div><div class="section-kicker">01 / 精选作品</div><h1 id="works-title" class="page-title">作品<span>集</span><i aria-hidden="true">.</i></h1></div><div class="category-tabs" role="group" aria-label="作品分类"><button data-category="all" aria-pressed="true">全部</button><button data-category="unity" aria-pressed="false">Unity</button><button data-category="unreal" aria-pressed="false">Unreal Engine</button><button data-category="td" aria-pressed="false">TD</button></div></div>

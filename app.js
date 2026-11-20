@@ -490,5 +490,20 @@ for (const contact of document.querySelectorAll('[data-copy-value]')) {
 }
 renderProjects();
 showRoute();
+// A cold document's native fragment scroll can run after module evaluation.
+// Reapply the heading offset once after load, unless the visitor has moved on.
+if (/^#home-projects(?:-title)?$/.test(location.hash)) {
+  const initialDestination = location.href;
+  let interrupted = false;
+  const inputTypes = ['wheel', 'pointerdown', 'keydown', 'touchstart'];
+  const markInput = () => { interrupted = true; };
+  for (const type of inputTypes) window.addEventListener(type, markInput, {passive:true});
+  const settleFragment = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+    for (const type of inputTypes) window.removeEventListener(type, markInput);
+    if (!interrupted && location.href === initialDestination) showRoute();
+  }));
+  if (document.readyState === 'complete') settleFragment();
+  else window.addEventListener('load', settleFragment, {once:true});
+}
 window.addEventListener('pagehide', (event) => { if (!event.persisted) starfield?.destroy(); });
 

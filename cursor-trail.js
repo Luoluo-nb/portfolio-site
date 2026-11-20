@@ -50,6 +50,18 @@ function mountCursorTrail() {
     spacingRegion = region;
   }
   let previous = null, mouse = null, head = null;
+  // History is anchored to the document; pointer sampling and Voronoi regions
+  // remain in viewport coordinates. Scrolling lifts the pen without new ink.
+  let pageScrollX = window.scrollX, pageScrollY = window.scrollY;
+  function syncScroll() {
+    const x = window.scrollX, y = window.scrollY;
+    if (x === pageScrollX && y === pageScrollY) return;
+    pageScrollX = x; pageScrollY = y;
+    if (head) head.released = true;
+    head = null;
+    previous = null;
+    remainder = penGapRemaining = 0;
+  }
   let strokeSequence = 0, activeRegion = null, penGapRemaining = 0, boundaryBreaks = 0;
   const penLiftDistance = 22, ringLife = 240;
   let suspended = false, enabled = false;
@@ -67,6 +79,7 @@ function mountCursorTrail() {
   canvas.dataset.penLiftDistance = String(penLiftDistance);
   canvas.dataset.ringLife = String(ringLife);
   canvas.dataset.regionSpacingRefresh = String(regionRefreshMs);
+  canvas.dataset.coordinateSpace = 'page';
 
   const glow = document.createElement('canvas');
   glow.width = glow.height = 40;
@@ -189,6 +202,7 @@ function mountCursorTrail() {
     penGapRemaining = boundaryBreaks = 0;
     remainder = linkCount = 0;
     nextSpacing = spacing;
+    pageScrollX = window.scrollX; pageScrollY = window.scrollY;
     motionSpeed = fastMix = 0;
     particleLimit = BASE_PARTICLES;
     canvas.dataset.maxParticles = String(particleLimit);
@@ -236,7 +250,7 @@ function mountCursorTrail() {
 
   function emit(x, y, now) {
     particles.push({
-      x, y, born: now, appeared: now, updated: now,
+      x: x + pageScrollX, y: y + pageScrollY, born: now, appeared: now, updated: now,
       flowId: ++flowSequence,
       strokeId: strokeSequence,
       parallaxX: 0, parallaxY: 0,
@@ -257,6 +271,7 @@ function mountCursorTrail() {
   function render(now) {
     frameId = 0;
     if (!enabled || suspended || document.hidden) { stop('suspended'); return; }
+    syncScroll();
     refreshRegionSpacing(now);
     context.clearRect(0, 0, width, height);
     for (let index = particles.length - 1; index >= 0; index--) {
@@ -269,8 +284,8 @@ function mountCursorTrail() {
       }
       const seconds = Math.min(Math.max(0, now - particle.updated) / 1000, 0.05);
       particle.updated = now;
-      const dx = particle.x - (mouse?.x ?? particle.x);
-      const dy = particle.y - (mouse?.y ?? particle.y);
+      const dx = particle.x - (mouse ? mouse.x + pageScrollX : particle.x);
+      const dy = particle.y - (mouse ? mouse.y + pageScrollY : particle.y);
       const distance = Math.hypot(dx, dy);
       const interiorLag = 1 - Math.exp(-seconds / .14);
       particle.parallaxX += (Math.max(-1, Math.min(1, -dx / 140)) - particle.parallaxX) * interiorLag;
@@ -278,8 +293,8 @@ function mountCursorTrail() {
       particle.vx = particle.vy = 0;
       if (particle === head && mouse) {
       // One point marks the pointer exactly throughout the retained history.
-        particle.x = mouse.x;
-        particle.y = mouse.y;
+        particle.x = mouse.x + pageScrollX;
+        particle.y = mouse.y + pageScrollY;
       } else if (distance > activationDistance) {
         // Recompute from this particle to the current mouse on every frame.
         // The quiet centre prevents jitter directly under the native pointer.
@@ -319,6 +334,7 @@ function mountCursorTrail() {
     // Connect in emission order, preserving bends instead of nearest-neighbour
     // shortcuts that flatten fast turns or join the wrong side of a loop.
     context.save();
+    context.translate(-pageScrollX, -pageScrollY);
     context.globalCompositeOperation = 'lighter';
     context.lineCap = 'round';
     context.strokeStyle = '#b8e3ff';
@@ -450,13 +466,16 @@ function mountCursorTrail() {
       traveled += nextSpacing;
     }
     remainder = pathLength - (traveled - nextSpacing);
-    head.x = end.x;
-    head.y = end.y;
+    head.x = end.x + pageScrollX;
+    head.y = end.y + pageScrollY;
     head.born = head.updated = now;
     head.vx = head.vy = 0;
   }
 
   function samplePointer(event) {
+    // Read the actual offset as well as the scroll event: coalesced input or a
+    // render can arrive before the browser dispatches its queued scroll event.
+    syncScroll();
     const bounds = canvas.getBoundingClientRect();
     // Content/language changes can toggle scrollbars without a window resize.
     if (Math.abs(bounds.width - width) > .01 || Math.abs(bounds.height - height) > .01) resize();
@@ -525,6 +544,7 @@ function mountCursorTrail() {
   }
 
   document.addEventListener('pointermove', move, { passive: true });
+  window.addEventListener('scroll', syncScroll, { passive: true });
   document.documentElement.addEventListener('pointerleave', () => { previous = null; remainder = 0; lockSpacingRegion(null, performance.now()); if (mouse) mouse.active = false; flock.clear(); }, { passive: true });
   window.addEventListener('blur', () => { stop(enabled ? 'idle' : canvas.dataset.state); });
   window.addEventListener('resize', () => { if (enabled) { stop('idle'); resize(); } }, { passive: true });
