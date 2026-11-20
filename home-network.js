@@ -52,10 +52,16 @@ float NetLayer(vec2 st,float n,float t,float pixel,float width){
   float m=0.,sparkle=0.;
   for(int i=0;i<9;i++){
     if(i!=4)m+=line(p[4],p[i],st,pixel,width);
-    float d=length(st-p[i]);
-    // Bounded inverse-square light retains sparkle without singular white pixels.
-    float s=.0012/max(d*d,pixel*pixel*.65);
-    s=min(s,.95)*(1.-smoothstep(.7,1.,d));
+    // CSS-pixel kernels stay small at every depth: a 1.2px bright nucleus,
+    // hairline star rays and only a trace of light within a 3.6px radius.
+    vec2 q=(st-p[i])/max(pixel,.00001);
+    float r=length(q);
+    float core=1.-smoothstep(.38,.82,r);
+    float rays=(1.-smoothstep(.04,.30,abs(q.x)))*(1.-smoothstep(.45,3.2,abs(q.y)));
+    rays+=(1.-smoothstep(.04,.30,abs(q.y)))*(1.-smoothstep(.45,2.4,abs(q.x)));
+    float soft=1.-smoothstep(0.,3.6,r);
+    float haze=.018*soft*soft*soft;
+    float s=min(.95,core*.90+rays*.10+haze);
     float pulse=sin((fract(p[i].x)+fract(p[i].y)+t)*5.)*.4+.6;
     sparkle+=s*(.12+.88*pow(pulse,20.));
   }
@@ -70,7 +76,8 @@ float NetLayer(vec2 st,float n,float t,float pixel,float width){
 void main(){
   vec2 vUv=gl_FragCoord.xy/max(uResolution,vec2(1.));
   // Wide strips use a wider projection than the original square composition.
-  float projection=max(uCssSize.y,uCssSize.x*.52);
+  // Expanding the strip reveals more cells instead of stretching the network.
+  float projection=max(min(uCssSize.x,1328.)*.52,1.);
   vec2 uv=(vUv-.5)*uCssSize/max(projection,1.);
   float t=uTime*.035,s=sin(t),c=cos(t);
   mat2 rot=mat2(c,-s,s,c);
@@ -81,18 +88,19 @@ void main(){
       float n=float(layer)/uLayers,z=fract(t+n);
       float size=mix(7.2,1.4,z);
       float fade=smoothstep(.04,.6,z)*(1.-smoothstep(.8,1.,z));
-      float width=mix(.45,.75,z);
+      float foreground=smoothstep(.58,.9,z);
+      float width=mix(.48,1.25,foreground);
       float net=NetLayer(st*size-M*z,n,uTime*.42,size/max(projection,1.),width);
-      vec3 tint=mix(vec3(.39,.62,.91),vec3(.94,.97,1.),.30);
+      vec3 tint=mix(vec3(.39,.62,.91),vec3(.97,.985,1.),.30+foreground*.55);
       // A restrained pink drift occupies only a small fraction of the network.
       float pink=smoothstep(.86,1.,sin(st.x*4.1+st.y*2.7+n*8.+t*.2)*.5+.5)*.42;
       tint=mix(tint,vec3(.91,.72,.82),pink);
-      light+=tint*net*fade*.22;
+      light+=tint*net*fade*.36;
     }
   }
   vec2 edge=min(vUv,1.-vUv);
   // Early, deterministic feathering: no noise-driven boundary flicker.
-  float dissolve=pow(smoothstep(.025,.28,edge.x)*smoothstep(.025,.42,edge.y),1.45);
+  float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.28,edge.y),1.45);
   light*=dissolve;
   float energy=max(light.r,max(light.g,light.b));
   float alpha=.40*(1.-exp(-energy/.40));
@@ -184,7 +192,7 @@ export class HomeNetwork {
     ctx.setTransform(canvas.width/w,0,0,canvas.height/h,0,0);ctx.clearRect(0,0,w,h);
     const fract=x=>x-Math.floor(x),hash=(x,y)=>fract(Math.sin(x*127.1+y*311.7)*43758.5453);
     for(let layer=0;layer<2;layer++){
-      const spacing=w/(layer?5.5:8),rows=Math.ceil(h/spacing)+2,points=[];
+      const spacing=Math.min(w,1328)/(layer?5.5:8),rows=Math.ceil(h/spacing)+2,points=[];
       for(let row=-1;row<rows;row++)for(let col=-1;col<Math.ceil(w/spacing)+1;col++){
         const n=hash(col+layer*17,row+layer*23),t=this.time*.42+n;
         points.push({col,row,x:(col+.5+Math.sin(t*fract(n*10))*.4)*spacing+this.pointer.x*5*(layer+1),y:(row+.5+Math.cos(t*fract(n*100))*.4)*spacing+this.pointer.y*5*(layer+1),n});
@@ -192,15 +200,17 @@ export class HomeNetwork {
       for(const p of points){
         for(const q of points){if(q.row<p.row||(q.row===p.row&&q.col<=p.col)||Math.abs(q.row-p.row)>1||Math.abs(q.col-p.col)>1)continue;
           const distance=Math.hypot(q.x-p.x,q.y-p.y)/spacing;if(distance>1.45)continue;
-          ctx.strokeStyle=`rgba(137,180,231,${(.065+.025*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=layer?.6:.45;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+          ctx.strokeStyle=`rgba(${layer?'237,246,255':'137,180,231'},${(.065+.045*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=layer?1.05:.48;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
         }
         const pulse=.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8);
-        const tint=p.n>.9?'233,183,208':p.n>.6?'234,244,255':'137,180,231';
-        const glow=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,3.5);glow.addColorStop(0,`rgba(${tint},${pulse})`);glow.addColorStop(.3,`rgba(${tint},${pulse*.38})`);glow.addColorStop(1,`rgba(${tint},0)`);ctx.fillStyle=glow;ctx.fillRect(p.x-3.5,p.y-3.5,7,7);
+        const tint=p.n>.9?'233,183,208':p.n>.35?'242,248,255':'137,180,231';
+        const glow=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,3.6);glow.addColorStop(0,`rgba(${tint},${pulse*.045})`);glow.addColorStop(.4,`rgba(${tint},${pulse*.015})`);glow.addColorStop(1,`rgba(${tint},0)`);ctx.fillStyle=glow;ctx.fillRect(p.x-3.6,p.y-3.6,7.2,7.2);
+        ctx.strokeStyle=`rgba(${tint},${pulse*.22})`;ctx.lineWidth=.35;ctx.beginPath();ctx.moveTo(p.x,p.y-3.2);ctx.lineTo(p.x,p.y+3.2);ctx.moveTo(p.x-2.4,p.y);ctx.lineTo(p.x+2.4,p.y);ctx.stroke();
+        ctx.fillStyle=`rgba(${tint},${pulse})`;ctx.beginPath();ctx.arc(p.x,p.y,.6,0,Math.PI*2);ctx.fill();
       }
     }
     ctx.globalCompositeOperation='destination-in';
-    for(const [length,horizontal,reach]of [[w,true,.28],[h,false,.42]]){
+    for(const [length,horizontal,reach]of [[w,true,.18],[h,false,.28]]){
       const mask=ctx.createLinearGradient(0,0,horizontal?length:0,horizontal?0:length);
       for(let i=0;i<=24;i++){const x=i/24,edge=Math.min(x,1-x),v=Math.max(0,Math.min(1,(edge-.025)/(reach-.025))),smooth=v*v*(3-2*v);mask.addColorStop(x,`rgba(0,0,0,${Math.pow(smooth,1.45)})`);}
       ctx.fillStyle=mask;ctx.fillRect(0,0,w,h);

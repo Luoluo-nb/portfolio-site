@@ -1,7 +1,11 @@
 /* Final colour composition: deep blue space, cold white typography, and small
    blush accents. 6:3:1 describes emphasis, not a white background area quota. */
-body{background:var(--bg);color:var(--fg)}
-body::before{background:radial-gradient(.8px .8px at 12% 19%,#8bbcf238,transparent),radial-gradient(.8px .8px at 74% 31%,#f4f7ff32,transparent),radial-gradient(.7px .7px at 39% 65%,#e9b7d026,transparent),radial-gradient(.8px .8px at 87% 76%,#a5cafa34,transparent),radial-gradient(1px 1px at 65% 12%,#d6e4fb2c,transparent),radial-gradient(ellipse at 80% 8%,#17345b2b,transparent 64%),radial-gradient(ellipse at 12% 87%,#38233d19,transparent 62%);background-size:397px 443px,557px 541px,631px 727px,683px 499px,863px 769px,100% 100%,100% 100%}
+/* Background colour is independent of stars, rays, media and UI exposure. */
+body{background:#040711;color:var(--fg)}
+body::before{background:radial-gradient(.8px .8px at 12% 19%,#8bbcf238,transparent),radial-gradient(.8px .8px at 74% 31%,#f4f7ff32,transparent),radial-gradient(.7px .7px at 39% 65%,#e9b7d026,transparent),radial-gradient(.8px .8px at 87% 76%,#a5cafa34,transparent),radial-gradient(1px 1px at 65% 12%,#d6e4fb2c,transparent),radial-gradient(ellipse at 80% 8%,#08132226,transparent 64%),radial-gradient(ellipse at 12% 87%,#120a170d,transparent 62%);background-size:397px 443px,557px 541px,631px 727px,683px 499px,863px 769px,100% 100%,100% 100%}
+/* Static fallback only; live gradients are dithered inside the sky composite. */
+body::before{filter:brightness(.48)}
+body:has(#starfield-canvas[data-rendering="ready"])::before{opacity:0}
 ::selection{background:#3d5079;color:var(--fg)}
 .header{background:#080f24ec;border-bottom-color:rgb(var(--blue-rgb)/.12)}
 .header .brand-caption,.header>nav a{color:#d5e0f0}
@@ -32,7 +36,7 @@ h2>i,.contact-inner h2 i{color:var(--pink)}
 #top h1{color:var(--fg);background-image:linear-gradient(165deg,#fff 12%,#edf2fc 61%,#b5d1f3 100%);text-shadow:0 5px 38px rgb(var(--blue-rgb)/.075)}
 #top .hero-role{color:#c3d1e4}
 #top .hero-role>span{color:var(--pink)}
-#top .hero-atmosphere{background:radial-gradient(ellipse at 50% 50%,#719cdb08,transparent 53%),radial-gradient(ellipse at 74% 28%,#d59bc309,transparent 45%)}
+#top .hero-atmosphere{background:radial-gradient(ellipse at 50% 50%,#719cdb08,transparent 53%),radial-gradient(ellipse at 74% 28%,#d59bc309,transparent 45%);opacity:0}
 #top .hero-scroll{color:#d6e3f5}
 #top .hero-scroll-arc-inner{stroke:rgb(var(--pink-rgb)/.43)}
 #top .hero-scroll-star{fill:var(--fg);filter:drop-shadow(0 0 3px rgb(var(--pink-rgb)/.6))}

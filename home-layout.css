@@ -9,6 +9,7 @@
   padding:calc(var(--home-header) + 46px) 0 124px;
   gap:0;
   isolation:isolate;
+  z-index:1;
 }
 #top .hero-copy{position:relative;z-index:1;min-width:0;width:100%;max-width:850px;text-align:center}
 #top h1{font-family:var(--font-ui);font-size:clamp(76px,7.6vw,108px);line-height:1.2;letter-spacing:.09em;padding-left:.09em;margin:0;font-weight:700;color:#e7f3ff;background:linear-gradient(165deg,#f3f8ff 12%,#daeaf7 57%,#9bc9e8 100%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 5px 38px #6aa9d318}
@@ -25,7 +26,7 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
 #top .hero-scroll-arc-outer{stroke:#8dcced4d;stroke-width:.7}
 #top .hero-scroll-arc-inner{stroke:#a8dcf380;stroke-width:.8}
 #top .hero-scroll-star{fill:#d4f3ff;stroke:none;filter:drop-shadow(0 0 3px #96ddffb3)}
-#top .hero-scroll-arrow{stroke:#b0ddf7;stroke-width:1.1}
+#top .hero-scroll-arrow{stroke:#e3effb;stroke-width:1.5}
 #top .hero-scroll-flow{stroke:#f0fbff;stroke-width:1.5;stroke-dasharray:12 76;stroke-dashoffset:12;animation:home-arrow-flow 3.4s ease-in-out infinite;filter:drop-shadow(0 0 3px #8dd9ff99)}
 #top .hero-scroll-label{position:relative;padding-bottom:5px;transition:transform .25s,text-shadow .25s}
 #top .hero-scroll-label::after{content:'';position:absolute;bottom:0;left:0;width:34px;height:1px;background:linear-gradient(90deg,#98d5f575,transparent);transform-origin:left;transition:width .25s,opacity .25s;opacity:.8}
@@ -39,8 +40,9 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
 @keyframes home-orbit-turn{to{transform:rotate(360deg)}}
 @keyframes home-arrow-flow{0%{stroke-dashoffset:12;opacity:0}18%{opacity:1}72%{opacity:1}100%{stroke-dashoffset:-76;opacity:0}}
 /* Let the introduction breathe before the project heading enters the page. */
-.home-featured{--transition-space:clamp(300px,36svh,460px);position:relative;padding-top:var(--transition-space);padding-bottom:80px;scroll-margin-top:0}
-.home-transition{position:absolute;top:20px;left:0;width:100%;height:calc(var(--transition-space) - 60px);pointer-events:none;overflow:hidden}
+.home-featured{--transition-base:clamp(300px,36svh,460px);--transition-unit:calc(var(--transition-base) - 60px);--transition-space:calc(var(--transition-base)*1.5);position:relative;padding-top:var(--transition-space);padding-bottom:80px;scroll-margin-top:0}
+/* Extra depth reaches into the lower hero; the featured heading keeps its clear margin. */
+.home-transition{position:absolute;top:calc(var(--transition-space) - 40px - var(--transition-unit)*2.5);left:50%;transform:translateX(-50%);width:calc(100vw - 32px);max-width:1920px;height:calc(var(--transition-unit)*2.5);pointer-events:none;overflow:hidden}
 .home-network{display:block;width:100%;height:100%;pointer-events:none}
 .home-effect-credit{display:flex;flex-wrap:wrap;gap:6px 12px;margin:36px 0 0;color:var(--muted);font-size:12px;line-height:1.7;font-weight:500}
 .home-effect-credit a{color:inherit;text-decoration:none;text-underline-offset:4px}
@@ -84,7 +86,7 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
   #top.hero{--home-header:126px;padding-top:calc(var(--home-header) + 30px)}
   #top h1{font-size:clamp(68px,10vw,92px)}
   html[lang=en] #top h1{font-size:clamp(46px,7.3vw,66px)}
-  .home-featured{--transition-space:clamp(260px,34svh,380px);padding-bottom:64px}
+  .home-featured{--transition-base:clamp(260px,34svh,380px);padding-bottom:64px}
   .home-featured-heading{gap:24px;margin-bottom:28px}
   #home-project-grid{gap:30px 22px}
   #home-project-grid .card-copy strong{font-size:20px}
@@ -97,7 +99,7 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
   #top .hero-role>span{margin-inline:8px}
   #top .hero-scroll{bottom:18px;min-width:190px;min-height:68px;font-size:13px;gap:13px}
   #top .hero-scroll-orbit{width:56px;height:56px}
-  .home-featured{--transition-space:clamp(220px,30svh,300px);padding-bottom:48px}
+  .home-featured{--transition-base:clamp(220px,30svh,300px);padding-bottom:48px}
   .home-featured-heading{align-items:flex-start;flex-direction:column;gap:16px;margin-bottom:24px}
   .home-featured-heading .section-kicker{font-size:12px;margin-bottom:12px}
   .home-featured-heading h2{font-size:31px}

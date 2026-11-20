@@ -1,4 +1,5 @@
 import { mountMusicShader } from './music-shader.js';
+import { createPercussionDetector, PERCUSSION_SETTINGS as SNARE_ANALYSIS } from './audio-onsets.js';
 
 const source = './media/bgm-new-days-hope-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
@@ -36,28 +37,17 @@ let audioContext;
 let mediaSource;
 let analyser;
 let frequencyData;
-let previousSpectrum;
+let waveformData;
 let analysisPending;
 let analysisRequest = 0, activityGeneration = 0, playbackRequest = 0;
 let analysisUnavailable = false;
 let sampledAt = 0;
-// Spectral kick/snare onsets -> short attack/release -> integrated visual speed.
-// Positive flux rejects held tones; this is not instrument/source separation.
-const SNARE_ANALYSIS = Object.freeze({
-  bodyHz: [180, 350], noiseHz: [1200, 6000], hatHz: [6000, 12000], kickHz: [35, 150],
-  warmupSeconds: .28, refractorySeconds: .20, kickRefractorySeconds: .22,
-  beatRefractorySeconds: .14, holdSeconds: .028,
-  bodyAttackSeconds: .08, attackSeconds: .012, releaseSeconds: .14, adaptiveSeconds: 1.8, speedGain: 12.0,
-});
+// Actual linear-amplitude drum attacks -> lag -> integrated visual speed.
+const percussion = createPercussionDetector();
 const levels = {bass: 0, mid: 0, treble: 0, active: false,
   snare: 0, snareConfidence: 0, snareLag: 0, speed: 0, snareCount: 0, onsetTime: 0,
   snareBodyFlux: 0, snareNoiseFlux: 0, kick: 0, kickConfidence: 0, kickLag: 0, kickCount: 0,
   kickFlux: 0, kickThreshold: 0, beat: 0, beatLag: 0, beatCount: 0, beatTime: 0, sampleId: 0};
-let spectrumPrimed = false, audibleSince = 0, lastOnset = -1000, heldSnare = 0;
-let bodyMean = .006, bodyDeviation = .003, noiseMean = .01, noiseDeviation = .005;
-let kickMean = .012, kickDeviation = .006, lastKick = -1000, heldKick = 0;
-let lastBeat = -1000, heldBeat = 0;
-let recentBodyAttack = 0;
 const playbackAllowed = () => wanted && pageActive && !document.hidden;
 function suspendAnalysis() {
   if (audioContext && audioContext.state !== 'closed') audioContext.suspend().catch(() => {});
@@ -89,7 +79,7 @@ async function enableAnalysis(fromGesture = false) {
     nextAnalyser.smoothingTimeConstant = 0.28;
     nextAnalyser.minDecibels = -85;
     nextAnalyser.maxDecibels = -15;
-    const nextData = new Uint8Array(nextAnalyser.frequencyBinCount);
+    const nextData = new Float32Array(nextAnalyser.frequencyBinCount);
     // Connect the downstream path first; createMediaElementSource is called once.
     nextAnalyser.connect(audioContext.destination);
     mediaSource = audioContext.createMediaElementSource(audio);
@@ -97,7 +87,7 @@ async function enableAnalysis(fromGesture = false) {
       mediaSource.connect(nextAnalyser);
       analyser = nextAnalyser;
       frequencyData = nextData;
-      previousSpectrum = new Float32Array(nextData.length);
+      waveformData = new Float32Array(nextAnalyser.fftSize);
     } catch {
       // The media element is already attached: preserve a direct audible route.
       mediaSource.connect(audioContext.destination);
@@ -120,107 +110,27 @@ function getLevels() {
   levels.sampleId++;
   const targets = [0, 0, 0];
   if (active) {
-    analyser.getByteFrequencyData(frequencyData);
+    analyser.getFloatFrequencyData(frequencyData);
+    analyser.getFloatTimeDomainData(waveformData);
     const binHz = audioContext.sampleRate / analyser.fftSize;
     [[45, 200], [200, 2200], [2200, 9000]].forEach(([low, high], band) => {
       const begin = Math.max(1, Math.floor(low / binHz));
       const end = Math.min(frequencyData.length - 1, Math.ceil(high / binHz));
       let energy = 0;
-      for (let bin = begin; bin <= end; bin++) energy += (frequencyData[bin] / 255) ** 2;
+      for (let bin = begin; bin <= end; bin++) {
+        const displayValue = Math.max(0, Math.min(1, (frequencyData[bin] + 85) / 70));
+        energy += displayValue * displayValue;
+      }
       targets[band] = Math.sqrt(energy / Math.max(1, end - begin + 1));
     });
-    const bands = [SNARE_ANALYSIS.bodyHz, SNARE_ANALYSIS.noiseHz, SNARE_ANALYSIS.hatHz, SNARE_ANALYSIS.kickHz]
-      .map(([low, high]) => ({low, high, flux:0, energy:0, count:0}));
-    for (let bin = 1; bin < frequencyData.length; bin++) {
-      const hz = bin * binHz, current = frequencyData[bin] / 255;
-      const increase = Math.max(0, current - previousSpectrum[bin]);
-      for (const band of bands) if (hz >= band.low && hz <= band.high) {
-        band.flux += increase; band.energy += current * current; band.count++;
-      }
-      previousSpectrum[bin] = current;
-    }
-    for (const band of bands) { band.flux /= Math.max(1, band.count); band.energy = Math.sqrt(band.energy / Math.max(1, band.count)); }
-    const [bodyBand, noiseBand, hatBand, kickBand] = bands;
-    recentBodyAttack = Math.max(bodyBand.flux, recentBodyAttack * Math.exp(-seconds / SNARE_ANALYSIS.bodyAttackSeconds));
-    let confidence = 0, kickConfidence = 0, accepted = 0;
-    if (!spectrumPrimed) {
-      spectrumPrimed = true; audibleSince = now;
-      bodyMean = .006; bodyDeviation = .003; noiseMean = .01; noiseDeviation = .005;
-      kickMean = .012; kickDeviation = .006;
-    } else {
-      const bodyThreshold = Math.max(.005, bodyMean * .65 + bodyDeviation * .25);
-      const noiseThreshold = Math.max(.006, noiseMean * 1.25 + noiseDeviation * .65);
-      // A noisy mid/high attack must coincide with drum-body energy. Sustained
-      // bass can mask its separate attack, so body presence is a soft qualifier.
-      // An isolated kick lacks the noisy attack; an isolated hat lacks the body.
-      const balanced = bodyBand.energy > Math.max(.045, hatBand.energy * .18, noiseBand.energy * .12)
-        && noiseBand.energy > Math.max(.05, hatBand.energy * .38)
-        && noiseBand.flux > kickBand.flux * .06;
-      // A short peak window tolerates the body/noise components landing in
-      // adjacent FFT frames and a body partly masked by sustained bass.
-      if (balanced && noiseBand.flux > noiseThreshold) {
-        const attack = Math.min(1, recentBodyAttack / Math.max(.014, bodyThreshold * 2));
-        const presence = Math.min(1, Math.max(0, (bodyBand.energy - .045) / .22));
-        const bodyStrength = Math.max(attack, presence * .72);
-        const noiseStrength = Math.min(1, (noiseBand.flux / noiseThreshold - 1) / 1.5);
-        confidence = Math.sqrt(bodyStrength * noiseStrength);
-      }
-      if (now - audibleSince > SNARE_ANALYSIS.warmupSeconds * 1000
-          && now - lastOnset > SNARE_ANALYSIS.refractorySeconds * 1000 && confidence > .20) {
-        lastOnset = now; levels.onsetTime = now / 1000; levels.snareCount++; heldSnare = confidence;
-        accepted = confidence;
-      }
-      // Low-band novelty needs both a fresh attack and sufficient body energy.
-      // Absolute and relative floors avoid retriggering a steady bass/sine tone.
-      const kickThreshold = Math.max(.012, kickMean * 1.6 + kickDeviation * .9, kickBand.energy * .035);
-      levels.kickThreshold = kickThreshold;
-      if (kickBand.energy > .08 && kickBand.flux > kickThreshold) {
-        kickConfidence = Math.min(1, (kickBand.flux / kickThreshold - 1) / 2)
-          * Math.min(1, kickBand.energy / .28);
-      }
-      if (now - audibleSince > SNARE_ANALYSIS.warmupSeconds * 1000
-          && now - lastKick > SNARE_ANALYSIS.kickRefractorySeconds * 1000 && kickConfidence > .20) {
-        lastKick = now; levels.kickCount++; heldKick = kickConfidence;
-        accepted = Math.max(accepted, kickConfidence);
-      }
-      // Components arriving in adjacent FFT frames belong to one audible hit.
-      if (accepted && now - lastBeat > SNARE_ANALYSIS.beatRefractorySeconds * 1000) {
-        lastBeat = now; levels.beatTime = now / 1000; levels.beatCount++;
-        heldBeat = .45 + .55 * accepted;
-      }
-      const adapt = 1 - Math.exp(-seconds / SNARE_ANALYSIS.adaptiveSeconds);
-      bodyDeviation += (Math.abs(bodyBand.flux - bodyMean) - bodyDeviation) * adapt;
-      noiseDeviation += (Math.abs(noiseBand.flux - noiseMean) - noiseDeviation) * adapt;
-      kickDeviation += (Math.abs(kickBand.flux - kickMean) - kickDeviation) * adapt;
-      bodyMean += (bodyBand.flux - bodyMean) * adapt;
-      noiseMean += (noiseBand.flux - noiseMean) * adapt;
-      kickMean += (kickBand.flux - kickMean) * adapt;
-    }
-    const audibleGain = Math.min(1, Math.sqrt(audio.volume / .35));
-    levels.snareBodyFlux = bodyBand.flux; levels.snareNoiseFlux = noiseBand.flux;
-    levels.snareConfidence = confidence;
-    levels.kickFlux = kickBand.flux; levels.kickConfidence = kickConfidence;
-    // Each impulse has a fast attack and a short decay; silence is never used
-    // as a clock reset and sustained FFT energy cannot hold the envelope high.
-    levels.snare = now - lastOnset < SNARE_ANALYSIS.holdSeconds * 1000 ? heldSnare * audibleGain : 0;
-    levels.kick = now - lastKick < SNARE_ANALYSIS.holdSeconds * 1000 ? heldKick * audibleGain : 0;
-    levels.beat = now - lastBeat < SNARE_ANALYSIS.holdSeconds * 1000 ? heldBeat * audibleGain : 0;
-    for (const band of ['snare', 'kick', 'beat']) {
-      const lag = `${band}Lag`;
-      const lagSeconds = levels[band] > levels[lag] ? SNARE_ANALYSIS.attackSeconds : SNARE_ANALYSIS.releaseSeconds;
-      levels[lag] += (levels[band] - levels[lag]) * (1 - Math.exp(-seconds / lagSeconds));
-      if (levels[lag] < .0001) levels[lag] = 0;
-    }
-    levels.speed = levels.beatLag * SNARE_ANALYSIS.speedGain;
+    let power = 0;
+    for (const sample of waveformData) power += sample * sample;
+    const rms = Math.sqrt(power / waveformData.length);
+    Object.assign(levels, percussion.update(frequencyData, rms, now, seconds, binHz, audio.volume));
     for (let band = 0; band < targets.length; band++) targets[band] *= audio.volume;
   } else {
-    spectrumPrimed = false; audibleSince = 0; heldSnare = heldKick = heldBeat = 0; recentBodyAttack = 0;
-    // Explicit user silence/backgrounding gates the chain. It does not integrate
-    // a tail later on resume or reuse stale pre-pause FFT differences.
-    levels.snare = levels.snareConfidence = levels.snareLag = levels.speed = 0;
-    levels.snareBodyFlux = levels.snareNoiseFlux = 0;
-    levels.kick = levels.kickConfidence = levels.kickLag = levels.kickFlux = levels.kickThreshold = 0;
-    levels.beat = levels.beatLag = 0;
+    // Explicit silence/backgrounding discards stale FFT and envelope history.
+    Object.assign(levels, percussion.reset());
   }
   ['bass', 'mid', 'treble'].forEach((band, index) => {
     const easing = 1 - Math.exp(-seconds / (targets[index] > levels[band] ? 0.07 : 0.12));

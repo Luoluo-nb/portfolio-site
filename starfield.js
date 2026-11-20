@@ -17,9 +17,9 @@ void main() {
 const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .24});
 const DEPTH_SPEED = Object.freeze({ambient: .010, audio: .030});
 const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
-// Godray is now local to the outer click ripple. The background stays crisp,
-// including during audio onsets; only depth travel responds to those onsets.
-const RAY_RESPONSE = Object.freeze({homeBase:0, contentBase:0, snareBoost:0, contentMusicGain:0});
+// Retain scattering, but tone-map it with the sky rather than adding it after
+// exposure. Background contrast is independent of the foreground UI effects.
+const RAY_RESPONSE = Object.freeze({homeBase:.32, contentBase:.065, snareBoost:.24, contentMusicGain:.06});
 
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -38,9 +38,9 @@ uniform vec2 uPulse; // lagged beat, immersive-home blend
 uniform float uLayers;
 
 const float TAU = 6.283185;
-const float STAR_GLOW = 0.006;
+const float STAR_GLOW = 0.0135;
 const float CANVAS_VIEW = 20.0;
-const float EXPOSURE = 0.25;
+const float EXPOSURE = 0.65;
 
 float Hash21(vec2 p) {
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -77,15 +77,18 @@ vec3 StarLayer(vec2 uv) {
       float size = fract(n);
       vec2 starUV = gv - offset - vec2(n, fract(n * 34.0)) + 0.5;
       if (dot(starUV, starUV) > 0.0576) continue;
-      float flare = smoothstep(0.10, 0.90, size) * 0.10;
-      float star = Star(starUV, flare);
+      float flare = smoothstep(0.10, 0.90, size) * 0.15;
+      // A few denser white anchors, not larger translucent glow discs.
+      float primary=step(.975,size);
+      float star = Star(starUV/(1.+primary*.14), flare*(1.+primary*.35))*(1.+primary*.18);
       vec3 originalColor = (sin(vec3(0.2, 0.3, 0.9) * fract(n * 2345.2) * TAU) * 0.25 + 0.75)
                            * vec3(0.9, 0.59, 0.9 + size);
       float luminance = dot(originalColor, vec3(0.2126, 0.7152, 0.0722));
-      // Blue / cold white / blush approximately 6:3:1, distributed by a stable
-      // star hash. Hue never responds to beat amplitude or changes star motion.
+      // Draft balance favours cold white; a stable hash keeps colour independent
+      // of beat amplitude and motion. Primary points are always cool white.
       float hue = fract(n * 571.3);
-      vec3 tint = hue < .60 ? vec3(.60,.79,1.) : hue < .90 ? vec3(.95,.97,1.) : vec3(1.,.66,.82);
+      vec3 tint = hue < .45 ? vec3(.60,.79,1.) : hue < .95 ? vec3(.95,.97,1.) : vec3(1.,.66,.82);
+      tint=mix(tint,vec3(.96,.98,1.),primary);
       vec3 color = tint * luminance;
       float twinkle = sin(uTime * 0.34 + n * TAU) * 0.22 + 0.78;
       // Only measured music bands affect this pulse; silence contributes zero.
@@ -114,7 +117,9 @@ void main() {
     col += StarLayer(uv * scale + i * 453.2 - uTime * 0.006 + orbit + pointer) * fade;
   }
   vec3 color = col * EXPOSURE;
-  color = min(color / (1.0 + color * 1.7), vec3(0.42));
+  // Keep the source bounded by the RGBA8 target. Final display composition
+  // gives these points a soft shoulder rather than a saturated cubic core.
+  color = max(color, vec3(0.0));
   // RGB is the visible starfield; alpha supplies only those same stars to
   // radial scattering. No additional disc/light mass fills the dark sky.
   // This bounded source is separate from the final screen alpha.
@@ -147,17 +152,44 @@ void main(){
  gl_FragColor=vec4(vec3(color*.21),1.);
 }`;
 const COMPOSITE_FRAGMENT = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 varying mediump vec2 vUv;
 uniform sampler2D uScene,uRays;
 uniform float uRayStrength;
+// Design draft: atmospheric colour is already in display space and remains
+// independent of light exposure, so dark blue does not collapse to flat black.
+const float BASE_DISPLAY_GAIN=1.22;
+const float LIGHT_EXPOSURE=.32;
+const float LIGHT_SATURATION=.32;
+const float RAY_STYLE_GAIN=.35;
+float grain(vec2 p){
+ // Fixed screen-space interleaved gradient noise: sub-LSB, no temporal sparkle.
+ return fract(52.9829189*fract(dot(mod(p,256.),vec2(.06711056,.00583715))));
+}
 void main(){
  vec2 uv=vUv;
- vec3 color=texture2D(uScene,uv).rgb;
- color+=texture2D(uRays,uv).rgb*vec3(.27,.48,.72)*uRayStrength;
- color=min(color,vec3(.46));
- float alpha=max(max(color.r,color.g),color.b);
- gl_FragColor=vec4(color,alpha);
+ // Resolve the atmospheric background here at full precision, before output
+ // quantization. Opaque composition avoids a second low-alpha 8-bit gradient.
+ vec2 cssUv=vec2(uv.x,1.-uv.y);
+ vec3 baseColor=vec3(3.,6.,14.)/255.;
+ vec2 blueDelta=(cssUv-vec2(.8,.08))/vec2(.78,.7),blushDelta=(cssUv-vec2(.12,.87))/vec2(.7,.72);
+ float blue=exp(-dot(blueDelta,blueDelta))*.12;
+ float blush=exp(-dot(blushDelta,blushDelta))*.035;
+ baseColor=mix(baseColor,vec3(8.,19.,34.)/255.,blue);
+ baseColor=mix(baseColor,vec3(18.,10.,23.)/255.,blush);
+ baseColor*=BASE_DISPLAY_GAIN;
+ vec3 sceneLight=texture2D(uScene,uv).rgb;
+ sceneLight+=texture2D(uRays,uv).rgb*vec3(.27,.48,.72)*uRayStrength*RAY_STYLE_GAIN;
+ float lightValue=dot(sceneLight,vec3(.2126,.7152,.0722));
+ sceneLight=mix(vec3(lightValue),sceneLight,LIGHT_SATURATION);
+ vec3 softLight=(vec3(1.)-exp(-max(sceneLight,vec3(0.))*1.1))*LIGHT_EXPOSURE;
+ vec3 color=baseColor+softLight;
+ color+=vec3((grain(gl_FragCoord.xy)-.5)/255.);
+ gl_FragColor=vec4(clamp(color,vec3(0.),vec3(1.)),1.);
 }`;
 
 export class Starfield {
@@ -239,6 +271,7 @@ export class Starfield {
   }
 
   _status(state) {
+    this.canvas.dataset.rendering = state;
     this.onStatus({ state });
   }
 

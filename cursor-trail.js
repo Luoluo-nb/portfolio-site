@@ -9,13 +9,24 @@ function mountCursorTrail() {
   canvas.id = 'cursor-trail-canvas';
   canvas.setAttribute('aria-hidden', 'true');
   canvas.setAttribute('data-no-translate', '');
-  canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;user-select:none;z-index:80;contain:strict;';
+  canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;user-select:none;z-index:80;contain:strict;will-change:transform;';
   canvas.hidden = true;
   document.body.append(canvas);
   const context = canvas.getContext('2d', { alpha: true });
   if (!context) { canvas.dataset.state = 'unsupported'; return; }
   const prism = createCursorPrism(canvas, context);
-  const flock = createCursorFlock(canvas, context);
+  // The pointer star is viewport-fixed while painted history scrolls with the
+  // document. Its separate 32px surface avoids a second full-screen buffer.
+  const starSize = 32;
+  const starCanvas = document.createElement('canvas');
+  starCanvas.id = 'cursor-star-canvas';
+  starCanvas.setAttribute('aria-hidden', 'true');
+  starCanvas.setAttribute('data-no-translate', '');
+  starCanvas.style.cssText = 'position:fixed;left:0;top:0;width:32px;height:32px;pointer-events:none;user-select:none;z-index:80;contain:strict;will-change:transform;';
+  starCanvas.hidden = true;
+  document.body.append(starCanvas);
+  const starContext = starCanvas.getContext('2d', { alpha: true });
+  const flock = createCursorFlock(starCanvas, starContext);
 
   const finePointer = matchMedia('(pointer: fine) and (hover: hover)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -53,17 +64,28 @@ function mountCursorTrail() {
   // History is anchored to the document; pointer sampling and Voronoi regions
   // remain in viewport coordinates. Scrolling lifts the pen without new ink.
   let pageScrollX = window.scrollX, pageScrollY = window.scrollY;
+  let paintScrollX = pageScrollX, paintScrollY = pageScrollY, compositeX = 0, compositeY = 0;
+  function commitScrollFrame() {
+    paintScrollX = pageScrollX; paintScrollY = pageScrollY;
+    compositeX = compositeY = 0;
+    canvas.style.transform = 'translate3d(0px,0px,0)';
+  }
   function syncScroll() {
     const x = window.scrollX, y = window.scrollY;
     if (x === pageScrollX && y === pageScrollY) return;
     pageScrollX = x; pageScrollY = y;
+    // Reposition already-painted pixels immediately, independently of the
+    // material/physics RAF. The next complete paint takes over at this offset.
+    compositeX = paintScrollX - x; compositeY = paintScrollY - y;
+    canvas.style.transform = `translate3d(${compositeX}px,${compositeY}px,0)`;
     if (head) head.released = true;
     head = null;
     previous = null;
-    remainder = penGapRemaining = 0;
+    remainder = 0;
   }
-  let strokeSequence = 0, activeRegion = null, penGapRemaining = 0, boundaryBreaks = 0;
-  const penLiftDistance = 22, ringLife = 240;
+  let strokeSequence = 0, activeRegion = null, boundaryBreaks = 0;
+  // Total width across a shared boundary: 0.75 CSS px inside each cell.
+  const penLiftDistance = 1.5, boundaryInset = penLiftDistance / 2, ringLife = 240;
   let suspended = false, enabled = false;
   canvas.dataset.shape = 'scatter-radial';
   canvas.dataset.retention = 'main-and-afterglow';
@@ -199,7 +221,7 @@ function mountCursorTrail() {
     head = null;
     activeRegion = null;
     if (releaseRegion) lockSpacingRegion(null, performance.now());
-    penGapRemaining = boundaryBreaks = 0;
+    boundaryBreaks = 0;
     remainder = linkCount = 0;
     nextSpacing = spacing;
     pageScrollX = window.scrollX; pageScrollY = window.scrollY;
@@ -207,6 +229,8 @@ function mountCursorTrail() {
     particleLimit = BASE_PARTICLES;
     canvas.dataset.maxParticles = String(particleLimit);
     context.clearRect(0, 0, width, height);
+    commitScrollFrame();
+    starContext?.clearRect(0, 0, starSize, starSize);
     prism.clear();
     flock.clear();
     state(reason);
@@ -221,6 +245,9 @@ function mountCursorTrail() {
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
     context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+    starCanvas.width = starCanvas.height = Math.round(starSize * ratio);
+    starContext?.setTransform(starCanvas.width / starSize, 0, 0, starCanvas.height / starSize, 0, 0);
+    commitScrollFrame();
     prism.resize(width, height);
     flock.resize(width, height);
     canvas.dataset.dpr = String(ratio);
@@ -232,6 +259,7 @@ function mountCursorTrail() {
       : suspended || document.hidden ? 'suspended' : '';
     enabled = !reason;
     canvas.hidden = !enabled;
+    starCanvas.hidden = !enabled;
     if (!enabled) { stop(reason); return; }
     stop('idle');
     resize();
@@ -266,6 +294,17 @@ function mountCursorTrail() {
     });
     retireOverflow(now);
     return particles[particles.length - 1];
+  }
+
+  function renderFlock(now) {
+    if (!starContext) return false;
+    starContext.clearRect(0, 0, starSize, starSize);
+    if (mouse) starCanvas.style.transform = `translate3d(${mouse.x - starSize / 2}px,${mouse.y - starSize / 2}px,0)`;
+    starContext.save();
+    starContext.translate(starSize / 2 - (mouse?.x ?? 0), starSize / 2 - (mouse?.y ?? 0));
+    const active = flock.render(now, mouse);
+    starContext.restore();
+    return active;
   }
 
   function render(now) {
@@ -321,7 +360,8 @@ function mountCursorTrail() {
     if (!particles.length) {
       linkCount = 0;
       if (prism.metadata.active) prism.clear();
-      if (flock.render(now, mouse)) {
+      commitScrollFrame();
+      if (renderFlock(now)) {
         frameId = requestAnimationFrame(render);
         state('flock-only');
         return;
@@ -430,25 +470,33 @@ function mountCursorTrail() {
       context.restore();
     }
     context.restore();
-    flock.render(now, mouse);
+    commitScrollFrame();
+    renderFlock(now);
     frameId = requestAnimationFrame(render);
     state('active');
   }
 
+  function liftPen() {
+    if (head) head.released = true;
+    head = null;
+    remainder = 0;
+  }
+
   function continueStroke(start, end, now) {
-    const dx = end.x - start.x, dy = end.y - start.y, length = Math.hypot(dx, dy);
-    if (length < .001) return;
-    const directionX = dx / length, directionY = dy / length;
-    let skipped = 0;
-    if (penGapRemaining > 0) {
-      skipped = Math.min(length, penGapRemaining);
-      penGapRemaining -= skipped;
-      if (skipped >= length - .001) return;
-    }
-    const startX = start.x + directionX * skipped, startY = start.y + directionY * skipped;
-    const pathLength = length - skipped;
+    const interval = prism.insetSegment(start, end, activeRegion, boundaryInset);
+    if (!interval) { liftPen(); return; }
+    if (interval.t0 > 1e-9) liftPen();
+    const startX = interval.from.x, startY = interval.from.y;
+    const dx = interval.to.x - startX, dy = interval.to.y - startY;
+    const pathLength = Math.hypot(dx, dy);
+    if (pathLength < .001) { if (interval.t1 < 1 - 1e-9) liftPen(); return; }
+    const directionX = dx / pathLength, directionY = dy / pathLength;
     if (!head) {
       strokeSequence++;
+      head = emit(startX, startY, now);
+      // Preserve the entry edge instead of dragging the first point straight
+      // to a distant event endpoint. This also handles one-event fast sweeps.
+      head.released = true;
       head = emit(startX, startY, now);
       remainder = 0;
       nextSpacing = sampleSpacing();
@@ -466,21 +514,27 @@ function mountCursorTrail() {
       traveled += nextSpacing;
     }
     remainder = pathLength - (traveled - nextSpacing);
-    head.x = end.x + pageScrollX;
-    head.y = end.y + pageScrollY;
+    head.x = interval.to.x + pageScrollX;
+    head.y = interval.to.y + pageScrollY;
     head.born = head.updated = now;
     head.vx = head.vy = 0;
+    if (interval.t1 < 1 - 1e-9) liftPen();
   }
 
   function samplePointer(event) {
     // Read the actual offset as well as the scroll event: coalesced input or a
     // render can arrive before the browser dispatches its queued scroll event.
     syncScroll();
-    const bounds = canvas.getBoundingClientRect();
+    let bounds = canvas.getBoundingClientRect();
     // Content/language changes can toggle scrollbars without a window resize.
-    if (Math.abs(bounds.width - width) > .01 || Math.abs(bounds.height - height) > .01) resize();
+    if (Math.abs(bounds.width - width) > .01 || Math.abs(bounds.height - height) > .01) {
+      resize();
+      bounds = canvas.getBoundingClientRect();
+    }
     const now = performance.now(), sampleTime = event.timeStamp || now;
-    const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, time: sampleTime };
+    // The history surface may currently be compositor-shifted. Undo only that
+    // CSS offset when sampling; the native pointer and regions stay in viewport.
+    const point = { x: event.clientX - bounds.left + compositeX, y: event.clientY - bounds.top + compositeY, time: sampleTime };
     mouse = point;
     if (!previous || sampleTime - previous.time > 180) {
       motionSpeed = fastMix = 0;
@@ -490,12 +544,12 @@ function mountCursorTrail() {
       previous = point;
       activeRegion = prism.regionAt(point.x, point.y);
       lockSpacingRegion(activeRegion, now);
-      penGapRemaining = 0;
       remainder = 0;
       nextSpacing = sampleSpacing();
       if (head) head.released = true;
       strokeSequence++;
-      head = emit(point.x, point.y, now);
+      head = prism.insetSegment(point, point, activeRegion, boundaryInset)
+        ? emit(point.x, point.y, now) : null;
       if (!frameId) frameId = requestAnimationFrame(render);
       state('active');
       return;
@@ -520,10 +574,7 @@ function mountCursorTrail() {
     const crossings = prism.crossings(previous, point, activeRegion);
     for (const crossing of crossings) {
       continueStroke(start, crossing, now);
-      if (head) head.released = true;
-      head = null;
-      remainder = 0;
-      penGapRemaining = penLiftDistance;
+      liftPen();
       activeRegion = crossing.toRegion;
       lockSpacingRegion(activeRegion, now);
       boundaryBreaks++;
@@ -545,7 +596,7 @@ function mountCursorTrail() {
 
   document.addEventListener('pointermove', move, { passive: true });
   window.addEventListener('scroll', syncScroll, { passive: true });
-  document.documentElement.addEventListener('pointerleave', () => { previous = null; remainder = 0; lockSpacingRegion(null, performance.now()); if (mouse) mouse.active = false; flock.clear(); }, { passive: true });
+  document.documentElement.addEventListener('pointerleave', () => { previous = null; remainder = 0; lockSpacingRegion(null, performance.now()); if (mouse) mouse.active = false; flock.clear(); starContext?.clearRect(0, 0, starSize, starSize); }, { passive: true });
   window.addEventListener('blur', () => { stop(enabled ? 'idle' : canvas.dataset.state); });
   window.addEventListener('resize', () => { if (enabled) { stop('idle'); resize(); } }, { passive: true });
   document.addEventListener('visibilitychange', availability);

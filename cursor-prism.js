@@ -37,6 +37,40 @@ export function createCursorPrism(canvas, context) {
     return region;
   }
 
+  // Clip input, not already-painted history, to a cell inset by CSS pixels.
+  // Signed distances to normalized bisectors make the band independent of
+  // pointer speed, crossing angle and device-pixel ratio.
+  function insetSegment(a, b, region, inset = 0) {
+    const seed = seeds[region];
+    if (destroyed || !seed || !a || !b ||
+      ![a.x, a.y, b.x, b.y, inset].every(Number.isFinite)) return null;
+    inset = Math.max(0, inset);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    let t0 = 0, t1 = 1;
+    for (const other of seeds) {
+      if (other === seed) continue;
+      const sx = other.x - seed.x, sy = other.y - seed.y;
+      const length = Math.hypot(sx, sy);
+      const nx = sx / length, ny = sy / length;
+      const distance = ((seed.x + other.x) / 2 - a.x) * nx
+        + ((seed.y + other.y) / 2 - a.y) * ny;
+      const slope = -(dx * nx + dy * ny);
+      if (Math.abs(slope) < 1e-10) {
+        if (distance < inset - 1e-9) return null;
+        continue;
+      }
+      const t = (inset - distance) / slope;
+      if (slope > 0) t0 = Math.max(t0, t);
+      else t1 = Math.min(t1, t);
+      if (t0 > t1 + 1e-10) return null;
+    }
+    if (t1 < 0 || t0 > 1) return null;
+    t0 = Math.max(0, t0); t1 = Math.min(1, t1);
+    return { t0, t1, region,
+      from: { x: a.x + dx * t0, y: a.y + dy * t0 },
+      to: { x: a.x + dx * t1, y: a.y + dy * t1 } };
+  }
+
   // Each squared-distance difference is linear along a straight input segment.
   // Testing the intervals between all pairwise bisectors finds every genuine
   // nearest-seed change, including a fast event crossing several entire cells.
@@ -107,7 +141,7 @@ export function createCursorPrism(canvas, context) {
   }
   function destroy() { clear(); destroyed = true; seeds = regions = Object.freeze([]); }
 
-  return Object.freeze({ regionAt, crossings, trace: crossings, point, segment,
+  return Object.freeze({ regionAt, insetSegment, crossings, trace: crossings, point, segment,
     beginFrame, render, resize, clear, destroy, getMetadata,
     get metadata() { return getMetadata(); } });
 }
