@@ -6,8 +6,6 @@ canvas.id = 'click-effects-canvas'; canvas.setAttribute('aria-hidden','true'); c
 canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100vh;pointer-events:none;user-select:none;z-index:90;contain:strict;will-change:transform;';
 document.body.append(canvas);
 const ctx = canvas.getContext('2d', {alpha:true});
-const raySource=document.createElement('canvas'),rayContext=raySource.getContext('2d',{alpha:true});
-const rayPointer={x:innerWidth*.5,y:innerHeight*.5};
 const bursts = [], cleanups = [], pending = new Set();
 const MAX_BURSTS = 6, EXIT_SLOTS = 2, EXIT_MS = 220;
 let width = 0, height = 0, frame = 0, lastDraw = 0, gesture = null, destroyed = false, suspended = false;
@@ -24,7 +22,7 @@ function resize(){
  canvas.style.width=document.documentElement.clientWidth+'px';canvas.style.height=innerHeight+'px';
  canvas.style.left=scrollX+'px';canvas.style.top=scrollY+'px';
  const r=canvas.getBoundingClientRect();width=Math.max(1,r.width);height=Math.max(1,r.height);
- const scale=Math.min(devicePixelRatio||1,1.25,Math.sqrt(700000/(width*height)));
+ const scale=Math.min(devicePixelRatio||1,1.5,Math.sqrt(4200000/(width*height)));
  canvas.width=Math.max(1,Math.floor(width*scale));canvas.height=Math.max(1,Math.floor(height*scale));ctx?.setTransform(canvas.width/width,0,0,canvas.height/height,0,0);
  canvas.dataset.pixelBudget=String(canvas.width*canvas.height);
 }
@@ -38,9 +36,9 @@ function availability(){
 // cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
 const RIPPLE_RADIUS=825/1.9,RIPPLE_SIZE=RIPPLE_RADIUS*2+42,RIPPLE_SPEED=1/3/1.5;
 const RIPPLE_DELAY=.14/RIPPLE_SPEED,RIPPLE_DURATION=1.42/RIPPLE_SPEED,RIPPLE_EASE=1.35;
-// The first band is outermost: multiply only its current width by nine.
-// Inner widths stay at one third; expanding bands lose thickness independently.
-const RIPPLE_WIDTHS=[.18,.35,1].map((width,index)=>width/3*(index===0?9:1)),RIPPLE_LIFE=(RIPPLE_DURATION+RIPPLE_DELAY*2)*1000;
+// A continuous stroke needs pixel coverage, not a subpixel annulus multiplied
+// by another low-resolution alpha texture. Keep a readable floor as it ages.
+const RIPPLE_WIDTHS=[2.4,1.3,1.7],RIPPLE_MIN_WIDTHS=[1.2,.9,1.05],RIPPLE_LIFE=(RIPPLE_DURATION+RIPPLE_DELAY*2)*1000;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
  const halfRadius=RIPPLE_RADIUS*.1;
@@ -53,7 +51,7 @@ function rippleState(elapsed,index){
  // Ease-out makes its
  // derivative decrease continuously to zero, without a late snap or stop.
  const radius=8+(RIPPLE_RADIUS-8)*(1-(1-age)**RIPPLE_EASE);
- return {age,radius,width:RIPPLE_WIDTHS[index]*rippleWidthScale(radius),
+ return {age,radius,width:Math.max(RIPPLE_MIN_WIDTHS[index],RIPPLE_WIDTHS[index]*rippleWidthScale(radius)),
   opacity:smooth(0,.06,age)*(1-age)**.62*[.92,.52,.34][index]};
 }
 const RIPPLE_FRAGMENT=`#ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -67,8 +65,8 @@ void main(){
  vec2 point=vec2(vUv.x,1.-vUv.y)*uSize;
  vec3 rgb=vec3(0.);float opacity=0.;
  float alphas[8];vec3 colors[8];
- // This pass carries light only. Outer-ring SDF cuts are applied independently
- // at native geometry resolution so neither inner band can inherit a cut.
+ // Only the outer band uses Boolean subtraction: sdCircle(other) < 0
+ // removes the entire covered arc, rather than dots at intersection points.
  for(int pulse=0;pulse<8;pulse++){
   alphas[pulse]=0.;colors[pulse]=vec3(0.);
   if(float(pulse)>=uCount)continue;
@@ -82,13 +80,26 @@ void main(){
    float radius=8.+${(RIPPLE_RADIUS-8).toFixed(8)}*(1.-pow(1.-age,${RIPPLE_EASE}));
    float halfRadius=${(RIPPLE_RADIUS*.1).toFixed(8)};
    float widthScale=radius<=halfRadius?1.-.5*smoothstep(8.,halfRadius,radius):.5-.25*smoothstep(halfRadius,${RIPPLE_RADIUS.toFixed(1)},radius);
-   float width=baseWidth*widthScale;
+   float minWidth=(i==0?1.2:i==1?.9:1.05)*uScale;
+   float width=max(minWidth,baseWidth*widthScale);
    float strength=i==0?.92:i==1?.52:.34,phase=elapsed+index*.31;
    // The geometry stays circular. Flow affects only the color and luminance.
    float streamA=.5+.5*sin(angle*5.-phase*8.2+sin(angle*3.+phase*2.7)*.65+seed);
-   float streamB=.5+.5*sin(angle*11.+phase*5.5+sin(angle*7.-phase*3.1)*.8);
+   float streamB=.5+.5*sin(angle*3.+phase*2.5);
    float flow=pow(streamA,.65)*.62+streamB*.38;
-   float localFade=smoothstep(0.,.06,age)*pow(1.-age,.62)*strength*(.76+flow*.24)*exitWeight;
+   float localFade=smoothstep(0.,.06,age)*pow(1.-age,.62)*strength*(.91+flow*.09)*exitWeight;
+   if(i==0){
+    for(int other=0;other<8;other++){
+     if(other==pulse||float(other)>=uCount)continue;
+     float otherAge=uPulse[other].z/${RIPPLE_DURATION};
+     if(otherAge<=0.||otherAge>=1.)continue;
+     float otherOpacity=smoothstep(0.,.06,otherAge)*pow(1.-otherAge,.62)*.92*mod(uPulse[other].w,2.);
+     if(otherOpacity<=.008)continue;
+     float otherRadius=(8.+${(RIPPLE_RADIUS-8).toFixed(8)}*(1.-pow(1.-otherAge,${RIPPLE_EASE})))*uScale;
+     float sdOther=length(point-uPulse[other].xy)-otherRadius;
+     localFade*=smoothstep(-uPixel*.5,uPixel*.5,sdOther-1.2*uScale);
+    }
+   }
    vec3 localColor=vec3(1.);
    // This bounded texture carries luminance only. The final native circular
    // path clip sets the radius-dependent widths without a magnified AA halo.
@@ -112,7 +123,7 @@ function bandTable(elapsed,index,seed){
   const angle=n/256*Math.PI*2;
   const radius=ring.radius,width=ring.width;
   const a=angle*5-phase*8.2+Math.sin(angle*3+phase*2.7)*.65+seed;
-  const b=angle*11+phase*5.5+Math.sin(angle*7-phase*3.1)*.8;
+  const b=angle*3+phase*2.5;
   values.push({radius,width,a,b});
  }
  return {values,opacity:ring.opacity,index};
@@ -157,7 +168,13 @@ function createRippleRenderer(){
      const width=mix('width')*scale;
      const streamA=.5+.5*Math.sin(mix('a')),streamB=.5+.5*Math.sin(mix('b'));
      const flow=streamA**.65*.62+streamB*.38;
-     const localFade=band.opacity*(.76+flow*.24)*tables[pulse].weight;
+     let localFade=band.opacity*(.91+flow*.09)*tables[pulse].weight;
+     if(ring===0)for(let other=0;other<tables.length;other++){
+      if(other===pulse)continue;
+      const outer=tables[other].bands[0];if(!outer||outer.opacity*tables[other].weight<=.008)continue;
+      const sdOther=(geometry[other].radius-outer.values[0].radius)*scale;
+      localFade*=smooth(-pixel*.5,pixel*.5,sdOther-1.2*scale);
+     }
      const core=Math.exp(-.5*(Math.abs(g.radius-mix('radius'))*scale/Math.max(width*.6,pixel*1.1))**2);
      const alpha=Math.min(.93,core*localFade),weight=alpha*(1-sample.alpha);
      sample.red+=weight;sample.green+=weight;sample.blue+=weight;sample.alpha+=weight;
@@ -186,45 +203,13 @@ function createRippleRenderer(){
 }
 const ripples=createRippleRenderer();let nextBurstId=0;
 canvas.dataset.renderer=ripples.mode;canvas.dataset.material='three-flowing-ripples';canvas.dataset.rippleCount='3';
-canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(',');canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='symmetric-sdf-cutouts';canvas.dataset.anchor='document';
+canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(',');canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='outer-circle-boolean-subtraction';canvas.dataset.anchor='document';
 canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=String(RIPPLE_DURATION);canvas.dataset.widthHalfRadius=String(RIPPLE_RADIUS*.1);canvas.dataset.widthOrder='outer-thicker';
 canvas.dataset.crossing='outer-rings-only';canvas.dataset.motion='circular-flow-only';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.clipMode='viewport-css-pixels';canvas.dataset.color='white';canvas.dataset.geometry='native-circular-clip';
-// Radial texture accumulation, restricted to the outer shell. The light origin
-// follows viewport pointer coordinates; the emitting rings stay in the document.
-function drawOuterGodrays(material,group,x,y,w,h,scale,now,loudness){
- if(!rayContext)return;
- const bands=group.map(burst=>({burst,band:rippleState((now-burst.born)/1000,0)})).filter(item=>item.band);
- if(!bands.length)return;
- const ratio=Math.min(.6,Math.sqrt(48000/(w*h))),pw=Math.max(1,Math.ceil(w*ratio)),ph=Math.max(1,Math.ceil(h*ratio));
- if(raySource.width!==pw)raySource.width=pw;if(raySource.height!==ph)raySource.height=ph;
- rayContext.setTransform(pw/w,0,0,ph/h,0,0);rayContext.clearRect(0,0,w,h);
- rayContext.save();rayContext.beginPath();
- for(const {burst,band} of bands){
-  const cx=burst.localX,cy=burst.localY,r=band.radius*scale,half=1.8*scale;
-  rayContext.moveTo(cx+r+half,cy);rayContext.arc(cx,cy,r+half,0,Math.PI*2);
-  rayContext.moveTo(cx+r-half,cy);rayContext.arc(cx,cy,r-half,0,Math.PI*2,true);
- }
- rayContext.clip();rayContext.drawImage(material,0,0,w,h);rayContext.restore();
- const strength=.022+loudness*.065,reach=(28+loudness*46)*scale;
- const steps=coarse.matches?12:18,decay=.88,normalizer=(1-decay**steps)/(1-decay);
- const stretchRange=reach/Math.max(180,Math.hypot(width,height)*.5);
- ctx.save();ctx.beginPath();
- for(const {burst,band} of bands){
-  const cx=x+burst.localX,cy=y+burst.localY,r=band.radius*scale;
-  ctx.moveTo(cx+r+reach*2,cy);ctx.arc(cx,cy,r+reach*2,0,Math.PI*2);
-  ctx.moveTo(cx+r+2*scale,cy);ctx.arc(cx,cy,r+2*scale,0,Math.PI*2,true);
- }
- ctx.clip();ctx.globalCompositeOperation='screen';
- for(let sample=1;sample<=steps;sample++){
-  const stretch=1+stretchRange*sample/steps;
-  ctx.globalAlpha=strength*decay**(sample-1)/normalizer;
-  ctx.drawImage(raySource,rayPointer.x+(x-rayPointer.x)*stretch,rayPointer.y+(y-rayPointer.y)*stretch,w*stretch,h*stretch);
- }
- ctx.restore();canvas.dataset.rayStrength=strength.toFixed(4);canvas.dataset.raySourcePixels=String(pw*ph);
-}
-// Only the outer band of each click participates in the intersection field.
-// The disks become negative space in that band's clip, never in the whole image.
-function outerIntersectionCutouts(now,viewLeft,viewTop){
+// Boolean subtraction of whole disks: keep the outer contour of A only where
+// sdCircle(B) >= 0 for every B != A. A contained circle is hidden as well.
+// Inner bands are drawn separately and do not participate in this operation.
+function outerCircleField(now,viewLeft,viewTop){
  const circles=[];
  for(const burst of bursts){
   const scale=burst.touch?.68:1,exitWeight=burst.retiredAt===null?1:1-smooth(0,EXIT_MS,now-burst.retiredAt);
@@ -232,29 +217,14 @@ function outerIntersectionCutouts(now,viewLeft,viewTop){
   const opacity=band.opacity*exitWeight;if(opacity<=.008)continue;
   circles.push({id:burst.id,x:burst.pageX-viewLeft,y:burst.pageY-viewTop,radius:band.radius*scale,opacity,scale});
  }
- const cuts=[];
- for(let i=0;i<circles.length;i++)for(let j=i+1;j<circles.length;j++){
-  const a=circles[i],b=circles[j];if(a.id===b.id)continue;
-  const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy),ra=a.radius,rb=b.radius;
-  if(distance<=Math.abs(ra-rb)+.1||distance>=ra+rb-.1)continue;
-  const along=(ra*ra-rb*rb+distance*distance)/(2*distance),across=Math.sqrt(Math.max(0,ra*ra-along*along));
-  const ux=dx/distance,uy=dy/distance,mx=a.x+ux*along,my=a.y+uy*along,sx=-uy*across,sy=ux*across;
-  const cutRadius=9*Math.min(a.scale,b.scale)*smooth(.008,.06,Math.min(a.opacity,b.opacity));
-  for(const sign of [-1,1]){
-   const x=mx+sx*sign,y=my+sy*sign;
-   if(x+cutRadius<0||x-cutRadius>width||y+cutRadius<0||y-cutRadius>height)continue;
-   cuts.push({x,y,radius:cutRadius,ids:[a.id,b.id]});
-  }
- }
- canvas.dataset.intersectionCuts=String(cuts.length);canvas.dataset.cutoutResolution='native-outer-geometry';
- return cuts;
+ canvas.dataset.cutoutResolution='whole-circle-native-and-shader';
+ return circles;
 }
 function drawBursts(now){
  // Between material frames this absolute layer moves with native page scroll.
  // No scroll handler rebuilds the SDF or waits for the next 30fps material frame.
  canvas.style.left=scrollX+'px';canvas.style.top=scrollY+'px';
- const audio=window.PortfolioAudioAnalysis?.getLevels(),loudness=audio?.active?Math.max(0,Math.min(1,audio.loudness||0)):0;
- canvas.dataset.rayCenter='pointer';canvas.dataset.rayControl='audio-loudness';canvas.dataset.rayLoudness=loudness.toFixed(4);canvas.dataset.rayStrength='0';
+ canvas.dataset.godray='background-only';
  const groups=[];
  for(const burst of bursts){
   const group=[burst],pad=RIPPLE_SIZE*(burst.touch?.68:1);
@@ -262,7 +232,7 @@ function drawBursts(now){
   groups.push(group);
  }
  let visibleGroups=0,framePixels=0;const rect=canvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
- const cuts=outerIntersectionCutouts(now,viewLeft,viewTop);
+ const circles=outerCircleField(now,viewLeft,viewTop);
  for(const group of groups){
   group.sort((a,b)=>a.id-b.id);
   const scale=group[0].touch?.68:1,pad=RIPPLE_SIZE*scale*.5;
@@ -274,20 +244,22 @@ function drawBursts(now){
   if(w<=0||h<=0)continue;
   group.forEach(b=>{b.localX=b.pageX-left;b.localY=b.pageY-top;});
   const material=ripples.draw(group,w,h,scale,now,240000/groups.length);if(!material)continue;
-  drawOuterGodrays(material,group,x,y,w,h,scale,now,loudness);
   // Draw each contour independently so an outer cut cannot erase an inner ring
   // or another click's unrelated contour underneath it.
   for(const burst of group)for(let ring=0;ring<3;ring++){
    const band=rippleState((now-burst.born)/1000,ring);if(!band)continue;
-   const cx=x+burst.localX,cy=y+burst.localY,r=band.radius*scale,half=band.width*scale*.5;
+   const cx=x+burst.localX,cy=y+burst.localY,r=band.radius*scale;
+   const half=Math.max(band.width*scale,.95*width/canvas.width)*.5;
    ctx.save();ctx.beginPath();
    ctx.moveTo(cx+r+half,cy);ctx.arc(cx,cy,r+half,0,Math.PI*2);
    ctx.moveTo(cx+r-half,cy);ctx.arc(cx,cy,r-half,0,Math.PI*2,true);
    ctx.clip();
-   if(ring===0)for(const cut of cuts){
-    if(!cut.ids.includes(burst.id))continue;
-    // Sequential disk subtraction also keeps overlapping cut masks closed.
-    ctx.beginPath();ctx.rect(0,0,width,height);ctx.moveTo(cut.x+cut.radius,cut.y);ctx.arc(cut.x,cut.y,cut.radius,0,Math.PI*2);ctx.clip('evenodd');
+   if(ring===0)for(const other of circles){
+    if(other.id===burst.id||Math.hypot(cx-other.x,cy-other.y)>r+other.radius+3)continue;
+    const cutRadius=other.radius+1.2*other.scale;
+    // Intersect with the complement of each full disk. Never use one even-odd
+    // path for all disks: that would make a third overlapping area reappear.
+    ctx.beginPath();ctx.rect(0,0,width,height);ctx.moveTo(other.x+cutRadius,other.y);ctx.arc(other.x,other.y,cutRadius,0,Math.PI*2);ctx.clip('evenodd');
    }
    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=burst.touch?.82:1;ctx.drawImage(material,x,y,w,h);ctx.restore();
   }
@@ -320,10 +292,9 @@ function emit(x,y,keyboard,touch,bornAt=performance.now()){
 }
 listen(document,'pointerdown',e=>{
  if(!e.isPrimary||e.button!==0){gesture=null;return;}
- rayPointer.x=e.clientX;rayPointer.y=e.clientY;
  gesture={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),touch:e.pointerType==='touch',dragged:false,ignored:!!e.target.closest?.(ignored)};
 },{passive:true});
-listen(document,'pointermove',e=>{rayPointer.x=e.clientX;rayPointer.y=e.clientY;if(gesture&&gesture.id===e.pointerId&&Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>8)gesture.dragged=true;},{passive:true});
+listen(document,'pointermove',e=>{if(gesture&&gesture.id===e.pointerId&&Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>8)gesture.dragged=true;},{passive:true});
 listen(document,'pointercancel',()=>{if(gesture)gesture.dragged=true;},{passive:true});
 listen(window,'scroll',()=>{if(gesture)gesture.dragged=true;},{passive:true,capture:true});
 listen(document,'click',e=>{
@@ -334,7 +305,6 @@ listen(document,'click',e=>{
  if(!keyboard&&gesture&&(gesture.dragged||gesture.ignored||performance.now()-gesture.time>1000))return;
  const r=keyboard?el.getBoundingClientRect():null;
  const x=keyboard?r.left+r.width/2:e.clientX,y=keyboard?r.top+r.height/2:e.clientY;
- if(keyboard){rayPointer.x=x;rayPointer.y=y;}
  const pageX=x+scrollX,pageY=y+scrollY,bornAt=performance.now();
  const touch=!keyboard&&(gesture?.touch||coarse.matches);
  // Create the independent pulse immediately. Only its drawing waits for RAF;
