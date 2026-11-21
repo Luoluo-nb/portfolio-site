@@ -57,7 +57,7 @@ const RIPPLE_WIDTHS=[2.4,1.3,1.7],RIPPLE_MIN_WIDTHS=[1.2,.9,1.05];
 const RIPPLE_LIFE=(1.42+.14*2)/RIPPLE_BASE_SPEED*1000*.5,OUTER_LIFE_SHARE=.56;
 // Ambient color planes have their own clock and pool, never an SDF group.
 const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS+500;
-const AUTO_BANDS=[{width:15,gap:0,color:'65,162,207',alpha:.28},{width:5,gap:8,color:'101,199,220',alpha:.22}];
+const AUTO_BANDS=[{width:200,gap:0,color:'65,162,207',alpha:.28},{width:5,gap:8,color:'101,199,220',alpha:.22}];
 const OUTER_FEATHER=18;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
@@ -422,7 +422,7 @@ function emitAmbientWave(x,y){
  updateAmbientWaves(performance.now());
  if(ambientWaves.length>=2)ambientWaves.shift();
  ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches});
- canvas.dataset.autoMaterial='two-filled-color-bands';canvas.dataset.autoWidths='15,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';
+ canvas.dataset.autoMaterial='two-filled-color-bands';canvas.dataset.autoWidths='200,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';
  if(!frame)frame=requestAnimationFrame(tick);state('active');saveContinuity();
 }
 function tick(now){
