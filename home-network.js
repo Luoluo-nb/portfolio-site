@@ -5,7 +5,7 @@
  * Original shader and this adaptation: CC BY-NC-SA 3.0 Unported.
  * https://creativecommons.org/licenses/by-nc-sa/3.0/
  *
- * Adapted for a transparent, low-luminance portfolio transition: retains the
+ * Adapted for a transparent, crisp white portfolio transition: retains the
  * original moving 3x3 neighborhood, center links, four diagonal links, sparkle,
  * rotation and depth layers. Removes the audio fog and 230-second blackout.
  * Lines use CSS-pixel widths; all four edges dissolve well before the boundary.
@@ -43,7 +43,7 @@ float line(vec2 a,vec2 b,vec2 uv,float pixel,float width){
   // Cover the actual render pixels when the transition uses its pixel budget;
   // CSS-only antialiasing can turn diagonal hairlines into isolated fragments.
   float rasterScale=max(1.,uCssSize.y/max(uResolution.y,1.));
-  float halfWidth=width*.5*pixel,aa=.52*pixel*rasterScale;
+  float halfWidth=width*.5*pixel,aa=.38*pixel*rasterScale;
   return (1.-smoothstep(max(0.,halfWidth-aa),halfWidth+aa,d))*fade;
 }
 float NetLayer(vec2 st,float n,float t,float pixel,float width){
@@ -55,16 +55,13 @@ float NetLayer(vec2 st,float n,float t,float pixel,float width){
   float m=0.,sparkle=0.;
   for(int i=0;i<9;i++){
     if(i!=4)m+=line(p[4],p[i],st,pixel,width);
-    // CSS-pixel kernels stay small at every depth: a 1.2px bright nucleus,
-    // hairline star rays and only a trace of light within a 3.6px radius.
+    // Keep the small solid nucleus and short star rays, without a foggy halo.
     vec2 q=(st-p[i])/max(pixel,.00001);
     float r=length(q);
     float core=1.-smoothstep(.38,.82,r);
     float rays=(1.-smoothstep(.04,.30,abs(q.x)))*(1.-smoothstep(.45,3.2,abs(q.y)));
     rays+=(1.-smoothstep(.04,.30,abs(q.y)))*(1.-smoothstep(.45,2.4,abs(q.x)));
-    float soft=1.-smoothstep(0.,3.6,r);
-    float haze=.018*soft*soft*soft;
-    float s=min(.95,core*.90+rays*.10+haze);
+    float s=min(.95,core*.95+rays*.08);
     float pulse=sin((fract(p[i].x)+fract(p[i].y)+t)*5.)*.4+.6;
     sparkle+=s*(.12+.88*pow(pulse,20.));
   }
@@ -74,7 +71,7 @@ float NetLayer(vec2 st,float n,float t,float pixel,float width){
   m+=line(p[7],p[3],st,pixel,width);
   float sPhase=(sin(t+n)+sin(t*.1))*.25+.5;
   sPhase+=pow(sin(t*.1)*.5+.5,50.)*.45;
-  return m*.65+sparkle*(.45+sPhase*.55);
+  return m*.78+sparkle*(.45+sPhase*.55);
 }
 void main(){
   vec2 vUv=gl_FragCoord.xy/max(uResolution,vec2(1.));
@@ -93,21 +90,21 @@ void main(){
       float fade=smoothstep(.04,.6,z)*(1.-smoothstep(.8,1.,z));
       float foreground=smoothstep(.58,.9,z);
       float rasterScale=max(1.,uCssSize.y/max(uResolution.y,1.));
-      float width=max(mix(.80,2.0,foreground),.85*rasterScale);
+      float width=max(mix(1.05,2.15,foreground),.95*rasterScale);
       float net=NetLayer(st*size-M*z,n,uTime*.42,size/max(projection,1.),width);
-      vec3 tint=mix(vec3(.80,.88,.97),vec3(.99,.995,1.),.45+foreground*.50);
+      vec3 tint=mix(vec3(.91,.95,1.),vec3(.99,.995,1.),.45+foreground*.50);
       // A restrained pink drift occupies only a small fraction of the network.
       float pink=smoothstep(.86,1.,sin(st.x*4.1+st.y*2.7+n*8.+t*.2)*.5+.5)*.14;
       tint=mix(tint,vec3(.98,.93,.96),pink);
-      light+=tint*net*fade*.36;
+      light+=tint*net*fade*.50;
     }
   }
   vec2 edge=min(vUv,1.-vUv);
   // Early, deterministic feathering: no noise-driven boundary flicker.
-  float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.28,edge.y),1.45);
+  float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.20,edge.y),1.2);
   light*=dissolve;
   float energy=max(light.r,max(light.g,light.b));
-  float alpha=.40*(1.-exp(-energy/.40));
+  float alpha=.56*(1.-exp(-energy/.56));
   vec3 color=light/max(energy,.00001);
   // Premultiplied alpha leaves the existing starfield genuinely visible.
   gl_FragColor=vec4(color*alpha,alpha);
@@ -178,7 +175,9 @@ export class HomeNetwork {
     const box=this.container.getBoundingClientRect();
     this.size={width:box.width,height:box.height,left:box.left,top:box.top};
     if(!this.intersectionObserver)this.inView=box.width>0&&box.height>0&&box.bottom>0&&box.top<innerHeight;
-    const compact=box.width<=600;this.layers=compact?3:4;this.budget=compact?220000:500000;
+    // The smaller transition gets enough samples for solid diagonal strokes;
+    // the capped buffer still avoids full-screen device-pixel rendering.
+    const compact=box.width<=600;this.layers=compact?3:4;this.budget=compact?280000:720000;
     this.canvas.dataset.layers=String(this.layers);this.canvas.dataset.pixelBudget=String(this.budget);
     const scale=Math.min(devicePixelRatio||1,1.5,Math.sqrt(this.budget/Math.max(1,box.width*box.height)));
     const w=Math.max(1,Math.floor(box.width*scale)),h=Math.max(1,Math.floor(box.height*scale));
@@ -223,19 +222,18 @@ export class HomeNetwork {
       for(const p of points){
         for(const q of points){if(q.row<p.row||(q.row===p.row&&q.col<=p.col)||Math.abs(q.row-p.row)>1||Math.abs(q.col-p.col)>1)continue;
           const distance=Math.hypot(q.x-p.x,q.y-p.y)/spacing;if(distance>1.45)continue;
-          ctx.strokeStyle=`rgba(${layer?'250,253,255':'226,238,251'},${(.065+.045*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?1.75:.80,.85*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+          ctx.strokeStyle=`rgba(${layer?'252,254,255':'238,245,255'},${(.105+.065*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?2.05:1.05,.95*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
         }
         const pulse=.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8);
         const tint=p.n>.9?'233,183,208':p.n>.35?'242,248,255':'137,180,231';
-        const glow=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,3.6);glow.addColorStop(0,`rgba(${tint},${pulse*.045})`);glow.addColorStop(.4,`rgba(${tint},${pulse*.015})`);glow.addColorStop(1,`rgba(${tint},0)`);ctx.fillStyle=glow;ctx.fillRect(p.x-3.6,p.y-3.6,7.2,7.2);
         ctx.strokeStyle=`rgba(${tint},${pulse*.22})`;ctx.lineWidth=.35;ctx.beginPath();ctx.moveTo(p.x,p.y-3.2);ctx.lineTo(p.x,p.y+3.2);ctx.moveTo(p.x-2.4,p.y);ctx.lineTo(p.x+2.4,p.y);ctx.stroke();
         ctx.fillStyle=`rgba(${tint},${pulse})`;ctx.beginPath();ctx.arc(p.x,p.y,.6,0,Math.PI*2);ctx.fill();
       }
     }
     ctx.globalCompositeOperation='destination-in';
-    for(const [length,horizontal,reach]of [[w,true,.18],[h,false,.28]]){
+    for(const [length,horizontal,reach]of [[w,true,.18],[h,false,.20]]){
       const mask=ctx.createLinearGradient(0,0,horizontal?length:0,horizontal?0:length);
-      for(let i=0;i<=24;i++){const x=i/24,edge=Math.min(x,1-x),v=Math.max(0,Math.min(1,(edge-.025)/(reach-.025))),smooth=v*v*(3-2*v);mask.addColorStop(x,`rgba(0,0,0,${Math.pow(smooth,1.45)})`);}
+      for(let i=0;i<=24;i++){const x=i/24,edge=Math.min(x,1-x),v=Math.max(0,Math.min(1,(edge-.025)/(reach-.025))),smooth=v*v*(3-2*v);mask.addColorStop(x,`rgba(0,0,0,${Math.pow(smooth,1.2)})`);}
       ctx.fillStyle=mask;ctx.fillRect(0,0,w,h);
     }
     ctx.globalCompositeOperation='source-over';
