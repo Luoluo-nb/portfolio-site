@@ -12,22 +12,18 @@
 
   let active = true, started = false, dialog, ready = false, appReady = false;
   let deadline, bootDeadline, language = 'zh';
-  let previousFocus, scrollStyles;
+  let previousFocus, scrollStyles, disposeFilm;
   const pendingCleanup = new Set();
   const tasks = new Map([['page', null], ['type', null], ['brand', null], ['covers', null]]);
   try { language = localStorage.getItem('portfolio-language') === 'en' ? 'en' : 'zh'; } catch {}
   const words = language === 'en' ? {
-    title: 'Zhang Zhiyuan', role: 'ARTIST / TECHNICAL ARTIST', label: 'Enter portfolio',
-    loading: 'Preparing your first view', complete: 'Ready to explore',
-    partial: 'You can enter · some resources are still unavailable',
-    skip: 'Skip loading', enter: 'Enter portfolio', progress: 'Essential resources checked',
-    hint: 'Start with sound · audio controls are in the header',
+    label: 'Enter portfolio', loading: 'Loading essentials', complete: 'Ready. Press Enter to start.',
+    partial: 'Ready · some resources unavailable',
+    escape: 'Press Escape to enter now.',
   } : {
-    title: '张致远', role: '美术 / 技术美术', label: '进入作品集',
-    loading: '正在准备首屏内容', complete: '准备就绪',
-    partial: '可以进入 · 部分资源暂未就绪',
-    skip: '跳过加载', enter: '进入作品集', progress: '首屏资源已检查',
-    hint: '点击开启音乐 · 可在顶部暂停或静音',
+    label: '进入作品集', loading: '正在加载首屏资源', complete: '准备就绪，按 Enter 进入',
+    partial: '部分资源未就绪，可进入',
+    escape: '可按 Esc 直接进入。',
   };
 
   function release(userInitiated = false, restoreFocus = true) {
@@ -36,6 +32,7 @@
     started = userInitiated;
     clearTimeout(deadline);
     clearTimeout(bootDeadline);
+    disposeFilm?.();
     window.removeEventListener('portfolio:app-ready', onAppReady);
     window.removeEventListener('pagehide', onPageHide);
     document.removeEventListener('DOMContentLoaded', mount);
@@ -74,20 +71,17 @@
     const checked = [...tasks.values()].filter(value => value !== null).length;
     const complete = checked === tasks.size;
     const failed = [...tasks.values()].some(value => value === false);
-    const progress = dialog.querySelector('progress');
-    progress.value = checked;
-    dialog.querySelector('.start-gate-count').textContent = `${String(checked).padStart(2, '0')} / 04`;
-    dialog.querySelector('.start-gate-status').textContent = complete
-      ? (failed ? words.partial : words.complete) : words.loading;
+    const status = dialog.querySelector('.start-gate-status');
+    if (status) status.textContent = complete
+      ? (failed ? words.partial : words.complete) : `${words.loading} ${checked}/${tasks.size}。 ${words.escape}`;
     dialog.dataset.ready = String(complete);
     if (!complete || ready) return;
     ready = true;
     clearTimeout(deadline);
     const button = dialog.querySelector('.start-gate-start');
-    const skip = dialog.querySelector('.start-gate-skip');
+    if (!button) return;
     button.disabled = false;
-    if (document.activeElement === skip || document.activeElement === dialog) button.focus({preventScroll: true});
-    skip.hidden = true;
+    if (document.activeElement === dialog) button.focus({preventScroll: true});
   }
 
   function settle(name, success) {
@@ -155,6 +149,60 @@
 
   function onPageHide() { release(false, false); }
 
+  function mountStartFilm(button) {
+    const motion = matchMedia('(prefers-reduced-motion: reduce)');
+    const properties = ['--film-x', '--film-y', '--film-angle', '--film-shift-x', '--film-shift-y'];
+    let frame = 0, bounds, x = .5, y = .5;
+    function reset() {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      bounds = null;
+      for (const property of properties) button.style.removeProperty(property);
+    }
+    function paintFilm() {
+      frame = 0;
+      if (!active || document.hidden || motion.matches || button.disabled) return;
+      button.style.setProperty('--film-x', `${(x * 100).toFixed(2)}%`);
+      button.style.setProperty('--film-y', `${(y * 100).toFixed(2)}%`);
+      button.style.setProperty('--film-angle', `${(108 + (x - .5) * 32 + (y - .5) * 16).toFixed(2)}deg`);
+      button.style.setProperty('--film-shift-x', `${(15 + x * 70).toFixed(2)}%`);
+      button.style.setProperty('--film-shift-y', `${(35 + y * 30).toFixed(2)}%`);
+    }
+    function move(event) {
+      if (!active || button.disabled || motion.matches || document.hidden || event.pointerType === 'touch') return;
+      bounds ||= button.getBoundingClientRect();
+      x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+      y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / Math.max(1, bounds.height)));
+      // Coalesce pointer input only; a stationary pointer has no animation loop.
+      if (!frame) frame = requestAnimationFrame(paintFilm);
+    }
+    function pointerDown(event) { if (event.pointerType === 'touch') reset(); }
+    function visibility() { if (document.hidden) reset(); }
+    button.addEventListener('pointerenter', move, {passive: true});
+    button.addEventListener('pointermove', move, {passive: true});
+    button.addEventListener('pointerleave', reset);
+    button.addEventListener('pointercancel', reset);
+    button.addEventListener('pointerdown', pointerDown, {passive: true});
+    button.addEventListener('keydown', reset);
+    window.addEventListener('resize', reset, {passive: true});
+    window.addEventListener('blur', reset);
+    document.addEventListener('visibilitychange', visibility);
+    motion.addEventListener('change', reset);
+    return () => {
+      reset();
+      button.removeEventListener('pointerenter', move);
+      button.removeEventListener('pointermove', move);
+      button.removeEventListener('pointerleave', reset);
+      button.removeEventListener('pointercancel', reset);
+      button.removeEventListener('pointerdown', pointerDown);
+      button.removeEventListener('keydown', reset);
+      window.removeEventListener('resize', reset);
+      window.removeEventListener('blur', reset);
+      document.removeEventListener('visibilitychange', visibility);
+      motion.removeEventListener('change', reset);
+    };
+  }
+
   function mount() {
     if (!active || dialog || !document.body) return;
     try {
@@ -172,32 +220,23 @@
       dialog.dataset.noTranslate = '';
       dialog.lang = language === 'en' ? 'en' : 'zh-CN';
       dialog.setAttribute('aria-modal', 'true');
-      dialog.setAttribute('aria-labelledby', 'start-gate-title');
+      dialog.setAttribute('aria-label', words.label);
       dialog.setAttribute('aria-describedby', 'start-gate-status');
       dialog.tabIndex = -1;
       dialog.innerHTML = `
-        <div class="start-gate-top"><span>ZY / PORTFOLIO</span><span>WELCOME</span></div>
         <div class="start-gate-content">
-          <img class="start-gate-logo" src="./brand-logo.svg" width="64" height="64" alt="">
-          <p class="start-gate-name" id="start-gate-title">${words.title}</p>
-          <p class="start-gate-role">${words.role}</p>
-          <button class="start-gate-start" type="button" aria-label="${words.label}" disabled>
-            <span>START</span><span class="start-gate-arrow" aria-hidden="true">↗</span>
-          </button>
-          <div class="start-gate-loading">
-            <div class="start-gate-progress-label"><span class="start-gate-status" id="start-gate-status" role="status" aria-live="polite">${words.loading}</span><span class="start-gate-count" aria-hidden="true">00 / 04</span></div>
-            <progress max="4" value="0" aria-label="${words.progress}"></progress>
-          </div>
-          <div class="start-gate-skip-slot"><button class="start-gate-skip" type="button">${words.skip}</button></div>
-        </div>
-        <p class="start-gate-footnote">${words.hint}</p>`;
-      dialog.querySelector('.start-gate-start').addEventListener('click', () => release(true));
-      dialog.querySelector('.start-gate-skip').addEventListener('click', () => release(true));
+          <button class="start-gate-start" type="button" aria-label="START · ${words.label}" disabled><span class="start-gate-label">START</span></button>
+          <span class="start-gate-status" id="start-gate-status" role="status" aria-live="polite">${words.loading}。 ${words.escape}</span>
+        </div>`;
+      const button = dialog.querySelector('.start-gate-start');
+      button.addEventListener('click', () => release(true));
+      disposeFilm = mountStartFilm(button);
       dialog.addEventListener('cancel', event => { event.preventDefault(); release(true); });
       dialog.addEventListener('keydown', event => {
         if (event.key !== 'Tab') return;
         const buttons = [...dialog.querySelectorAll('button')].filter(button => !button.disabled && !button.hidden);
         const first = buttons[0], last = buttons[buttons.length - 1];
+        if (!first) { event.preventDefault(); dialog.focus({preventScroll: true}); return; }
         if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
           event.preventDefault(); last?.focus();
         } else if (!event.shiftKey && document.activeElement === last) {
@@ -212,7 +251,10 @@
       document.body.style.setProperty('overflow', 'hidden');
       root.dataset.startGate = 'open';
       dialog.focus({preventScroll: true});
-      imageReady(dialog.querySelector('img')).then(success => settle('brand', success));
+      // Warm the actual header mark without adding decoration to the entry screen.
+      const brandImage = new Image();
+      brandImage.src = './brand-logo.svg';
+      imageReady(brandImage).then(success => settle('brand', success));
       deadline = setTimeout(() => {
         for (const [name, value] of tasks) if (value === null) tasks.set(name, false);
         paint();

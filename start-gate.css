@@ -1,31 +1,20 @@
-/* A static entry screen: the loading work belongs to the page, not an effect loop. */
+/* The entry screen shows only START. Diffraction stays inside the local lettering. */
 :root{--start-gate-styles:ready}
 html[data-start-gate="pending"]::after{content:"";position:fixed;inset:0;z-index:2147483646;background:#071323;pointer-events:none}
-dialog.start-gate{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;padding:clamp(24px,4vw,56px);border:0;border-radius:0;box-sizing:border-box;overflow:auto;color:#e8f5ff;background:radial-gradient(ellipse at 50% 40%,#123247 0,transparent 58%),#071323;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",Arial,sans-serif;outline:none;overscroll-behavior:contain;isolation:isolate}
-dialog.start-gate[open]{display:grid;grid-template-rows:auto 1fr auto;gap:24px}
+dialog.start-gate{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;padding:24px;border:0;border-radius:0;box-shadow:none;box-sizing:border-box;overflow:auto;color:#e8f5ff;background:#071323;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",Arial,sans-serif;outline:none;overscroll-behavior:contain}
+dialog.start-gate[open]{display:grid;place-items:center}
 .start-gate::backdrop{background:#071323}
-.start-gate::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(1px 1px at 12% 21%,#b4dcf380,transparent),radial-gradient(1px 1px at 78% 18%,#b4dcf380,transparent),radial-gradient(1px 1px at 28% 76%,#b4dcf380,transparent),radial-gradient(1px 1px at 88% 69%,#b4dcf380,transparent)}
-.start-gate-top{display:flex;align-items:center;justify-content:space-between;gap:16px;color:#92b6c9;font:600 11px/1.5 "Segoe UI",Arial,sans-serif;letter-spacing:.16em}
-.start-gate-content{width:min(100%,380px);margin:auto;text-align:center;padding:28px 0}
-.start-gate-logo{display:block;width:64px;height:64px;margin:0 auto 24px;object-fit:contain}
-.start-gate-name{margin:0;color:#e8f5ff;font-size:22px;font-weight:600;line-height:1.5;letter-spacing:.12em}
-.start-gate-role{margin:8px 0 0;color:#91afc2;font-size:12px;font-weight:500;line-height:1.6;letter-spacing:.14em}
-.start-gate-start{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:94px;margin:42px 0 0;padding:18px 28px;border:1px solid #77c8e7;border-radius:0;background:#0b273a;color:#c8f3ff;text-align:left;font:500 clamp(34px,7vw,44px)/1.2 "Segoe UI",Arial,sans-serif;letter-spacing:.14em;cursor:pointer;transition:background .18s,border-color .18s,color .18s}
-.start-gate-start:disabled{opacity:.58;cursor:wait;border-color:#527384}
-.start-gate-start:not(:disabled):hover{background:#154459;border-color:#c8f3ff;color:#fff}
-.start-gate-arrow{font-size:32px;line-height:1;letter-spacing:0;font-weight:300}
-.start-gate button:focus-visible{outline:2px solid #cbf5ff;outline-offset:5px}
-.start-gate-loading{margin-top:24px;text-align:left}
-.start-gate-progress-label{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:34px;color:#9dbccd;font-size:11px;line-height:1.6}
-.start-gate-count{flex-shrink:0;font:500 11px/1.6 "Segoe UI",Arial,sans-serif;letter-spacing:.12em;font-variant-numeric:tabular-nums}
-.start-gate progress{display:block;width:100%;height:2px;border:0;border-radius:0;appearance:none;background:#264150;color:#9ae4fa}
-.start-gate progress::-webkit-progress-bar{background:#264150}
-.start-gate progress::-webkit-progress-value{background:#9ae4fa}
-.start-gate progress::-moz-progress-bar{background:#9ae4fa}
-.start-gate-skip-slot{height:48px;margin-top:12px}
-.start-gate-skip{min-height:44px;padding:10px 16px;background:transparent;border:0;color:#a6c5d7;font-size:12px;text-decoration:underline;text-underline-offset:5px;cursor:pointer}
-.start-gate-skip:hover{color:#e8f5ff}
-.start-gate-footnote{margin:0;text-align:center;color:#93acbf;font-size:11px;line-height:1.8;letter-spacing:.04em}
-@media(max-width:520px){dialog.start-gate{padding:24px}.start-gate-top{font-size:10px}.start-gate-content{padding:20px 0}.start-gate-start{margin-top:30px;min-height:84px;padding:18px 22px}.start-gate-progress-label{font-size:10px}.start-gate-footnote{font-size:10px}}
-@media(max-height:580px){dialog.start-gate[open]{gap:12px}.start-gate-content{padding:12px 0}.start-gate-logo{width:40px;height:40px;margin-bottom:12px}.start-gate-start{min-height:64px;margin-top:18px;font-size:32px}.start-gate-loading{margin-top:16px}.start-gate-skip-slot{margin-top:4px}}
-@media(prefers-reduced-motion:reduce){.start-gate *{transition:none!important}}
+.start-gate-content{margin:auto;text-align:center}
+.start-gate-start{position:relative;isolation:isolate;display:inline-block;min-height:72px;margin:0;padding:8px 12px;border:0;border-radius:0;box-shadow:none;background:transparent;color:#e8f5ff;font:400 clamp(38px,7vw,54px)/1.2 "Segoe UI",Arial,sans-serif;letter-spacing:.18em;text-indent:.18em;cursor:pointer;transition:opacity .18s,color .18s}
+.start-gate-start:disabled{opacity:.45;cursor:wait}
+.start-gate-label{display:block}
+.start-gate-start::before{content:"";position:absolute;inset:0 -8px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at var(--film-x,50%) var(--film-y,50%),#b5eeff30,transparent 60%),radial-gradient(ellipse at 65% 60%,#efb9d516,transparent 60%);filter:blur(12px);opacity:0;transition:opacity .2s}
+.start-gate-start:not(:disabled):is(:hover,:focus-visible){color:#c3eeff}
+.start-gate-start:not(:disabled):is(:hover,:focus-visible)::before{opacity:1}
+.start-gate-start:focus-visible{outline:none;text-decoration:underline;text-decoration-color:#a5dfe8;text-decoration-thickness:1px;text-underline-offset:10px}
+@supports ((-webkit-background-clip:text) or (background-clip:text)){
+  .start-gate-start:not(:disabled):is(:hover,:focus-visible) .start-gate-label{background-image:repeating-linear-gradient(var(--film-angle,108deg),#c7fcff00 0,#cdfcff14 1px,#f4e9ff42 2px,#c7fcff00 4px),linear-gradient(var(--film-angle,108deg),#a2c6f1 0%,#e5f4ff 30%,#abebf3 43%,#ffffff 49%,#edcae2 57%,#d5efff 65%,#95badf 100%);background-size:180% 160%,240% 140%;background-position:var(--film-shift-x,50%) var(--film-shift-y,50%);background-clip:text;-webkit-background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+}
+.start-gate-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.start-gate *,.start-gate *::before{transition:none!important}}
+@media(forced-colors:active){.start-gate-start:not(:disabled):is(:hover,:focus-visible) .start-gate-label{background:none;color:ButtonText;-webkit-text-fill-color:ButtonText}.start-gate-start::before{display:none}.start-gate-start:focus-visible{text-decoration-color:ButtonText}}
