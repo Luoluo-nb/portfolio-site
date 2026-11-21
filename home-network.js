@@ -103,7 +103,7 @@ void main(){
   float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.20,edge.y),1.2);
   light*=dissolve;
   float energy=max(light.r,max(light.g,light.b));
-  float alpha=.86*(1.-exp(-energy/.86));
+  float alpha=.72*.86*(1.-exp(-energy/.86));
   vec3 color=light/max(energy,.00001);
   // Premultiplied alpha leaves the existing starfield genuinely visible.
   gl_FragColor=vec4(color*alpha,alpha);
@@ -221,9 +221,9 @@ export class HomeNetwork {
       for(const p of points){
         for(const q of points){if(q.row<p.row||(q.row===p.row&&q.col<=p.col)||Math.abs(q.row-p.row)>1||Math.abs(q.col-p.col)>1)continue;
           const distance=Math.hypot(q.x-p.x,q.y-p.y)/spacing;if(distance>1.45)continue;
-          ctx.strokeStyle=`rgba(${layer?'97,232,255':'71,196,255'},${(layer ? .2975 : .21)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?2.05:1.05,.95*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+          ctx.strokeStyle=`rgba(${layer?'97,232,255':'71,196,255'},${(layer ? .2975 : .21)*.72*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?2.05:1.05,.95*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
         }
-        const pulse=(.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8))*1.75;
+        const pulse=(.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8))*1.75*.72;
         const tint=layer?'97,232,255':'71,196,255';
         ctx.strokeStyle=`rgba(${tint},${pulse*.22})`;ctx.lineWidth=.35;ctx.beginPath();ctx.moveTo(p.x,p.y-3.2);ctx.lineTo(p.x,p.y+3.2);ctx.moveTo(p.x-2.4,p.y);ctx.lineTo(p.x+2.4,p.y);ctx.stroke();
         ctx.fillStyle=`rgba(${tint},${pulse})`;ctx.beginPath();ctx.arc(p.x,p.y,.6,0,Math.PI*2);ctx.fill();

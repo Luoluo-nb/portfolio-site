@@ -40,10 +40,10 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
 @keyframes home-orbit-turn{to{transform:rotate(360deg)}}
 @keyframes home-arrow-flow{0%{stroke-dashoffset:12;opacity:0}18%{opacity:1}72%{opacity:1}100%{stroke-dashoffset:-76;opacity:0}}
 /* Keep the introduction full-screen, with a compact bridge into the projects. */
-.home-featured{--transition-base:clamp(300px,36svh,460px);--transition-unit:calc(var(--transition-base) - 60px);--transition-space:calc(var(--transition-base)*.5);position:relative;padding-top:var(--transition-space);padding-bottom:80px;scroll-margin-top:0}
+.home-featured{--transition-base:clamp(300px,36svh,460px);--transition-unit:calc(var(--transition-base) - 60px);--transition-space:calc(var(--transition-base)*.45);position:relative;padding-top:var(--transition-space);padding-bottom:80px;scroll-margin-top:0}
 /* The CTA is the centre of the actual network area, not merely an overlay at
    its upper edge. JS follows its measured centre across language/size changes. */
-.home-transition{position:absolute;top:var(--network-center-y,calc(10px - clamp(84px,12svh,168px)));left:var(--network-center-x,50%);transform:translate(-50%,-50%);width:calc(100vw - 32px);max-width:2400px;height:calc(var(--transition-unit)*1.2);max-height:var(--network-max-height,none);pointer-events:none;overflow:hidden;-webkit-mask-image:radial-gradient(ellipse var(--network-clear-x,168px) var(--network-clear-y,61px) at center,transparent 72%,#000 100%);mask-image:radial-gradient(ellipse var(--network-clear-x,168px) var(--network-clear-y,61px) at center,transparent 72%,#000 100%)}
+.home-transition{position:absolute;top:var(--network-center-y,calc(10px - clamp(84px,12svh,168px)));left:var(--network-center-x,50%);transform:translate(-50%,-50%);width:calc((100vw - 32px)*.86);max-width:2064px;height:calc(var(--transition-unit)*.96);max-height:var(--network-max-height,none);pointer-events:none;overflow:hidden;-webkit-mask-image:radial-gradient(ellipse var(--network-clear-x,168px) var(--network-clear-y,61px) at center,transparent 72%,#000 100%);mask-image:radial-gradient(ellipse var(--network-clear-x,168px) var(--network-clear-y,61px) at center,transparent 72%,#000 100%)}
 .home-network{display:block;width:100%;height:100%;pointer-events:none}
 .home-effect-credit{display:flex;flex-wrap:wrap;gap:6px 12px;margin:36px 0 0;color:var(--muted);font-size:12px;line-height:1.7;font-weight:500}
 .home-effect-credit a{color:inherit;text-decoration:none;text-underline-offset:4px}
