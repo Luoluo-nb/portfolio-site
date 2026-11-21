@@ -54,6 +54,7 @@ export const translations = {
   '想象。创造。迭代。': 'Imagine. Create. Iterate.',
   '想象 · 创造 · 迭代': 'Imagine · Create · Iterate',
   '悬停预览，点击查看详情。手机端点选预览，再次点击进入详情。': 'Hover to preview, then click for details. On mobile, tap to preview and tap again to open.',
+  '悬停预览。单个作品可查看详情，合集直接前往 Bilibili。': 'Hover to preview. Open individual projects for details or watch compilations on Bilibili.',
   '个人介绍待补充。': 'A personal introduction will be added soon.',
   '工作经历': 'Experience', '技术方向': 'Toolkit', '教育经历': 'Education',
   'Shader / 渲染': 'Shader / Rendering', '特效 / 动画': 'VFX / Animation', '工具 / 流程': 'Tools / Pipeline', 'DCC / 交互': 'DCC / Interactive',

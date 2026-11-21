@@ -66,6 +66,7 @@ function beginEntryFade() {
     intro.level = Math.min(1, audio.currentTime / ENTRY_FADE_SECONDS);
     if (intro.level === 1) clearEntryIntro();
     applyOutputVolume();
+    drawVolume();
     if (entryIntro === intro) intro.frame = requestAnimationFrame(fade);
   }
   intro.frame = requestAnimationFrame(fade);
@@ -258,6 +259,16 @@ const playIcon = icon('<path d="m9 6.5 8.5 5.5-8.5 5.5Z"/>');
 const pauseIcon = icon('<path d="M9 6.5v11M15 6.5v11"/>');
 const soundIcon = icon('<path d="M4.5 9h3l4.5-3.5v13L7.5 15h-3Z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/>');
 const silentIcon = icon('<path d="M4.5 9h3l4.5-3.5v13L7.5 15h-3Z"/><path d="m16 9 5 6m0-6-5 6"/>');
+let drawnVolume;
+function drawVolume() {
+  const fraction = entryIntro?.followSlider ? entryIntro.level : 1;
+  const value = String(Math.round(volume * fraction * 100));
+  if (value === drawnVolume && slider.value === value) return;
+  drawnVolume = value;
+  slider.value = value;
+  slider.style.setProperty('--music-volume', value + '%');
+}
+
 function draw() {
   const playing = wanted && !audio.paused;
   panel.dataset.playing = String(playing);
@@ -273,7 +284,7 @@ function draw() {
   const muteAction = muted ? '取消背景音乐静音' : '静音背景音乐';
   mute.setAttribute('aria-label', muteAction);
   mute.title = muteAction;
-  slider.style.setProperty('--music-volume', `${Math.round(volume * 100)}%`);
+  drawVolume();
   status.textContent = unavailable ? '音乐暂时无法加载，请稍后重试。' : playing ? '背景音乐正在播放' : '背景音乐已暂停';
   musicShader?.refresh();
 }
@@ -314,11 +325,10 @@ async function start() {
 function enterWithSound(enteredAt = performance.now()) {
   clearEntryIntro();
   cancelAnimationFrame(volumeAnimation);
-  entryIntro = {deadline: enteredAt + ENTRY_DELAY_MS, level: 0, phase: 'waiting'};
+  entryIntro = {deadline: enteredAt + ENTRY_DELAY_MS, level: 0, phase: 'waiting', followSlider: true};
   wanted = true;
   muted = false;
   volume = 1;
-  slider.value = '100';
   resumeTime = 0;
   audio.currentTime = 0;
   mediaVolume = targetMediaVolume();
@@ -367,6 +377,8 @@ function syncMedia() {
   draw();
 }
 slider.addEventListener('input', () => {
+  // A direct adjustment owns the control for the rest of this fade.
+  if (entryIntro) entryIntro.followSlider = false;
   volume = Number(slider.value) / 100;
   if (volume > 0) muted = false;
   applyOutputVolume();

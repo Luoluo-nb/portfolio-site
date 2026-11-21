@@ -32,6 +32,7 @@ function translateCore(source) {
     [/^播放速度[：:]\s*([\d.]+)倍$/, (_, speed) => `Playback speed: ${speed}×`],
     [/^播放 (.+)$/, (_, title) => `Play ${translateCore(title)}`],
     [/^查看 (.+) 详情$/, (_, title) => `View ${translateCore(title)} details`],
+    [/^在 Bilibili 观看 (.+)$/, (_, title) => `Watch ${translateCore(title)} on Bilibili`],
     [/^(.+) — Bilibili 播放器$/, (_, title) => `${translateCore(title)} — Bilibili player`],
     [/^(.+)，在新标签页查看大图$/, (_, caption) => `${translateCore(caption)}; view full image in a new tab`],
     [/^(\d{2}) \/ (.+)$/, (_, index, title) => `${index} / ${translateCore(title)}`],

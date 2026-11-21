@@ -23,10 +23,16 @@ export const profile = {
 
 // bvid 用于站外观看链接；只有具备高清 videoSrc 的作品提供本站播放。
 // 其余作品展示原尺寸图片。仅选择或悬停作品不会自动播放。
+export function bilibiliVideoUrl({bvid, startTime}) {
+  const url = new URL(`https://www.bilibili.com/video/${bvid}/`);
+  if (Number.isFinite(startTime) && startTime > 0) url.searchParams.set('t', startTime);
+  return url.href;
+}
+
 export const projects = [
-  {id:'showreel-2026', title:'2026 技术美术作品集', category:'unity', description:'2026 · 技术美术作品集', bvid:'BV19hP9zvEh7', cid:36579050716, duration:208, cover:'./media/BV19hP9zvEh7.jpg'},
+  {id:'showreel-2026', title:'2026 技术美术作品集', category:'unity', externalOnly:true, bvid:'BV19hP9zvEh7', duration:208, cover:'./media/BV19hP9zvEh7.jpg'},
   {id:'ptcg-card', title:'卡面光学材质研究', category:'unity', description:'Unity / URP · 通过磨砂亮片、分区细线高光、双层视差与 Texture3D 角度采样，表现卡面涂层随视角和光照变化的反射。\n原画：WLOP。代码参考：Daniel Ilett、Sergej Lopatkin（Pokébox）。', bvid:'BV1kZsP6jEaa', videoSrc:'./media/ptcg-card.mp4', muted:true, duration:29, loop:false, videoChapters:[{label:'磨砂',time:0},{label:'细线',time:5},{label:'Texture3D',time:17}], cover:'./media/ptcg-card.jpg', references:[{label:'Daniel Ilett',url:'https://github.com/daniel-ilett/shaders-holo-card'},{label:'Pokébox',url:'https://github.com/selop/pokebox'}]},
-  {id:'studies-2025', title:'2025 作品与练习', category:'td', description:'2025 · 作品与练习', bvid:'BV1Ja3tzsEXd', cid:30811095855, startTime:2.9, duration:516, cover:'./media/BV1Ja3tzsEXd.jpg'},
+  {id:'studies-2025', title:'2025 作品与练习', category:'td', externalOnly:true, bvid:'BV1Ja3tzsEXd', startTime:2.9, duration:516, cover:'./media/BV1Ja3tzsEXd.jpg'},
   {id:'unreal-car', title:'车辆材质与交互展示', category:'unreal', subcategory:'vehicle', description:"围绕车辆展示搭建车漆、水面与地面材质，结合按键变色、平面反射和接触涟漪，呈现材质与环境的交互。", bvid:'BV1oxd1BtEGy', cid:37683202347, duration:69, cover:'./media/BV1oxd1BtEGy.jpg'},
   {id:'rain-vat', title:'雨水材质与流体效果', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 车辆雨水、地面积水与降雨粒子。\n从世界法线分区、Flow Map 和涟漪法线，到 Niagara 粒子与 Houdini FLIP 序列帧的制作过程。', bvid:'BV1TCQEBtEJA', cid:37526242180, duration:20, cover:'./media/BV1TCQEBtEJA.jpg'},
   {id:'unreal-snow', title:'雪地交互与车轮沾雪', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 使用 Render Target 记录雪地交互，并将四个车轮的接触信息映射到轮胎材质。\n详情包含雪地自阴影、轮胎沾雪及蓝图参数的实现过程。', bvid:'BV1CZDzBCEyj', cid:37323869335, duration:40, cover:'./media/breakdowns/snow-tracks-overview.webp'},

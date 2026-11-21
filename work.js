@@ -1,22 +1,36 @@
-import { projects } from './content.js';
+import { bilibiliVideoUrl, projects } from './content.js';
 import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
 import { projectDetails } from './project-details.js';
+import { setupWorkPreload } from './work-preload.js';
 import './player-nebula.js';
 import './image-viewer.js';
 
 const $ = id => document.getElementById(id);
 const announce = message => { $('detail-announcement').textContent = message; };
 let sky;
-try {
-  sky = new Starfield($('starfield-canvas'), {
-    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-    onStatus({state}) { $('starfield-canvas').dataset.state = state; },
+let skyFrame;
+function scheduleSky() {
+  if (sky || skyFrame) return;
+  // Let the detail layout paint before compiling and drawing the background.
+  skyFrame = requestAnimationFrame(() => {
+    skyFrame = requestAnimationFrame(() => {
+      skyFrame = 0;
+      try {
+        sky = new Starfield($('starfield-canvas'), {
+          reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+          onStatus({state}) { $('starfield-canvas').dataset.state = state; },
+        });
+      } catch { $('starfield-canvas').dataset.state = 'fallback'; }
+    });
   });
-} catch { $('starfield-canvas').dataset.state = 'fallback'; }
+}
 
 const requestedId = new URLSearchParams(location.search).get('id');
-const project = projects.find(item => item.id === (requestedId === 'ptcg-texture3d' ? 'ptcg-card' : requestedId));
+const requestedProject = projects.find(item => item.id === (requestedId === 'ptcg-texture3d' ? 'ptcg-card' : requestedId));
+const detailProjects = projects.filter(item => !item.externalOnly);
+const project = requestedProject?.externalOnly ? null : requestedProject;
+if (requestedProject?.externalOnly) location.replace(bilibiliVideoUrl(requestedProject));
 const speedKey = 'portfolio-video-speed';
 const validSpeed = value => Number.isFinite(value) && value >= 0.25 && value <= 4;
 let speed = 1;
@@ -104,9 +118,11 @@ function showPoster() {
     cover.className = 'project-static-cover';
     const image = document.createElement('img');
     image.addEventListener('load', () => { image.style.maxWidth = image.naturalWidth+'px'; image.style.maxHeight = image.naturalHeight+'px'; }, {once:true});
-    image.src = project.cover;
     image.alt = project.title;
     image.referrerPolicy = 'no-referrer';
+    image.fetchPriority = 'high';
+    image.decoding = 'async';
+    image.src = project.cover;
     cover.append(image);
     replacePlayer(cover);
     help('');
@@ -117,10 +133,12 @@ function showPoster() {
   button.type = 'button';
   button.setAttribute('aria-label', `播放 ${project.title}`);
   const image = document.createElement('img');
-  image.src = project.cover;
   image.alt = '';
   image.referrerPolicy = 'no-referrer';
+  image.fetchPriority = 'high';
+  image.decoding = 'async';
   image.addEventListener('error', () => { image.hidden = true; }, {once:true});
+  image.src = project.cover;
   const caption = document.createElement('span');
   caption.className = 'poster-play';
   const icon = document.createElement('span');
@@ -228,10 +246,12 @@ if (project) {
   const subcategoryRoute = project.subcategory === 'vehicle' ? '/vehicle' : '';
   const returnUrl = `./portfolio.html#works${categoryRoute}${subcategoryRoute}`;
   $('work-back').href = returnUrl;
-  if (projects.length > 1) {
-    const nextProject = projects[(projects.indexOf(project) + 1) % projects.length];
+  if (detailProjects.length > 1) {
+    const nextProject = detailProjects[(detailProjects.indexOf(project) + 1) % detailProjects.length];
     const nextUrl = `./work.html?id=${encodeURIComponent(nextProject.id)}`;
     $('work-next').href = $('work-next-footer').href = nextUrl;
+    for (const link of [$('work-next'), $('work-next-footer')]) link.dataset.preloadWork = '';
+    setupWorkPreload([nextUrl], [nextProject.cover]);
     $('work-next-name').textContent = $('work-next-title').textContent = nextProject.title;
     const nextCopy = document.createElement('span');
     nextCopy.className = 'detail-next-compact-copy';
@@ -249,7 +269,7 @@ if (project) {
   const seconds = Math.max(0, Math.round(project.duration || 0));
   $('work-duration').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.5V12l3.5 2"/></svg><span class="duration-value" data-no-translate>${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}</span><span class="duration-type">视频</span>`;
   document.title = `${project.title} · 张致远作品集`;
-  $('work-source').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/${Number.isFinite(project.startTime) && project.startTime > 0 ? `?t=${project.startTime}` : ''}`;
+  $('work-source').href = project.videoSrc || bilibiliVideoUrl(project);
   $('work-source').textContent = project.videoSrc ? '打开原视频 ↗' : '在 Bilibili 打开 ↗';
   $('work-profile').remove();
   $('detail-speed-controls').hidden = !project.videoSrc;
@@ -266,7 +286,7 @@ if (project) {
   showPoster();
   renderVideoChapters($('detail-video-chapters'), project.videoSrc ? project : null, () => $('detail-player').querySelector('video'), play);
   renderBreakdown(projectDetails[project.id]);
-} else {
+} else if (!requestedProject?.externalOnly) {
   document.title = '未找到作品 · 张致远作品集';
   $('work-title').textContent = '未找到作品';
   $('work-breadcrumb').textContent = '未找到作品';
@@ -274,7 +294,13 @@ if (project) {
 }
 $('detail-year').textContent = new Date().getFullYear();
 window.addEventListener('pagehide', event => {
+  cancelAnimationFrame(skyFrame);
+  skyFrame = 0;
   $('detail-player').querySelector('video')?.pause();
   if (!event.persisted) sky?.destroy();
 });
+if (!requestedProject?.externalOnly) {
+  scheduleSky();
+  window.addEventListener('pageshow', event => { if (event.persisted) scheduleSky(); });
+}
 window.dispatchEvent(new Event('portfolio:app-ready'));

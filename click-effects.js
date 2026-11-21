@@ -1,5 +1,6 @@
 /* Short, independent activation feedback. Never adds to the cursor trail. */
 import {emitNavigationRipple} from './nav-click-effects.js';
+import {createAmbientTextFlow} from './ambient-text-flow.js';
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const coarse = matchMedia('(pointer: coarse)');
 const canvas = document.createElement('canvas');
@@ -15,13 +16,14 @@ ambientCanvas.style.cssText='position:absolute;top:0;left:0;width:100%;height:10
 document.body.append(ambientCanvas);
 const ambientCtx=ambientCanvas.getContext('2d',{alpha:true});
 const projectionCanvas=ctx?canvas:ambientCanvas;
-const outerSurface=document.createElement('canvas'),outerContext=outerSurface.getContext('2d',{alpha:true});
+const ambientTextFlow=createAmbientTextFlow();
+let ambientTextActive=false;
 const bursts = [], ambientWaves = [], repeatQueue = [], cleanups = [], pending = new Set();
-// Three independent fifteen-click groups own the live SDF slots. Inner-only
+// Three independent fifteen-click groups own the live outer rings. Inner-only
 // afterglow and short group exits have their own bounded visual allowance.
 const CLICKS_PER_GROUP=15,STYLE_COUNT=3,MAX_MAIN_GROUPS=3;
 const MAX_BURSTS=CLICKS_PER_GROUP*MAX_MAIN_GROUPS,MAX_TAIL_BURSTS=90,MAX_VISUAL_BURSTS=MAX_BURSTS+MAX_TAIL_BURSTS;
-const EXIT_MS=280,MIN_VISIBLE_MS=180,MATERIAL_BATCH_SIZE=8,MATERIAL_PIXEL_BUDGET=240000,FEATHER_PIXEL_BUDGET=1200000;
+const EXIT_MS=280,MIN_VISIBLE_MS=180;
 const AUTO_MIN_MS=6000,AUTO_MAX_MS=8000,AMBIENT_PIXEL_BUDGET=900000;
 const REPEAT_DELAY_MS=200,MAX_PENDING_REPEATS=90;
 const CROWDED_ENTER=36,CROWDED_EXIT=18,CROWDED_WIDTH=1.2;
@@ -33,14 +35,16 @@ let autoTimer=0,repeatTimer=0,repeatsPaused=false;
 const ignored = 'input:not([type=button]):not([type=submit]):not([type=reset]),select,textarea,label,[contenteditable="true"],[role=slider],[data-click-effects="off"]';
 const interactive = 'a[href],button,summary,[role=button],input[type=button],input[type=submit],input[type=reset]';
 const listen = (target,type,fn,options) => { target.addEventListener(type,fn,options); cleanups.push(()=>target.removeEventListener(type,fn,options)); };
-function state(value){canvas.dataset.state=value;canvas.dataset.bursts=String(bursts.length);canvas.dataset.ambientWaves=String(ambientWaves.length);canvas.dataset.running=String(Boolean(frame));canvas.dataset.activeSdf=String(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).length);canvas.dataset.afterglow=String(bursts.filter(b=>b.mode!=='crowded'&&!b.liveSDF&&b.retiredAt===null).length);canvas.dataset.crowdedBursts=String(bursts.filter(b=>b.mode==='crowded').length);canvas.dataset.retiring=String(bursts.filter(b=>b.retiredAt!==null).length);ambientCanvas.dataset.state=value;ambientCanvas.dataset.waves=String(ambientWaves.length);}
+function state(value){canvas.dataset.state=value;canvas.dataset.bursts=String(bursts.length);canvas.dataset.ambientWaves=String(ambientWaves.length);canvas.dataset.running=String(Boolean(frame));canvas.dataset.activeOuter=String(bursts.filter(b=>b.outerAlive&&b.retiredAt===null).length);canvas.dataset.afterglow=String(bursts.filter(b=>b.mode!=='crowded'&&!b.outerAlive&&b.retiredAt===null).length);canvas.dataset.crowdedBursts=String(bursts.filter(b=>b.mode==='crowded').length);canvas.dataset.retiring=String(bursts.filter(b=>b.retiredAt!==null).length);ambientCanvas.dataset.state=value;ambientCanvas.dataset.waves=String(ambientWaves.length);}
 function stop(reason='idle',cancelInput=false,preserveBursts=false){
  if(frame)cancelAnimationFrame(frame);frame=0;lastDraw=0;if(!preserveBursts){bursts.length=0;ambientWaves.length=0;}
  if(cancelInput){for(const id of pending)cancelAnimationFrame(id);pending.clear();gesture=null;}
  ctx?.clearRect(0,0,width,height);ambientCtx?.clearRect(0,0,width,height);
+ clearAmbientTextFlow();
  for(const layer of [canvas,ambientCanvas]){layer.style.left='0px';layer.style.top='0px';}state(reason);
 }
 function resize(){
+ clearAmbientTextFlow();
  const cssWidth=document.documentElement.clientWidth+'px',cssHeight=innerHeight+'px',left=scrollX+'px',top=scrollY+'px';
  for(const layer of [canvas,ambientCanvas]){layer.style.width=cssWidth;layer.style.height=cssHeight;layer.style.left=left;layer.style.top=top;}
  const r=projectionCanvas.getBoundingClientRect();width=Math.max(1,r.width);height=Math.max(1,r.height);
@@ -52,7 +56,9 @@ function resize(){
  ambientCanvas.width=Math.max(1,Math.floor(width*ambientScale));ambientCanvas.height=Math.max(1,Math.floor(height*ambientScale));
  ambientCtx?.setTransform(ambientCanvas.width/width,0,0,ambientCanvas.height/height,0,0);
  ambientCanvas.dataset.pixelBudget=String(ambientCanvas.width*ambientCanvas.height);
+ ambientTextFlow.resize(width,height);
 }
+function clearAmbientTextFlow(){if(ambientTextActive){ambientTextFlow.clear();ambientTextActive=false;}}
 function availability(){
  stopAuto();
  const unsupported=!ctx&&!ambientCtx,disabled=unsupported||reduced.matches||document.hidden||suspended;
@@ -62,21 +68,20 @@ function availability(){
  if(!disabled){resize();updateLifecycle(performance.now());updateAmbientWaves(performance.now());if(bursts.length||ambientWaves.length){frame=requestAnimationFrame(tick);state('active');}scheduleAuto();}
  syncRepeats();
 }
-// One material contains exactly three travelling bands, with no center flash,
+// A normal click owns three travelling bands, with no center flash,
 // cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
-const RIPPLE_RADIUS=825/1.9,RIPPLE_SIZE=RIPPLE_RADIUS*2+42,RIPPLE_BASE_SPEED=1/3/1.5,RIPPLE_SPEED=RIPPLE_BASE_SPEED*1.3;
+const RIPPLE_RADIUS=825/1.9,RIPPLE_BASE_SPEED=1/3/1.5,RIPPLE_SPEED=RIPPLE_BASE_SPEED*1.3;
 const RIPPLE_DELAY=.14/RIPPLE_SPEED,RIPPLE_DURATION=1.42/RIPPLE_SPEED,RIPPLE_EASE=1.35;
 // Inner lines keep their readable floor. The thin outer line exits by width
 // alone, so its geometry must be allowed to reach exactly zero.
 const RIPPLE_WIDTHS=[2,1.3,1.7],RIPPLE_MIN_WIDTHS=[0,.9,1.05];
 // Expansion keeps its requested 1.3x travel speed. The outer band reaches zero
-// width at its shorter lifetime; the unchanged inner lines outlive the SDF.
+// width at its shorter lifetime; the unchanged inner lines outlive the outer.
 const RIPPLE_LIFE=(1.42+.14*2)/RIPPLE_BASE_SPEED*1000*.5,OUTER_LIFE_SHARE=.56;
 const OUTER_END_RADIUS=8+(RIPPLE_RADIUS-8)*(1-(1-Math.min(1,RIPPLE_LIFE*OUTER_LIFE_SHARE/1000/RIPPLE_DURATION))**RIPPLE_EASE);
-// Ambient color planes have their own clock and pool, never an SDF group.
+// Ambient color planes have their own clock and pool, never a manual group.
 const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS;
 const AUTO_BANDS=[{width:200,gap:0},{width:5,gap:8}];
-const OUTER_FEATHER=18;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
  const halfRadius=RIPPLE_RADIUS*.1;
@@ -94,191 +99,28 @@ function rippleState(elapsed,index,birthNested=false){
  return {age,radius,width,
   opacity:smooth(0,.115,sinceBirth)*(index===0?1:(1-fadeAge)**.62)*[.92,.62,.46][index]};
 }
-// Birth shape never changes when SDF influence dies. A nested first inner ring
+// Birth shape never changes when the outer dies. A nested first inner ring
 // starts immediately, while all inner afterglow keeps the same 3.825s lifetime.
 const visualElapsed=(burst,now)=>Math.max(.045,(now-burst.born)/1000);
 const exitWeight=(burst,now)=>burst.retiredAt===null?1:1-smooth(0,EXIT_MS,now-burst.retiredAt);
 const visualWeight=(burst,now)=>exitWeight(burst,now);
-const RIPPLE_FRAGMENT=`#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-varying vec2 vUv;uniform vec2 uSize;uniform float uCount,uScale,uPixel,uStyle;
-uniform vec4 uPulse[8];
-uniform vec4 uFlowSeed0,uFlowSeed1;
-float lightSpot(float angle,float center,float spread){
- float distance=abs(mod(angle-center+3.14159265359,6.28318530718)-3.14159265359);
- return exp(-.5*pow(distance/spread,2.));
-}
-void main(){
- vec2 point=vec2(vUv.x,1.-vUv.y)*uSize;
- vec3 rgb=vec3(0.);float opacity=0.;
- float alphas[8];vec3 colors[8];
- // This material carries light only. Each outer contour receives its own
- // feathered circle-distance mask after sampling, so other bands cannot refill it.
- for(int pulse=0;pulse<8;pulse++){
-  alphas[pulse]=0.;colors[pulse]=vec3(0.);
-  if(float(pulse)>=uCount)continue;
-   vec2 p=(point-uPulse[pulse].xy)/uScale;
-   float r=length(p),angle=atan(p.y,p.x),elapsed=uPulse[pulse].z;
-   float exitWeight=mod(uPulse[pulse].w,2.);
-   // A bounded integer seed uses exact small divisions even on mediump GPUs.
-   float seed=pulse==0?uFlowSeed0.x:pulse==1?uFlowSeed0.y:pulse==2?uFlowSeed0.z:pulse==3?uFlowSeed0.w:pulse==4?uFlowSeed1.x:pulse==5?uFlowSeed1.y:pulse==6?uFlowSeed1.z:uFlowSeed1.w;
-   float direction=mod(floor(seed/256.),2.)<.5?-1.:1.;
-   float start=mod(seed,32.)*6.28318530718/32.;
-   float speed=.35+mod(floor(seed/32.),8.)*.08;
-   float spread=.16+mod(floor(seed/512.),2.)*.12;
-   float secondSpeed=.28+mod(floor(seed/16.),6.)*.09;
-   float secondSpread=.14+mod(floor(seed/128.),3.)*.08;
-   float separation=(.20+mod(floor(seed/4.),7.)*.07)*6.28318530718;
-   float travel=uStyle>.5&&uStyle<1.5?.65:uStyle>1.5?1.45:1.;
-   float spreadScale=uStyle>.5&&uStyle<1.5?1.6:uStyle>1.5?.65:1.;
-   float highlight=lightSpot(angle,start+direction*speed*elapsed*travel,spread*spreadScale);
-   if(mod(floor(seed/64.),2.)>.5)highlight=max(highlight,lightSpot(angle,start+separation-direction*secondSpeed*elapsed*travel,secondSpread*spreadScale)*.88);
-   float coreScale=uStyle>.5&&uStyle<1.5?1.12:uStyle>1.5?.80:1.;
-   vec3 localColor=uStyle>.5&&uStyle<1.5?vec3(.94,.985,1.):uStyle>1.5?vec3(1.,.975,.94):vec3(1.);
-  for(int i=0;i<3;i++){
-   if(i==0&&uPulse[pulse].w>=16.)continue;
-   float baseWidth=(i==0?${RIPPLE_WIDTHS[0].toFixed(8)}:i==1?${RIPPLE_WIDTHS[1].toFixed(8)}:${RIPPLE_WIDTHS[2].toFixed(8)})*uScale;
-   float index=float(i),delay=(index-(mod(floor(uPulse[pulse].w/8.),2.)>.5?1.:0.))*${RIPPLE_DELAY};
-   float sinceBirth=elapsed-delay,age=sinceBirth/${RIPPLE_DURATION};
-   float fadeDuration=${RIPPLE_LIFE/1000}*(i==0?${OUTER_LIFE_SHARE}:1.)-delay;
-   float fadeAge=sinceBirth/fadeDuration;
-   if(age<=0.||age>=1.||fadeAge>=1.)continue;
-   float radius=8.+${(RIPPLE_RADIUS-8).toFixed(8)}*(1.-pow(1.-age,${RIPPLE_EASE}));
-   float halfRadius=${(RIPPLE_RADIUS*.1).toFixed(8)};
-   float widthScale=radius<=halfRadius?1.-.5*smoothstep(8.,halfRadius,radius):.5-.25*smoothstep(halfRadius,${RIPPLE_RADIUS.toFixed(1)},radius);
-   float minWidth=(i==0?0.:i==1?.9:1.05)*uScale;
-   float width=i==0?baseWidth*(1.-smoothstep(.5,1.,radius/${OUTER_END_RADIUS.toFixed(8)})):max(minWidth,baseWidth*widthScale);
-   float strength=i==0?.92:i==1?.62:.46;
-   // One or two non-uniform light locations are shared by this pulse's rings.
-   float luminance=uStyle>.5&&uStyle<1.5?(i==0?.48:.58)+highlight*.95:uStyle>1.5?(i==0?.54:.58)+highlight*1.10:(i==0?.78:.66)+highlight*.55;
-   float localFade=smoothstep(0.,.115,sinceBirth)*(i==0?1.:pow(1.-fadeAge,.62))*strength*luminance*exitWeight;
-   // This bounded texture carries luminance only. The final native circular
-   // path clip sets the radius-dependent widths without a magnified AA halo.
-   float core=exp(-.5*pow(abs(r-radius)*uScale/max(width*.6*coreScale,uPixel*1.1),2.));
-   float alpha=min(.93,core*localFade),weight=alpha*(1.-alphas[pulse]);
-   colors[pulse]+=localColor*weight;alphas[pulse]+=weight;
-  }
- }
- for(int pulse=0;pulse<8;pulse++){
-  if(float(pulse)>=uCount)continue;
-  rgb+=colors[pulse]*(1.-opacity);opacity+=alphas[pulse]*(1.-opacity);
- }
- gl_FragColor=vec4(rgb/max(.0001,opacity),opacity);
-}`;
-// CPU fallback samples the same light bands at a bounded resolution. Angular
-// lookups avoid evaluating many sine fields per pixel; native cuts stay separate.
-function bandTable(elapsed,index,seed,style,birthNested){
- const ring=rippleState(elapsed,index,birthNested);if(!ring)return null;
- const values=[],tau=Math.PI*2;
- const coreScale=style===1?1.12:style===2?.80:1;
- const color=style===1?[.94,.985,1]:style===2?[1,.975,.94]:[1,1,1];
- const direction=Math.floor(seed/256)%2<.5?-1:1,start=seed%32*tau/32;
- const speed=.35+(Math.floor(seed/32)%8)*.08,spread=.16+(Math.floor(seed/512)%2)*.12;
- const secondSpeed=.28+(Math.floor(seed/16)%6)*.09,secondSpread=.14+(Math.floor(seed/128)%3)*.08;
- const separation=(.20+(Math.floor(seed/4)%7)*.07)*tau,hasSecond=Math.floor(seed/64)%2===1;
- const travel=style===1?.65:style===2?1.45:1,spreadScale=style===1?1.6:style===2?.65:1;
- const center=start+direction*speed*elapsed*travel,secondCenter=start+separation-direction*secondSpeed*elapsed*travel;
- const spot=(angle,position,size)=>{const distance=Math.abs(((angle-position+Math.PI)%tau+tau)%tau-Math.PI);return Math.exp(-.5*(distance/size)**2);};
- for(let n=0;n<=256;n++){
-  const angle=n/256*Math.PI*2;
-  const radius=ring.radius,width=ring.width;
-  let highlight=spot(angle,center,spread*spreadScale);
-  if(hasSecond)highlight=Math.max(highlight,spot(angle,secondCenter,secondSpread*spreadScale)*.88);
-  const luminance=style===1?(index===0?.48:.58)+highlight*.95:style===2?(index===0?.54:.58)+highlight*1.10:(index===0?.78:.66)+highlight*.55;
-  values.push({radius,width,luminance});
- }
- return {values,opacity:ring.opacity,index,coreScale,color};
-}
-function createRippleRenderer(){
- const surface=document.createElement('canvas');
- const gl=surface.getContext('webgl',{alpha:true,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,preserveDrawingBuffer:false});
- let program=null,buffer=null,uniforms=null,lost=false;
- const cached=new Map();
- const pulses=new Float32Array(32),flowSeeds=new Float32Array(8);
- function initialize(){
-  if(!gl)return false;
-  const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){gl.deleteShader(shader);return null;}return shader;};
-  const vertex=compile(gl.VERTEX_SHADER,'attribute vec2 aPosition;varying vec2 vUv;void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}'),fragment=compile(gl.FRAGMENT_SHADER,RIPPLE_FRAGMENT);
-  if(!vertex||!fragment){if(vertex)gl.deleteShader(vertex);if(fragment)gl.deleteShader(fragment);return false;}
-  program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(vertex);gl.deleteShader(fragment);
-  if(!gl.getProgramParameter(program,gl.LINK_STATUS)){gl.deleteProgram(program);program=null;return false;}
-  gl.useProgram(program);buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
-  const position=gl.getAttribLocation(program,'aPosition');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-  uniforms=Object.fromEntries(['Size','Count','Scale','Pixel','Style','Pulse[0]','FlowSeed0','FlowSeed1'].map(name=>[name,gl.getUniformLocation(program,'u'+name)]));
-  gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);return true;
- }
- initialize();
- if(gl){listen(surface,'webglcontextlost',e=>{e.preventDefault();lost=true;});listen(surface,'webglcontextrestored',()=>{lost=!initialize();});}
- function fallback(group,w,h,scale,now,budget){
-  const step=Math.floor((now-group[0].born)/50),key=`g${group[0].groupId}:s${group[0].style}:`+group.map(b=>`${b.id}@${b.localX.toFixed(1)},${b.localY.toFixed(1)}:n${+b.birthNested}:a${+b.liveSDF}:f${b.flowSeed}:r${b.retiredAt}`).join('|')+`:${w.toFixed(1)},${h.toFixed(1)}:${step}:${Math.floor(budget)}`;
-  if(cached.has(key))return cached.get(key);
-  const sprite=document.createElement('canvas'),ratio=Math.min(.7,Math.sqrt(Math.min(12000,budget)/(w*h)));
-  sprite.width=Math.max(1,Math.floor(w*ratio));sprite.height=Math.max(1,Math.floor(h*ratio));
-  const paint=sprite.getContext('2d');if(!paint)return null;
-  const data=paint.createImageData(sprite.width,sprite.height),pixel=Math.max(w/sprite.width,h/sprite.height);
-  const sampleTime=group[0].born+(step+.5)*50;
-  const tables=group.map(b=>({x:b.localX,y:b.localY,weight:visualWeight(b,sampleTime),bands:[0,1,2].map(i=>i===0&&!b.liveSDF?null:bandTable(visualElapsed(b,sampleTime),i,b.flowSeed,b.style,b.birthNested))}));
-  for(let y=0;y<sprite.height;y++)for(let x=0;x<sprite.width;x++){
-   const px=(x+.5)/sprite.width*w,py=(y+.5)/sprite.height*h;
-   const geometry=tables.map(pulse=>{const dx=(px-pulse.x)/scale,dy=(py-pulse.y)/scale;return{radius:Math.hypot(dx,dy),angle:(Math.atan2(dy,dx)/Math.PI/2+1)%1*256};});
-   let red=0,green=0,blue=0,opacity=0;const samples=[];
-   for(let pulse=0;pulse<tables.length;pulse++){
-    const sample={red:0,green:0,blue:0,alpha:0};
-    for(let ring=0;ring<3;ring++){
-     const band=tables[pulse].bands[ring];if(!band)continue;
-     const g=geometry[pulse],at=Math.floor(g.angle),fraction=g.angle-at,a=band.values[at],b=band.values[at+1],mix=key=>a[key]+(b[key]-a[key])*fraction;
-     const width=mix('width')*scale;
-     const luminance=mix('luminance');
-     const localFade=band.opacity*luminance*tables[pulse].weight;
-     const core=Math.exp(-.5*(Math.abs(g.radius-mix('radius'))*scale/Math.max(width*.6*band.coreScale,pixel*1.1))**2);
-     const alpha=Math.min(.93,core*localFade),weight=alpha*(1-sample.alpha);
-     sample.red+=band.color[0]*weight;sample.green+=band.color[1]*weight;sample.blue+=band.color[2]*weight;sample.alpha+=weight;
-    }
-    samples.push(sample);
-   }
-   for(let pulse=0;pulse<samples.length;pulse++){
-    const sample=samples[pulse],weight=1-opacity;
-    red+=sample.red*weight;green+=sample.green*weight;blue+=sample.blue*weight;opacity+=sample.alpha*weight;
-   }
-   const i=(y*sprite.width+x)*4,denominator=Math.max(.0001,opacity);
-   data.data[i]=red/denominator*255;data.data[i+1]=green/denominator*255;data.data[i+2]=blue/denominator*255;data.data[i+3]=opacity*255;
-  }
-  paint.putImageData(data,0,0);if(cached.size>=32)cached.delete(cached.keys().next().value);cached.set(key,sprite);return sprite;
- }
- return {get mode(){return gl&&program&&!lost&&!gl.isContextLost()?'webgl':'cached';},get cacheSize(){return cached.size;},draw(group,w,h,scale,now,budget){
-  if(this.mode==='cached'){const sprite=fallback(group,w,h,scale,now,budget);canvas.dataset.lastTilePixels=String(sprite? sprite.width*sprite.height:0);return sprite;}
-  const ratio=Math.min(1,Math.sqrt(Math.min(140000,budget,480000/group.length)/(w*h))),pw=Math.max(1,Math.floor(w*ratio)),ph=Math.max(1,Math.floor(h*ratio));
-  if(surface.width!==pw)surface.width=pw;if(surface.height!==ph)surface.height=ph;
-  // Separate bits preserve the immutable nested launch and the live outer state.
-  group.forEach((b,i)=>{pulses.set([b.localX,b.localY,visualElapsed(b,now),b.variant*2+visualWeight(b,now)+(b.birthNested?8:0)+(b.liveSDF?0:16)],i*4);flowSeeds[i]=b.flowSeed;});
-  gl.viewport(0,0,pw,ph);gl.useProgram(program);gl.uniform2f(uniforms.Size,w,h);gl.uniform1f(uniforms.Count,group.length);gl.uniform1f(uniforms.Scale,scale);gl.uniform1f(uniforms.Pixel,Math.max(w/pw,h/ph));
-  gl.uniform1f(uniforms.Style,group[0].style);
-  gl.uniform4f(uniforms.FlowSeed0,flowSeeds[0],flowSeeds[1],flowSeeds[2],flowSeeds[3]);
-  gl.uniform4f(uniforms.FlowSeed1,flowSeeds[4],flowSeeds[5],flowSeeds[6],flowSeeds[7]);
-  gl.uniform4fv(uniforms['Pulse[0]'],pulses);gl.drawArrays(gl.TRIANGLES,0,6);
-  canvas.dataset.lastTilePixels=String(pw*ph);canvas.dataset.maxTilePixels=String(Math.max(Number(canvas.dataset.maxTilePixels)||0,pw*ph));return surface;
- },destroy(){cached.clear();if(gl){if(buffer)gl.deleteBuffer(buffer);if(program)gl.deleteProgram(program);}program=null;}};
-}
-const ripples=createRippleRenderer();let nextBurstId=0;
-canvas.dataset.renderer=ripples.mode;canvas.dataset.material='three-flowing-ripples';canvas.dataset.rippleCount='3';
-canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(',');canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='feathered-outer-circle-subtraction';canvas.dataset.anchor='document';canvas.dataset.overlapFeather=String(OUTER_FEATHER);
+let nextBurstId=0;
+canvas.dataset.renderer='native-conic-flow';canvas.dataset.material='independent-flowing-arcs';canvas.dataset.rippleCount='3';
+canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(',');canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='independent-circle-overlap';canvas.dataset.anchor='document';canvas.dataset.sdf='disabled';
 canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=String(RIPPLE_DURATION);canvas.dataset.widthHalfRadius=String(RIPPLE_RADIUS*.1);canvas.dataset.widthOrder='thin-lines';
-canvas.dataset.crossing='outer-rings-only';canvas.dataset.motion='circular-flow-only';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.clipMode='viewport-css-pixels';canvas.dataset.color='white';canvas.dataset.geometry='native-circular-clip';
-canvas.dataset.groupSize=String(CLICKS_PER_GROUP);canvas.dataset.styleCount=String(STYLE_COUNT);canvas.dataset.groupInteraction='same-group-id-only';
+canvas.dataset.crossing='uncut-overlap';canvas.dataset.motion='conic-head-and-tail';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.color='white';canvas.dataset.geometry='native-tapered-arc';
+canvas.dataset.groupSize=String(CLICKS_PER_GROUP);canvas.dataset.styleCount=String(STYLE_COUNT);canvas.dataset.groupInteraction='none';
 canvas.dataset.maxMainGroups=String(MAX_MAIN_GROUPS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.maxVisuals=String(MAX_VISUAL_BURSTS);
 canvas.dataset.outerEndRadius=String(OUTER_END_RADIUS);canvas.dataset.outerWidthHalfRadius=String(OUTER_END_RADIUS*.5);canvas.dataset.outerExit='width-to-zero';
-canvas.dataset.flowHighlights='1-2';canvas.dataset.flowRandomness='fixed-per-birth';
+canvas.dataset.flowHighlights='1';canvas.dataset.flowArcRange='30-330';canvas.dataset.flowRandomness='fixed-per-ring';
 function updateLifecycle(now,reservedLoad=0){
  for(let i=bursts.length-1;i>=0;i--){
   const burst=bursts[i];
   if(burst.retiredAt!==null&&burst.firstDrawAt===null&&now-burst.born<burst.life)burst.retiredAt=Math.max(burst.retiredAt,now+MIN_VISIBLE_MS);
   if(now-burst.born>=burst.life||(burst.retiredAt!==null&&now-burst.retiredAt>=EXIT_MS)){bursts.splice(i,1);continue;}
-  if(burst.liveSDF&&now-burst.born>115){
+  if(burst.outerAlive&&now-burst.born>115){
    const outer=rippleState(visualElapsed(burst,now),0);
-   if(!outer||outer.width<=0)burst.liveSDF=false;
+   if(!outer||outer.width<=0)burst.outerAlive=false;
   }
  }
  // Observe decay before a new action adds reservations, so a cleared scene can
@@ -291,7 +133,7 @@ function retireBurst(burst,now){
  burst.retiredAt=Math.max(now,(burst.firstDrawAt??now)+MIN_VISIBLE_MS);
 }
 function limitMainGroups(now,incomingGroup){
- const ids=new Set(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).map(b=>b.groupId));
+ const ids=new Set(bursts.filter(b=>b.outerAlive&&b.retiredAt===null).map(b=>b.groupId));
  if(incomingGroup!==undefined)ids.add(incomingGroup);
  const ordered=[...ids].sort((a,b)=>a-b);
  while(ordered.length>MAX_MAIN_GROUPS){
@@ -301,160 +143,99 @@ function limitMainGroups(now,incomingGroup){
 }
 function reserveVisualSlot(now){
  while(bursts.length>=MAX_VISUAL_BURSTS){
-  // Live SDF does not compete with invisible outer shells' inner afterglow.
+  // Live outer rings do not compete with invisible outer shells' inner afterglow.
   // At pathological event rates, prefer already-seen tails before any fresh birth.
   const ranked=bursts.map((burst,index)=>({burst,index,seen:burst.firstDrawAt!==null,protected:burst.firstDrawAt===null||now-burst.firstDrawAt<MIN_VISIBLE_MS}));
-  ranked.sort((a,b)=>Number(a.protected)-Number(b.protected)||Number(!a.seen)-Number(!b.seen)||Number(a.burst.liveSDF&&a.burst.retiredAt===null)-Number(b.burst.liveSDF&&b.burst.retiredAt===null)||a.burst.born-b.burst.born||a.burst.id-b.burst.id);
+  ranked.sort((a,b)=>Number(a.protected)-Number(b.protected)||Number(!a.seen)-Number(!b.seen)||Number(a.burst.outerAlive&&a.burst.retiredAt===null)-Number(b.burst.outerAlive&&b.burst.retiredAt===null)||a.burst.born-b.burst.born||a.burst.id-b.burst.id);
   bursts.splice(ranked[0].index,1);
   canvas.dataset.pressureReclaims=String((Number(canvas.dataset.pressureReclaims)||0)+1);
  }
 }
-// Boolean subtraction of whole disks with a soft alpha edge. Circle distance
-// controls opacity only; neither radius nor the inner bands are distorted.
-// Inner bands are drawn separately and do not participate in this operation.
-function outerCircleField(now,viewLeft,viewTop){
- const circles=[];
- for(const burst of bursts){
-  if(burst.mode==='crowded'||!burst.liveSDF)continue;
-  const scale=burst.touch?.68:1;
-  const band=rippleState(visualElapsed(burst,now),0);if(!band)continue;
-  const opacity=band.opacity*visualWeight(burst,now),widthWeight=band.width/RIPPLE_WIDTHS[0];if(opacity<=.008||widthWeight<=0)continue;
-  circles.push({id:burst.id,groupId:burst.groupId,x:burst.pageX-viewLeft,y:burst.pageY-viewTop,radius:band.radius*scale,opacity,widthWeight,scale});
- }
- canvas.dataset.cutoutResolution='independent-contour-alpha';
- return circles;
-}
-function featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders,budget){
- if(!outerContext||!occluders.length)return null;
- const left=Math.max(0,cx-r-half-2),top=Math.max(0,cy-r-half-2);
- const right=Math.min(width,cx+r+half+2),bottom=Math.min(height,cy+r+half+2);
- const tw=right-left,th=bottom-top;if(tw<=0||th<=0)return null;
- const ratio=Math.min(1,Math.sqrt(Math.min(600000,budget)/(tw*th)));
- const pw=Math.max(1,Math.floor(tw*ratio)),ph=Math.max(1,Math.floor(th*ratio));
- if(outerSurface.width!==pw)outerSurface.width=pw;if(outerSurface.height!==ph)outerSurface.height=ph;
- outerContext.setTransform(pw/tw,0,0,ph/th,0,0);
- outerContext.globalCompositeOperation='source-over';outerContext.globalAlpha=1;outerContext.clearRect(0,0,tw,th);
- outerContext.drawImage(material,x-left,y-top,w,h);
- outerContext.globalCompositeOperation='destination-out';
- for(const other of occluders){
-  const ox=other.x-left,oy=other.y-top,feather=OUTER_FEATHER;
-  const mask=outerContext.createRadialGradient(ox,oy,other.radius,ox,oy,other.radius+feather);
-  const strength=smooth(.008,.18,other.opacity)*other.widthWeight*smooth(0,OUTER_FEATHER,other.partialDepth);
-  // sdCircle = distance - radius. Sample 1 - smoothstep(0, feather, sd)
-  // as a radial alpha mask. Every disk is applied independently (no XOR).
-  for(let stop=0;stop<=12;stop++){
-   const t=stop/12,alpha=(1-smooth(0,1,t))*strength;
-   mask.addColorStop(t,`rgba(0,0,0,${alpha})`);
+function createFlowBands(seed,mode,style){
+ const tau=Math.PI*2,count=mode==='crowded'?1:3,flows=[];
+ const base=mode==='crowded'?[55,213,237]:style===1?[210,240,255]:style===2?[255,231,209]:[226,241,255];
+ const head=mode==='crowded'?[195,253,255]:[255,255,255],peak=mode==='crowded'?.56:.98;
+ for(let ring=0;ring<count;ring++){
+  let randomState=(seed^Math.imul(ring+1,0x9e3779b9))>>>0;
+  const random=()=>{randomState=(randomState+0x6d2b79f5)>>>0;let value=randomState;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return ((value^(value>>>14))>>>0)/4294967296;};
+  // Every visible ring gets independent, stable arc length and motion.
+  const arc=(30+300*random())*Math.PI/180,start=random()*tau,direction=random()<.5?-1:1,speed=.38+.92*random();
+  const taper=(style===1?.62:style===2?1.18:.82)*(.85+.3*random());
+  const segments=Math.max(16,Math.ceil(arc*32)),points=new Float32Array((segments+1)*3);
+  for(let n=0;n<=segments;n++){
+   const t=n/segments,angle=direction*arc*(t-1);
+   const gain=Math.pow(Math.min(1,t/.95),taper)*(1-smooth(.97,1,t));
+   points.set([Math.cos(angle),Math.sin(angle),gain],n*3);
   }
-  outerContext.fillStyle=mask;outerContext.fillRect(0,0,tw,th);
+  // One bright head, a long transparent tail, and no full-circle underlay.
+  const profile=[[0,0],[.14,.012],[.40,.07],[.65,.22],[.84,.52],[.95,1],[.982,.72],[1,0]];
+  const color=(t,alpha)=>{const blend=smooth(.65,.97,t),rgb=base.map((value,i)=>Math.round(value+(head[i]-value)*blend));return 'rgba('+rgb.join(',')+','+(alpha*peak)+')';};
+  const linearStops=profile.map(([t,alpha])=>({offset:t,color:color(t,alpha)}));
+  const fraction=arc/tau;
+  const stops=linearStops.map(stop=>({offset:direction>0?stop.offset*fraction:1-stop.offset*fraction,color:stop.color}));
+  stops.push({offset:0,color:color(0,0)},{offset:1,color:color(0,0)});stops.sort((a,b)=>a.offset-b.offset);
+  flows.push({arc,start,direction,speed,segments,points,stops,linearStops});
  }
- outerContext.globalCompositeOperation='source-over';
- return {surface:outerSurface,x:left,y:top,w:tw,h:th};
+ return flows;
 }
-function drawBursts(now,viewLeft,viewTop){
- // Between material frames this absolute layer moves with native page scroll.
- // No scroll handler rebuilds the SDF or waits for the next 30fps material frame.
- canvas.dataset.godray='background-only';
- const clusters=[];
+function drawFlowBursts(now,viewLeft,viewTop){
+ const visibleGroups=new Set();
+ ctx.save();ctx.globalCompositeOperation='source-over';
  for(const burst of bursts){
-  if(burst.mode==='crowded')continue;
-  const group=[burst],pad=RIPPLE_SIZE*(burst.touch?.68:1);
-  for(let i=clusters.length-1;i>=0;i--)if(clusters[i].some(a=>group.some(b=>a.groupId===b.groupId&&a.touch===b.touch&&Math.abs(a.pageX-b.pageX)<pad&&Math.abs(a.pageY-b.pageY)<pad))){group.push(...clusters.splice(i,1)[0]);}
-  clusters.push(group);
- }
- // Keep eight pulses per material and one style uniform. Batches are isolated
- // by groupId, while their outer SDF field still spans every batch of that group.
- const groups=[];
- for(const cluster of clusters){
-  cluster.sort((a,b)=>a.id-b.id);
-  for(let offset=0;offset<cluster.length;offset+=MATERIAL_BATCH_SIZE)groups.push(cluster.slice(offset,offset+MATERIAL_BATCH_SIZE));
- }
- let visibleGroups=0,framePixels=0;
- const circles=outerCircleField(now,viewLeft,viewTop);
- const outerCount=bursts.filter(b=>b.liveSDF&&rippleState(visualElapsed(b,now),0)).length;
- const featherBudget=FEATHER_PIXEL_BUDGET/Math.max(1,outerCount);
- for(const group of groups){
-  const scale=group[0].touch?.68:1,pad=RIPPLE_SIZE*scale*.5;
-  // Crop the sample domain, never stretch the geometry. Rings may leave the
-  // screen without allocating their full RIPPLE_SIZE-square bounding box.
-  const left=Math.max(Math.min(...group.map(b=>b.pageX))-pad,viewLeft),top=Math.max(Math.min(...group.map(b=>b.pageY))-pad,viewTop);
-  const right=Math.min(Math.max(...group.map(b=>b.pageX))+pad,viewLeft+width),bottom=Math.min(Math.max(...group.map(b=>b.pageY))+pad,viewTop+height);
-  const w=right-left,h=bottom-top,x=left-viewLeft,y=top-viewTop;
-  if(w<=0||h<=0)continue;
-  group.forEach(b=>{b.localX=b.pageX-left;b.localY=b.pageY-top;});
-  const material=ripples.draw(group,w,h,scale,now,MATERIAL_PIXEL_BUDGET/groups.length);if(!material)continue;
-  // Draw each contour independently so an outer cut cannot erase an inner ring
-  // or another click's unrelated contour underneath it.
-  for(const burst of group)for(let ring=0;ring<3;ring++){
-   if(ring===0&&!burst.liveSDF)continue;
-   const band=rippleState(visualElapsed(burst,now),ring,burst.birthNested);if(!band)continue;
-   const cx=x+burst.localX,cy=y+burst.localY,r=band.radius*scale;
-   const thickness=ring===0?band.width*scale:Math.max(band.width*scale,.95*width/canvas.width);
-   if(thickness<=0)continue;
-   const half=thickness*.5,insideRadius=Math.max(0,r-half);
-   ctx.save();ctx.beginPath();
-   ctx.moveTo(cx+r+half,cy);ctx.arc(cx,cy,r+half,0,Math.PI*2);
-   if(insideRadius>0){ctx.moveTo(cx+insideRadius,cy);ctx.arc(cx,cy,insideRadius,0,Math.PI*2,true);}
-   ctx.clip();
-   const occluders=[];
-   if(ring===0)for(const other of circles){
-    if(other.id===burst.id||other.groupId!==burst.groupId)continue;
-    const distance=Math.hypot(cx-other.x,cy-other.y);
-    const partialDepth=Math.min(distance-Math.abs(r-other.radius),r+other.radius-distance);
-    // Only partial intersection cuts arcs. Concentric/contained circles and
-    // both kinds of tangency stay whole; the pair's influence eases in afterward.
-    if(partialDepth>0)occluders.push({...other,partialDepth});
-   }
-   const feathered=featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders,featherBudget);
-   ctx.globalCompositeOperation='source-over';ctx.globalAlpha=burst.touch?.82:1;
-   if(feathered)ctx.drawImage(feathered.surface,feathered.x,feathered.y,feathered.w,feathered.h);
-   else ctx.drawImage(material,x,y,w,h);
-   ctx.restore();
-   if(burst.firstDrawAt===null){burst.firstDrawAt=now;if(burst.retiredAt!==null)burst.retiredAt=Math.max(burst.retiredAt,now+MIN_VISIBLE_MS);}
-  }
-  visibleGroups++;framePixels+=Number(canvas.dataset.lastTilePixels)||0;
- }
- canvas.dataset.renderer=ripples.mode;canvas.dataset.groups=String(visibleGroups);canvas.dataset.mainGroups=String(new Set(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).map(b=>b.groupId)).size);canvas.dataset.frameTexturePixels=String(framePixels);canvas.dataset.featherPixelBudget=String(FEATHER_PIXEL_BUDGET);
-}
-function drawCrowdedBursts(now,viewLeft,viewTop){
- // Native paths only: one complete cyan line and at most two short flow arcs.
- // These births never enter the material batches, circle field or feather pass.
- const tau=Math.PI*2;
- ctx.save();ctx.globalCompositeOperation='source-over';ctx.lineCap='round';
- for(const burst of bursts){
-  if(burst.mode!=='crowded')continue;
-  const elapsed=visualElapsed(burst,now),band=rippleState(elapsed,1,true);if(!band)continue;
-  const scale=burst.touch?.68:1,radius=band.radius*scale,cx=burst.pageX-viewLeft,cy=burst.pageY-viewTop;
+  const crowded=burst.mode==='crowded',elapsed=visualElapsed(burst,now),scale=burst.touch?.68:1;
+  // Use raw birth age here, independent of the first-visible geometry floor.
+  const birthOpacity=2/3+smooth(0,240,Math.max(0,now-burst.born))/3;
+  const cx=burst.pageX-viewLeft,cy=burst.pageY-viewTop;
   const near=Math.hypot(Math.max(0,-cx,cx-width),Math.max(0,-cy,cy-height));
   const far=Math.hypot(Math.max(Math.abs(cx),Math.abs(width-cx)),Math.max(Math.abs(cy),Math.abs(height-cy)));
-  if(radius<near-2||radius>far+2)continue;
-  // Match the immediate inner ring's expansion and 3.825s fade, without its
-  // nested geometry. Alpha stays translucent even at a flow highlight's peak.
-  ctx.globalAlpha=band.opacity/.62*visualWeight(burst,now);
-  ctx.lineWidth=Math.max(1,CROWDED_WIDTH*scale);ctx.strokeStyle='rgba(65,218,235,.44)';
-  ctx.beginPath();ctx.arc(cx,cy,radius,0,tau);ctx.stroke();
-  const seed=burst.flowSeed,direction=Math.floor(seed/256)%2===0?-1:1,start=(seed%32)*tau/32;
-  const speed=.35+(Math.floor(seed/32)%8)*.08,spread=.16+(Math.floor(seed/512)%2)*.12;
-  const secondSpeed=.28+(Math.floor(seed/16)%6)*.09,secondSpread=.14+(Math.floor(seed/128)%3)*.08;
-  const separation=(.20+(Math.floor(seed/4)%7)*.07)*tau,count=Math.floor(seed/64)%2===1?2:1;
-  for(let index=0;index<count;index++){
-   const center=index?start+separation-direction*secondSpeed*elapsed:start+direction*speed*elapsed;
-   const half=(index?secondSpread:spread)*2.5,a=center-half,b=center+half;
-   const gradient=ctx.createLinearGradient(cx+Math.cos(a)*radius,cy+Math.sin(a)*radius,cx+Math.cos(b)*radius,cy+Math.sin(b)*radius);
-   gradient.addColorStop(0,'rgba(205,254,255,0)');gradient.addColorStop(.5,'rgba(205,254,255,.10)');gradient.addColorStop(1,'rgba(205,254,255,0)');
-   ctx.strokeStyle=gradient;ctx.beginPath();ctx.arc(cx,cy,radius,a,b);ctx.stroke();
+  const flows=burst.flows||(burst.flows=createFlowBands(burst.flowSeed,burst.mode,burst.style));
+  for(let ring=0;ring<flows.length;ring++){
+   if(!crowded&&ring===0&&!burst.outerAlive)continue;
+   const band=crowded?rippleState(elapsed,1,true):rippleState(elapsed,ring,burst.birthNested);if(!band)continue;
+   const radius=band.radius*scale;
+   if(radius<near-3||radius>far+3)continue;
+   const thickness=crowded?Math.max(1,CROWDED_WIDTH*scale):ring===0?band.width*scale:Math.max(band.width*scale,.95*width/canvas.width);
+   if(thickness<=0)continue;
+   const flow=flows[ring],travel=burst.style===1?.65:burst.style===2?1.45:1;
+   const angle=flow.start+flow.direction*flow.speed*elapsed*travel,cos=Math.cos(angle),sin=Math.sin(angle),half=thickness*.5;
+   const tail=angle-flow.direction*flow.arc;
+   let gradient;
+   if(typeof ctx.createConicGradient==='function'){
+    gradient=ctx.createConicGradient(tail,cx,cy);
+    for(const stop of flow.stops)gradient.addColorStop(stop.offset,stop.color);
+   }else{
+    // Older Canvas implementations keep the same moving tapered geometry.
+    gradient=ctx.createLinearGradient(cx+Math.cos(tail)*radius,cy+Math.sin(tail)*radius,cx+cos*radius,cy+sin*radius);
+    for(const stop of flow.linearStops)gradient.addColorStop(stop.offset,stop.color);
+   }
+   ctx.globalAlpha=(crowded?band.opacity/.62:band.opacity)*visualWeight(burst,now)*birthOpacity*(!crowded&&burst.touch?.82:1);
+   ctx.fillStyle=gradient;ctx.beginPath();
+   // These cached points describe only this arc. Its centerline stays circular;
+   // head and tail meet at zero width, so no circle masking or extra pass is needed.
+   const points=flow.points;
+   for(let n=0;n<=flow.segments;n++){
+    const at=n*3,x=points[at]*cos-points[at+1]*sin,y=points[at]*sin+points[at+1]*cos,r=radius+half*points[at+2];
+    if(n===0)ctx.moveTo(cx+x*r,cy+y*r);else ctx.lineTo(cx+x*r,cy+y*r);
+   }
+   for(let n=flow.segments;n>=0;n--){
+    const at=n*3,x=points[at]*cos-points[at+1]*sin,y=points[at]*sin+points[at+1]*cos,r=Math.max(0,radius-half*points[at+2]);
+    ctx.lineTo(cx+x*r,cy+y*r);
+   }
+   ctx.closePath();ctx.fill();
+   if(!crowded)visibleGroups.add(burst.groupId);
+   if(burst.firstDrawAt===null){burst.firstDrawAt=now;if(burst.retiredAt!==null)burst.retiredAt=Math.max(burst.retiredAt,now+MIN_VISIBLE_MS);}
   }
-  if(burst.firstDrawAt===null){burst.firstDrawAt=now;if(burst.retiredAt!==null)burst.retiredAt=Math.max(burst.retiredAt,now+MIN_VISIBLE_MS);}
  }
  ctx.restore();
+ canvas.dataset.groups=String(visibleGroups.size);canvas.dataset.mainGroups=String(new Set(bursts.filter(b=>b.outerAlive&&b.retiredAt===null).map(b=>b.groupId)).size);canvas.dataset.frameTexturePixels='0';
 }
 function updateAmbientWaves(now){
  for(let i=ambientWaves.length-1;i>=0;i--)if(now-ambientWaves[i].born>=AUTO_LIFE)ambientWaves.splice(i,1);
 }
-function drawAmbientWaves(now,viewLeft,viewTop){
+function drawAmbientWaves(now,viewLeft,viewTop,viewportLeft,viewportTop){
  // Filled annular areas, not stroked outlines, sparkles, trails or SDF masks.
  // Native paths clip at the viewport; a fivefold radius needs no large texture.
- const paint=ambientCtx;if(!paint)return;
+ const visibleBands=[],paint=ambientCtx;if(!paint)return visibleBands;
  paint.save();paint.globalCompositeOperation='source-over';paint.globalAlpha=1;paint.fillStyle='#ffffff';
  for(const wave of ambientWaves){
   const elapsed=Math.max(0,now-wave.born),progress=Math.min(1,elapsed/AUTO_EXPAND_MS);
@@ -473,10 +254,15 @@ function drawAmbientWaves(now,viewLeft,viewTop){
    if(outside-inside<=0||outside<near-1||inside>far+1){outside=inside;continue;}
    paint.beginPath();paint.arc(cx,cy,outside,0,Math.PI*2);
    if(inside>0){paint.moveTo(cx+inside,cy);paint.arc(cx,cy,inside,0,Math.PI*2,true);}
-   paint.fill();outside=inside;
+   paint.fill();
+   // Reuse the exact filled annulus, including its shrinking width and inner
+   // radius clamped at zero. The text overlay consumes viewport CSS coordinates.
+   visibleBands.push({cx:cx+viewportLeft,cy:cy+viewportTop,outer:outside,inner:inside,elapsed:elapsed/1000,bandIndex:index});
+   outside=inside;
   }
  }
  paint.restore();
+ return visibleBands;
 }
 function emitAmbientWave(x,y){
  if(!autoAllowed())return;
@@ -493,11 +279,14 @@ function tick(now){
   lastDraw=now;ctx?.clearRect(0,0,width,height);ambientCtx?.clearRect(0,0,width,height);
   updateLifecycle(now);
   updateAmbientWaves(now);
-  for(const layer of [canvas,ambientCanvas]){layer.style.left=scrollX+'px';layer.style.top=scrollY+'px';}
+  const frameScrollX=scrollX,frameScrollY=scrollY;
+  for(const layer of [canvas,ambientCanvas]){layer.style.left=frameScrollX+'px';layer.style.top=frameScrollY+'px';}
   // Both layers share their CSS projection, with one layout read per frame.
-  const rect=projectionCanvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
-  if(ambientWaves.length)drawAmbientWaves(now,viewLeft,viewTop);
-  if(ctx&&bursts.length){drawBursts(now,viewLeft,viewTop);drawCrowdedBursts(now,viewLeft,viewTop);}
+  const rect=projectionCanvas.getBoundingClientRect(),viewLeft=frameScrollX+rect.left,viewTop=frameScrollY+rect.top;
+  const bands=ambientWaves.length?drawAmbientWaves(now,viewLeft,viewTop,rect.left,rect.top):[];
+  if(bands.length){ambientTextFlow.render(bands,{now,width,height,left:frameScrollX,top:frameScrollY});ambientTextActive=true;}
+  else clearAmbientTextFlow();
+  if(ctx&&bursts.length)drawFlowBursts(now,viewLeft,viewTop);
   else if(canvas.dataset.groups!=='0'){canvas.dataset.groups='0';canvas.dataset.mainGroups='0';canvas.dataset.frameTexturePixels='0';}
   painted=true;
  }
@@ -516,18 +305,17 @@ function emit(x,y,keyboard,touch,bornAt=performance.now(),fromReservation=false)
  // Capture containment at birth. A nested click stays a two-ring accent for
  // its entire life, even if its containing circle later fades or moves away.
  const birthNested=mode!=='crowded'&&bursts.some(other=>{
-  if(!other.liveSDF||other.groupId!==groupId)return false;
+  if(!other.outerAlive||other.groupId!==groupId)return false;
   const band=rippleState(visualElapsed(other,born),0);if(!band)return false;
   return band.opacity*visualWeight(other,born)*(band.width/RIPPLE_WIDTHS[0])>.008&&Math.hypot(pageX-other.pageX,pageY-other.pageY)<band.radius*(other.touch?.68:1);
  });
  if(mode!=='crowded')limitMainGroups(born,groupId);
  reserveVisualSlot(born);
- const variant=Math.floor(Math.random()*4);
- const flowSeed=Math.floor(Math.random()*1024);
- bursts.push({id:++nextBurstId,mode,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,birthNested,liveSDF:mode!=='crowded'&&!birthNested,flowSeed,variant,retiredAt:null,firstDrawAt:null});
+ const flowSeed=Math.floor(Math.random()*4294967296);
+ bursts.push({id:++nextBurstId,mode,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,birthNested,outerAlive:mode!=='crowded'&&!birthNested,flowSeed,retiredAt:null,firstDrawAt:null});
  canvas.dataset.clickSequence=String(clickSequence);if(mode!=='crowded'){canvas.dataset.currentGroup=String(groupId);canvas.dataset.currentStyle=String(style);}
- canvas.dataset.lastOuterEnabled=String(mode!=='crowded'&&!birthNested);canvas.dataset.overlapRule='partial-intersections-only';
- canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode=mode==='crowded'?'single-cyan-flow':'three-flowing-ripples';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.tailSlots=String(MAX_TAIL_BURSTS);
+ canvas.dataset.lastOuterEnabled=String(mode!=='crowded'&&!birthNested);canvas.dataset.overlapRule='uncut';
+ canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode=mode==='crowded'?'single-cyan-conic':'flowing-conic-arcs';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.tailSlots=String(MAX_TAIL_BURSTS);
  if(!frame)frame=requestAnimationFrame(tick);state('active');
  saveContinuity();
 }
@@ -618,7 +406,7 @@ function beginClickSequence(pageX,pageY,keyboard,touch,bornAt){
 }
 function saveContinuity(){
  const now=performance.now();
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:9,sequence:clickSequence,crowdedMode,savedAt:Date.now(),repeats:repeatQueue.map(action=>({x:action.pageX-scrollX,y:action.pageY-scrollY,remaining:action.remaining,wait:action.nextDue-now,keyboard:action.keyboard,touch:action.touch})),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch})),pulses:bursts.map(b=>({mode:b.mode||'normal',groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,flowSeed:b.flowSeed,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:10,sequence:clickSequence,crowdedMode,savedAt:Date.now(),repeats:repeatQueue.map(action=>({x:action.pageX-scrollX,y:action.pageY-scrollY,remaining:action.remaining,wait:action.nextDue-now,keyboard:action.keyboard,touch:action.touch})),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch})),pulses:bursts.map(b=>({mode:b.mode||'normal',groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,outerAlive:b.outerAlive,flowSeed:b.flowSeed,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
 }
 function restoreContinuity(){
  if(destroyed||suspended)return;
@@ -626,7 +414,7 @@ function restoreContinuity(){
  if(!saved||typeof saved!=='object')return;
  crowdedMode=saved.version>=9&&saved.crowdedMode===true;
  canvas.dataset.crowdedMode=String(crowdedMode);
- // Older automatic rings must not re-enter the manual SDF pool on navigation.
+ // Older automatic rings must not re-enter the manual pool on navigation.
  const pulses=Array.isArray(saved.pulses)?saved.pulses.filter(p=>p?.automatic!==true):[];
  const maxGroupId=Math.floor((Number.MAX_SAFE_INTEGER-CLICKS_PER_GROUP)/CLICKS_PER_GROUP);
  const validGroup=id=>Number.isSafeInteger(id)&&id>=0&&id<=maxGroupId;
@@ -644,7 +432,7 @@ function restoreContinuity(){
  canvas.dataset.currentGroup=String(currentGroup);canvas.dataset.currentStyle=String(currentGroup%STYLE_COUNT);
  // Consume carried visuals and reservations. Keep the tab's ordinal even if the gap
  // is long, every circle has expired, or motion is currently disabled.
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:9,sequence:clickSequence,crowdedMode,savedAt:Date.now(),pulses:[],waves:[],repeats:[]}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:10,sequence:clickSequence,crowdedMode,savedAt:Date.now(),pulses:[],waves:[],repeats:[]}));}catch{}
  if(reduced.matches||!ctx&&!ambientCtx)return;
  const gap=Date.now()-saved?.savedAt;
  if(!Number.isFinite(gap)||gap<0||gap>Math.max(RIPPLE_LIFE,AUTO_LIFE))return;
@@ -668,11 +456,11 @@ function restoreContinuity(){
   if(age>=life||retiredAge!==null&&(!Number.isFinite(retiredAge)||retiredAge>=EXIT_MS))continue;
   const variant=Math.max(0,Math.min(3,Math.floor(Number(p.variant)||0)));
   const groupId=mode!=='crowded'&&validGroup(p.groupId)?p.groupId:-1,style=groupId<0?0:groupId%STYLE_COUNT;
-  const flowSeed=Number.isInteger(p.flowSeed)&&p.flowSeed>=0&&p.flowSeed<1024?p.flowSeed:((variant*239+(Math.max(0,groupId)%1024)*73)%1024);
+  const flowSeed=Number.isInteger(p.flowSeed)&&p.flowSeed>=0&&p.flowSeed<4294967296?p.flowSeed:((variant*239+(Math.max(0,groupId)%1024)*73)%1024);
   const outer=mode==='crowded'||birthNested?null:rippleState(Math.max(.045,age/1000),0);
-  const liveSDF=!!outer&&outer.width>0&&(saved.version<6||p.liveSDF!==false);
+  const outerAlive=!!outer&&outer.width>0&&(saved.version<6||(p.outerAlive??p.liveSDF)!==false);
   const drawnAge=p.drawnAge==null?null:Number(p.drawnAge)+gap;
-  bursts.push({id:++nextBurstId,mode,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,birthNested,liveSDF,variant,flowSeed,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
+  bursts.push({id:++nextBurstId,mode,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,birthNested,outerAlive,flowSeed,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
  }
  if(ambientCtx)for(const wave of (Array.isArray(saved.waves)?saved.waves:[]).slice(-2)){
   if(!wave||!Number.isFinite(wave.x)||!Number.isFinite(wave.y)||!Number.isFinite(wave.age))continue;
@@ -748,7 +536,7 @@ listen(window,'blur',()=>{gesture=null;});
 listen(document,'pointerout',e=>{if(e.pointerType==='mouse'&&!e.relatedTarget)gesture=null;});
 listen(document,'visibilitychange',availability);listen(reduced,'change',availability);
 listen(window,'portfolio:enter',()=>{scheduleAuto();syncRepeats();});
-export function destroyClickEffects(){if(destroyed)return;saveContinuity();destroyed=true;stopAuto();stopRepeatTimer();repeatQueue.length=0;stop('destroyed',true);ripples.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();ambientCanvas.remove();}
+export function destroyClickEffects(){if(destroyed)return;saveContinuity();destroyed=true;stopAuto();stopRepeatTimer();repeatQueue.length=0;stop('destroyed',true);ambientTextFlow.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();ambientCanvas.remove();}
 listen(window,'pagehide',e=>{stopAuto();saveContinuity();suspended=true;stopRepeatTimer();if(e.persisted)availability();else destroyClickEffects();});
 // A normal load already consumes its snapshot below. BFCache needs one fresh
 // restore after clearing its retained in-memory queue, never a second replay.

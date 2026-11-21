@@ -1,6 +1,7 @@
-import { profile, projects } from './content.js';
+import { bilibiliVideoUrl, profile, projects } from './content.js';
 import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
+import { setupWorkPreload } from './work-preload.js';
 import './player-nebula.js';
 
 const $ = (id) => document.getElementById(id);
@@ -162,8 +163,14 @@ function selectProject(project, shouldScroll = false) {
   $('project-title').textContent = project.title;
   $('project-platform').textContent = categoryName(project.category) + (project.subcategory === 'vehicle' ? ' / 车辆' : '');
   $('project-description').textContent = project.description || '';
-  $('project-detail-link').href = `./work.html?id=${encodeURIComponent(project.id)}`;
-  $('project-detail-link').hidden = false;
+  $('project-description').hidden = !project.description;
+  const detailLink = $('project-detail-link');
+  detailLink.hidden = project.externalOnly === true;
+  if (project.externalOnly) detailLink.removeAttribute('href');
+  else {
+    detailLink.href = `./work.html?id=${encodeURIComponent(project.id)}`;
+    detailLink.dataset.preloadWork = '';
+  }
   $('project-credits').replaceChildren();
   $('project-credits').hidden = !project.references?.length;
   for (const reference of project.references || []) {
@@ -173,7 +180,7 @@ function selectProject(project, shouldScroll = false) {
     link.rel = 'noopener noreferrer';
     $('project-credits').append(link);
   }
-  $('project-link').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/${Number.isFinite(project.startTime) && project.startTime > 0 ? `?t=${project.startTime}` : ''}`;
+  $('project-link').href = project.videoSrc || bilibiliVideoUrl(project);
   $('project-link').textContent = project.videoSrc ? '打开视频 ↗' : '在 Bilibili 打开 ↗';
   $('preview-index').textContent = `${String(projects.indexOf(project) + 1).padStart(2,'0')} / ${String(projects.length).padStart(2,'0')}`;
   $('playback-help').hidden = true;
@@ -199,6 +206,7 @@ function showEmpty() {
   $('project-title').textContent = '等待下一次灵感登场';
   $('project-platform').textContent = activeCategory === 'all' ? 'UNITY / UNREAL ENGINE / TD' : categoryName(activeCategory);
   $('project-description').textContent = '此分类的作品将在这里更新。';
+  $('project-description').hidden = false;
   $('project-credits').replaceChildren();
   $('project-credits').hidden = true;
   $('preview-index').textContent = '— / —';
@@ -232,6 +240,20 @@ function createSelectionFrame(index) {
   selectionFrames.add(frame);
   return frame;
 }
+function setProjectDestination(link, project) {
+  if (project.externalOnly) {
+    link.href = bilibiliVideoUrl(project);
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.setAttribute('aria-label', `在 Bilibili 观看 ${project.title}`);
+  } else {
+    link.href = `./work.html?id=${encodeURIComponent(project.id)}`;
+    link.dataset.preloadWork = '';
+    link.setAttribute('aria-label', `查看 ${project.title} 详情`);
+  }
+}
+document.querySelector('.selection-tip').textContent = '悬停预览。单个作品可查看详情，合集直接前往 Bilibili。';
+
 function renderProjects() {
   const visible = projects.filter(project => (activeCategory === 'all' || project.category === activeCategory) && (activeCategory !== 'unreal' || activeSubcategory === 'all' || project.subcategory === activeSubcategory));
   $('ue-subcategories').hidden = activeCategory !== 'unreal';
@@ -243,9 +265,8 @@ function renderProjects() {
   $('project-count').textContent = String(visible.length).padStart(2,'0');
   for (const project of visible) {
     const button = element('a','project-card');
-    button.href = `./work.html?id=${encodeURIComponent(project.id)}`;
+    setProjectDestination(button, project);
     button.dataset.id = project.id;
-    button.setAttribute('aria-label', `查看 ${project.title} 详情`);
     button.dataset.selected = String(selected?.id === project.id);
     button.setAttribute('aria-current', String(selected?.id === project.id));
     const img = element('img');
@@ -264,6 +285,7 @@ function renderProjects() {
     const frame = createSelectionFrame(visible.indexOf(project));
     button.append(media,label,frame);
     button.addEventListener('click', (event) => {
+      if (project.externalOnly) return;
       // Touch users can preview first, then use the detail link or tap again.
       if (matchMedia('(hover: none)').matches && selected?.id !== project.id) {
         event.preventDefault();
@@ -476,8 +498,7 @@ function mountHomeCardFilm(card, media) {
 }
 function createProjectLink(project) {
   const card = element('a', 'project-card');
-  card.href = `./work.html?id=${encodeURIComponent(project.id)}`;
-  card.setAttribute('aria-label', `查看 ${project.title} 详情`);
+  setProjectDestination(card, project);
   const image = element('img');
   image.src = project.cover;
   image.alt = '';
@@ -530,6 +551,12 @@ for (const contact of document.querySelectorAll('[data-copy-value]')) {
 }
 renderProjects();
 showRoute();
+const initialGrid = activeView === 'top' ? $('home-project-grid') : activeView === 'works' ? $('project-grid') : null;
+const initialDetailLinks = initialGrid ? [...initialGrid.querySelectorAll('a[data-preload-work]')].slice(0, 2) : [];
+setupWorkPreload(
+  initialDetailLinks.map(link => link.href),
+  initialDetailLinks.map(link => link.querySelector('img')?.src).filter(Boolean),
+);
 // A cold document's native fragment scroll can run after module evaluation.
 // Reapply the heading offset once after load, unless the visitor has moved on.
 if (/^#home-projects(?:-title)?$/.test(location.hash)) {
