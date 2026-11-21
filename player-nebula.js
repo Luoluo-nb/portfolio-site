@@ -4,6 +4,8 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const WIDTH = 192, HEIGHT = 108, FRAME_COUNT = 96, FPS = 8;
 const frames = [], compactFrames = [], alphaFrames = [], compactAlphaFrames = [], instances = new Set();
 const controlField = new Float32Array(WIDTH * HEIGHT);
+const composedFrames = new Map(), MAX_COMPOSED_FRAMES = 384;
+let controlImage;
 let canvas, context, building = false, buildFailed = false, pendingBuild = false, suspended = false;
 const smooth = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 // Fixed noise lattice avoids per-frame random jitter and expensive pixel hashes.
@@ -44,9 +46,15 @@ function makeFrame(index) {
   alphaFrames.push(regular); compactAlphaFrames.push(compact); frames.push(regularUrl);
 }
 function composedTexture(index, compact, controls) {
-  if (controls <= .001) return (compact ? compactFrames : frames)[index];
+  const step = Math.round(Math.max(0, Math.min(1, controls)) * 8);
+  if (!step) return (compact ? compactFrames : frames)[index];
+  const key = `${compact ? 1 : 0}:${index}:${step}`;
+  if (composedFrames.has(key)) {
+    const cached = composedFrames.get(key); composedFrames.delete(key); composedFrames.set(key, cached); return cached;
+  }
+  controls = step / 8;
   const source = (compact ? compactAlphaFrames : alphaFrames)[index];
-  const image = context.createImageData(WIDTH, HEIGHT), pixels = image.data;
+  const image = controlImage || (controlImage = context.createImageData(WIDTH, HEIGHT)), pixels = image.data;
   for (let i = 0; i < source.length; i++) {
     pixels[i * 4] = pixels[i * 4 + 1] = pixels[i * 4 + 2] = 255;
     // Readability assistance is blended into the same mask, never a separate
@@ -54,7 +62,9 @@ function composedTexture(index, compact, controls) {
     pixels[i * 4 + 3] = Math.round(source[i] + (255 - source[i]) * controlField[i] * controls);
   }
   context.putImageData(image, 0, 0);
-  return `url("${canvas.toDataURL('image/png')}")`;
+  const texture = `url("${canvas.toDataURL('image/png')}")`;
+  if (composedFrames.size >= MAX_COMPOSED_FRAMES) composedFrames.delete(composedFrames.keys().next().value);
+  composedFrames.set(key, texture); return texture;
 }
 function notify() { for (const instance of instances) instance.update(); }
 function queueBuild() {
@@ -97,6 +107,7 @@ function attachMask(root) {
     if (target !== controlTarget) { const now = performance.now(); controlStart = controlsAt(now); controlTarget = target; controlAt = now; }
   }
   function apply(index, controls = controlsAt(performance.now())) {
+    controls = Math.round(Math.max(0, Math.min(1, controls)) * 8) / 8;
     if (!frames[index] || (index === lastFrame && Math.abs(controls - lastControls) < .001 && compact === lastCompact)) return;
     root.style.setProperty('--player-noise-mask', composedTexture(index, compact, controls));
     root.dataset.playerMaskControls = controls.toFixed(3); lastControls = controls; lastCompact = compact;

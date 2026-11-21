@@ -11,6 +11,7 @@
  * Lines use CSS-pixel widths; all four edges dissolve well before the boundary.
  */
 
+const FRAME_INTERVAL=1000/24;
 const vertexSource = `attribute vec2 aPosition;
 void main(){gl_Position=vec4(aPosition,0.,1.);}`;
 const fragmentSource = `
@@ -75,6 +76,10 @@ float NetLayer(vec2 st,float n,float t,float pixel,float width){
 }
 void main(){
   vec2 vUv=gl_FragCoord.xy/max(uResolution,vec2(1.));
+  vec2 edge=min(vUv,1.-vUv);
+  // Resolve fully transparent edges before evaluating any moving cells.
+  float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.20,edge.y),1.2);
+  if(dissolve<=0.){gl_FragColor=vec4(0.);return;}
   // Wide strips use a wider projection than the original square composition.
   // Expanding the strip reveals more cells instead of stretching the network.
   float projection=max(min(uCssSize.x,1328.)*.52,1.);
@@ -88,6 +93,7 @@ void main(){
       float n=float(layer)/uLayers,z=fract(t+n);
       float size=mix(8.64,1.68,z);
       float fade=smoothstep(.04,.6,z)*(1.-smoothstep(.8,1.,z));
+      if(fade<=0.)continue;
       float foreground=smoothstep(.58,.9,z);
       float rasterScale=max(1.,uCssSize.y/max(uResolution.y,1.));
       float width=max(mix(1.05,2.15,foreground),.95*rasterScale);
@@ -98,9 +104,6 @@ void main(){
       light+=tint*net*fade*.95;
     }
   }
-  vec2 edge=min(vUv,1.-vUv);
-  // Early, deterministic feathering: no noise-driven boundary flicker.
-  float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.20,edge.y),1.2);
   light*=dissolve;
   float energy=max(light.r,max(light.g,light.b));
   float alpha=.72*.86*(1.-exp(-energy/.86));
@@ -112,7 +115,7 @@ void main(){
 export class HomeNetwork {
   constructor(container) {
     if (!(container instanceof HTMLElement)) throw new TypeError('HomeNetwork requires a transition container.');
-    this.container=container;this.listeners=[];this.time=17.3;this.frame=0;this.lastDraw=0;
+    this.container=container;this.listeners=[];this.time=17.3;this.frame=0;this.lastDraw=0;this.nextDraw=0;
     this.anchor=document.querySelector('#top .hero-scroll');
     this.hero=document.querySelector('#top');this.heroCopy=document.querySelector('#top .hero-copy');
     this.featured=container.closest('.home-featured');this.heading=this.featured?.querySelector('.home-featured-heading');
@@ -176,7 +179,7 @@ export class HomeNetwork {
     if(!this.intersectionObserver)this.inView=box.width>0&&box.height>0&&box.bottom>0&&box.top<innerHeight;
     // The smaller transition gets enough samples for solid diagonal strokes;
     // the capped buffer still avoids full-screen device-pixel rendering.
-    const compact=box.width<=600;this.layers=compact?3:4;this.budget=compact?280000:720000;
+    const compact=box.width<=600;this.layers=compact?3:4;this.budget=compact?180000:480000;
     this.canvas.dataset.layers=String(this.layers);this.canvas.dataset.pixelBudget=String(this.budget);
     const scale=Math.min(devicePixelRatio||1,1.5,Math.sqrt(this.budget/Math.max(1,box.width*box.height)));
     const w=Math.max(1,Math.floor(box.width*scale)),h=Math.max(1,Math.floor(box.height*scale));
@@ -244,12 +247,17 @@ export class HomeNetwork {
   }
   _tick(now){
     this.frame=0;if(!this._allowed()||this.motion.matches){this.canvas.dataset.running='false';return;}
-    const elapsed=this.lastDraw?now-this.lastDraw:34;
-    if(elapsed>=1000/30){const dt=Math.min(elapsed,100)/1000;this.lastDraw=now;this.time+=dt;const ease=1-Math.exp(-dt*4);this.pointer.x+=(this.pointer.targetX-this.pointer.x)*ease;this.pointer.y+=(this.pointer.targetY-this.pointer.y)*ease;this._draw();}
+    const elapsed=this.lastDraw?now-this.lastDraw:FRAME_INTERVAL;
+    if(!this.nextDraw||now>=this.nextDraw){
+      // Keep a deadline separate from real elapsed time: 24 fps remains 24 fps
+      // on a 60 Hz screen, without accelerating the animation's clock.
+      this.nextDraw=this.nextDraw?now+FRAME_INTERVAL-((now-this.nextDraw)%FRAME_INTERVAL):now+FRAME_INTERVAL;
+      const dt=Math.min(elapsed,100)/1000;this.lastDraw=now;this.time+=dt;const ease=1-Math.exp(-dt*4);this.pointer.x+=(this.pointer.targetX-this.pointer.x)*ease;this.pointer.y+=(this.pointer.targetY-this.pointer.y)*ease;this._draw();
+    }
     this.frame=requestAnimationFrame(this._tick);
   }
   _allowed(){return !this.destroyed&&this.pageActive&&!document.hidden&&this.inView&&this.size.width>0&&this.size.height>0;}
-  _stop(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.lastDraw=0;this.canvas.dataset.running='false';}
+  _stop(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.lastDraw=0;this.nextDraw=0;this.canvas.dataset.running='false';}
   _sync(){
     this._stop();if(!this._allowed())return;
     if(!this.gl&&!this.fallbackCanvas&&!this.lost)this._initialize();

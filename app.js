@@ -546,4 +546,5 @@ if (/^#home-projects(?:-title)?$/.test(location.hash)) {
   else window.addEventListener('load', settleFragment, {once:true});
 }
 window.addEventListener('pagehide', (event) => { if (!event.persisted) starfield?.destroy(); });
+window.dispatchEvent(new Event('portfolio:app-ready'));
 

@@ -8,18 +8,19 @@ canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100vh;p
 document.body.append(canvas);
 const ctx = canvas.getContext('2d', {alpha:true});
 const outerSurface=document.createElement('canvas'),outerContext=outerSurface.getContext('2d',{alpha:true});
-const bursts = [], ambientWaves = [], cleanups = [], pending = new Set();
+const bursts = [], ambientWaves = [], repeatQueue = [], cleanups = [], pending = new Set();
 // Three independent fifteen-click groups own the live SDF slots. Inner-only
 // afterglow and short group exits have their own bounded visual allowance.
 const CLICKS_PER_GROUP=15,STYLE_COUNT=3,MAX_MAIN_GROUPS=3;
 const MAX_BURSTS=CLICKS_PER_GROUP*MAX_MAIN_GROUPS,MAX_TAIL_BURSTS=90,MAX_VISUAL_BURSTS=MAX_BURSTS+MAX_TAIL_BURSTS;
 const EXIT_MS=280,MIN_VISIBLE_MS=180,MATERIAL_BATCH_SIZE=8,MATERIAL_PIXEL_BUDGET=240000,FEATHER_PIXEL_BUDGET=1200000;
 const AUTO_MIN_MS=6000,AUTO_MAX_MS=12000;
+const REPEAT_DELAY_MS=200,MAX_PENDING_REPEATS=90;
 const CONTINUITY_KEY='portfolio-click-continuity-v1';
 // This ordinal belongs to the tab, not to the currently visible circles.
 let clickSequence=0;
 let width = 0, height = 0, frame = 0, lastDraw = 0, gesture = null, destroyed = false, suspended = false;
-let autoTimer=0;
+let autoTimer=0,repeatTimer=0,repeatsPaused=false;
 const ignored = 'input:not([type=button]):not([type=submit]):not([type=reset]),select,textarea,label,[contenteditable="true"],[role=slider],[data-click-effects="off"]';
 const interactive = 'a[href],button,summary,[role=button],input[type=button],input[type=submit],input[type=reset]';
 const listen = (target,type,fn,options) => { target.addEventListener(type,fn,options); cleanups.push(()=>target.removeEventListener(type,fn,options)); };
@@ -43,21 +44,24 @@ function availability(){
  canvas.hidden=disabled;
  stop(!ctx?'unsupported':reduced.matches?'disabled-motion':disabled?'suspended':'idle',true,!!ctx&&!reduced.matches);
  if(!disabled){resize();updateLifecycle(performance.now());updateAmbientWaves(performance.now());if(bursts.length||ambientWaves.length){frame=requestAnimationFrame(tick);state('active');}scheduleAuto();}
+ syncRepeats();
 }
 // One material contains exactly three travelling bands, with no center flash,
 // cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
 const RIPPLE_RADIUS=825/1.9,RIPPLE_SIZE=RIPPLE_RADIUS*2+42,RIPPLE_BASE_SPEED=1/3/1.5,RIPPLE_SPEED=RIPPLE_BASE_SPEED*1.3;
 const RIPPLE_DELAY=.14/RIPPLE_SPEED,RIPPLE_DURATION=1.42/RIPPLE_SPEED,RIPPLE_EASE=1.35;
-// A continuous stroke needs pixel coverage, not a subpixel annulus multiplied
-// by another low-resolution alpha texture. Keep a readable floor as it ages.
-const RIPPLE_WIDTHS=[2.4,1.3,1.7],RIPPLE_MIN_WIDTHS=[1.2,.9,1.05];
-// Fade and expansion use independent clocks: half the previous lifetime does
-// not accidentally double the requested 1.3x travel speed. Inner rings outlive
-// the SDF contour; shortening its alpha also releases its cuts smoothly.
+// Inner lines keep their readable floor. The broad outer band exits by width
+// alone, so its geometry must be allowed to reach exactly zero.
+const RIPPLE_WIDTHS=[80,1.3,1.7],RIPPLE_MIN_WIDTHS=[0,.9,1.05];
+// Expansion keeps its requested 1.3x travel speed. The outer band reaches zero
+// width at its shorter lifetime; the unchanged inner lines outlive the SDF.
 const RIPPLE_LIFE=(1.42+.14*2)/RIPPLE_BASE_SPEED*1000*.5,OUTER_LIFE_SHARE=.56;
+const OUTER_END_RADIUS=8+(RIPPLE_RADIUS-8)*(1-(1-Math.min(1,RIPPLE_LIFE*OUTER_LIFE_SHARE/1000/RIPPLE_DURATION))**RIPPLE_EASE);
 // Ambient color planes have their own clock and pool, never an SDF group.
-const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS+500;
-const AUTO_BANDS=[{width:200,gap:0,color:'65,162,207',alpha:.28},{width:5,gap:8,color:'101,199,220',alpha:.22}];
+const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS;
+const AUTO_BANDS=[{width:200,gap:0},{width:5,gap:8}];
+// One opaque, related pair is chosen at birth and carried across navigation.
+const AUTO_PALETTES=[['#a5e5e8','#d5f5f5'],['#b2d2f4','#e1edfc'],['#d2c6ed','#ebe4f8'],['#edc9dc','#f8e6ef'],['#edf2fa','#ffffff']];
 const OUTER_FEATHER=18;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
@@ -72,8 +76,9 @@ function rippleState(elapsed,index,birthNested=false){
  if(age<=0||age>=1||fadeAge>=1)return null;
  // Ease-out preserves the fast start and progressively slower expansion.
  const radius=8+(RIPPLE_RADIUS-8)*(1-(1-age)**RIPPLE_EASE);
- return {age,radius,width:Math.max(RIPPLE_MIN_WIDTHS[index],RIPPLE_WIDTHS[index]*rippleWidthScale(radius)),
-  opacity:smooth(0,.115,sinceBirth)*(1-fadeAge)**(index===0?1.1:.62)*[.92,.62,.46][index]};
+ const width=index===0?RIPPLE_WIDTHS[0]*(1-smooth(.5,1,radius/OUTER_END_RADIUS)):Math.max(RIPPLE_MIN_WIDTHS[index],RIPPLE_WIDTHS[index]*rippleWidthScale(radius));
+ return {age,radius,width,
+  opacity:smooth(0,.115,sinceBirth)*(index===0?1:(1-fadeAge)**.62)*[.92,.62,.46][index]};
 }
 // Birth shape never changes when SDF influence dies. A nested first inner ring
 // starts immediately, while all inner afterglow keeps the same 3.825s lifetime.
@@ -87,6 +92,11 @@ precision mediump float;
 #endif
 varying vec2 vUv;uniform vec2 uSize;uniform float uCount,uScale,uPixel,uStyle;
 uniform vec4 uPulse[8];
+uniform vec4 uFlowSeed0,uFlowSeed1;
+float lightSpot(float angle,float center,float spread){
+ float distance=abs(mod(angle-center+3.14159265359,6.28318530718)-3.14159265359);
+ return exp(-.5*pow(distance/spread,2.));
+}
 void main(){
  vec2 point=vec2(vUv.x,1.-vUv.y)*uSize;
  vec3 rgb=vec3(0.);float opacity=0.;
@@ -97,8 +107,23 @@ void main(){
   alphas[pulse]=0.;colors[pulse]=vec3(0.);
   if(float(pulse)>=uCount)continue;
    vec2 p=(point-uPulse[pulse].xy)/uScale;
-   float r=length(p),angle=atan(p.y,p.x),elapsed=uPulse[pulse].z,seed=mod(floor(uPulse[pulse].w*.5),4.)*1.37;
+   float r=length(p),angle=atan(p.y,p.x),elapsed=uPulse[pulse].z;
    float exitWeight=mod(uPulse[pulse].w,2.);
+   // A bounded integer seed uses exact small divisions even on mediump GPUs.
+   float seed=pulse==0?uFlowSeed0.x:pulse==1?uFlowSeed0.y:pulse==2?uFlowSeed0.z:pulse==3?uFlowSeed0.w:pulse==4?uFlowSeed1.x:pulse==5?uFlowSeed1.y:pulse==6?uFlowSeed1.z:uFlowSeed1.w;
+   float direction=mod(floor(seed/256.),2.)<.5?-1.:1.;
+   float start=mod(seed,32.)*6.28318530718/32.;
+   float speed=.35+mod(floor(seed/32.),8.)*.08;
+   float spread=.16+mod(floor(seed/512.),2.)*.12;
+   float secondSpeed=.28+mod(floor(seed/16.),6.)*.09;
+   float secondSpread=.14+mod(floor(seed/128.),3.)*.08;
+   float separation=(.20+mod(floor(seed/4.),7.)*.07)*6.28318530718;
+   float travel=uStyle>.5&&uStyle<1.5?.65:uStyle>1.5?1.45:1.;
+   float spreadScale=uStyle>.5&&uStyle<1.5?1.6:uStyle>1.5?.65:1.;
+   float highlight=lightSpot(angle,start+direction*speed*elapsed*travel,spread*spreadScale);
+   if(mod(floor(seed/64.),2.)>.5)highlight=max(highlight,lightSpot(angle,start+separation-direction*secondSpeed*elapsed*travel,secondSpread*spreadScale)*.88);
+   float coreScale=uStyle>.5&&uStyle<1.5?1.12:uStyle>1.5?.80:1.;
+   vec3 localColor=uStyle>.5&&uStyle<1.5?vec3(.94,.985,1.):uStyle>1.5?vec3(1.,.975,.94):vec3(1.);
   for(int i=0;i<3;i++){
    if(i==0&&uPulse[pulse].w>=16.)continue;
    float baseWidth=(i==0?${RIPPLE_WIDTHS[0].toFixed(8)}:i==1?${RIPPLE_WIDTHS[1].toFixed(8)}:${RIPPLE_WIDTHS[2].toFixed(8)})*uScale;
@@ -110,28 +135,12 @@ void main(){
    float radius=8.+${(RIPPLE_RADIUS-8).toFixed(8)}*(1.-pow(1.-age,${RIPPLE_EASE}));
    float halfRadius=${(RIPPLE_RADIUS*.1).toFixed(8)};
    float widthScale=radius<=halfRadius?1.-.5*smoothstep(8.,halfRadius,radius):.5-.25*smoothstep(halfRadius,${RIPPLE_RADIUS.toFixed(1)},radius);
-   float minWidth=(i==0?1.2:i==1?.9:1.05)*uScale;
-   float width=max(minWidth,baseWidth*widthScale);
-   float strength=i==0?.92:i==1?.62:.46,phase=elapsed+index*.31;
-   // The geometry stays circular. Flow affects only the color and luminance.
-   float streamA=.5+.5*sin(angle*5.-phase*8.2+sin(angle*3.+phase*2.7)*.65+seed);
-   float streamB=.5+.5*sin(angle*3.+phase*2.5);
-   float flow=pow(streamA,.65)*.62+streamB*.38;
-   float sweep=pow(.5+.5*sin(angle*3.-phase*4.8+seed+index*1.7),3.);
-   float luminance=i==0?.78+flow*.35:.66+flow*.30+sweep*.24;
-   float coreScale=1.;vec3 localColor=vec3(1.);
-   if(uStyle>.5&&uStyle<1.5){
-    // Broad, softly bundled light arcs; geometry is still a complete circle.
-    float bundle=pow(.5+.5*sin(angle*2.+phase*2.4+sin(angle*3.+phase*.7)*.45+seed),2.2);
-    luminance=i==0?.48+bundle*.95:.58+bundle*.95+pow(streamB,3.)*.16;
-    coreScale=1.12;localColor=vec3(.94,.985,1.);
-   }else if(uStyle>1.5){
-    // Narrower light pulses travel inside the same circular contour.
-    float pulseLight=pow(.5+.5*sin(angle*8.-phase*9.4+sin(angle*2.+phase)*.3+seed),10.);
-    luminance=i==0?.54+pulseLight*1.05:.58+pulseLight*1.10;
-    coreScale=.80;localColor=vec3(1.,.975,.94);
-   }
-   float localFade=smoothstep(0.,.115,sinceBirth)*pow(1.-fadeAge,i==0?1.1:.62)*strength*luminance*exitWeight;
+   float minWidth=(i==0?0.:i==1?.9:1.05)*uScale;
+   float width=i==0?baseWidth*(1.-smoothstep(.5,1.,radius/${OUTER_END_RADIUS.toFixed(8)})):max(minWidth,baseWidth*widthScale);
+   float strength=i==0?.92:i==1?.62:.46;
+   // One or two non-uniform light locations are shared by this pulse's rings.
+   float luminance=uStyle>.5&&uStyle<1.5?(i==0?.48:.58)+highlight*.95:uStyle>1.5?(i==0?.54:.58)+highlight*1.10:(i==0?.78:.66)+highlight*.55;
+   float localFade=smoothstep(0.,.115,sinceBirth)*(i==0?1.:pow(1.-fadeAge,.62))*strength*luminance*exitWeight;
    // This bounded texture carries luminance only. The final native circular
    // path clip sets the radius-dependent widths without a magnified AA halo.
    float core=exp(-.5*pow(abs(r-radius)*uScale/max(width*.6*coreScale,uPixel*1.1),2.));
@@ -149,24 +158,22 @@ void main(){
 // lookups avoid evaluating many sine fields per pixel; native cuts stay separate.
 function bandTable(elapsed,index,seed,style,birthNested){
  const ring=rippleState(elapsed,index,birthNested);if(!ring)return null;
- const values=[],phase=elapsed+index*.31;
+ const values=[],tau=Math.PI*2;
  const coreScale=style===1?1.12:style===2?.80:1;
  const color=style===1?[.94,.985,1]:style===2?[1,.975,.94]:[1,1,1];
+ const direction=Math.floor(seed/256)%2<.5?-1:1,start=seed%32*tau/32;
+ const speed=.35+(Math.floor(seed/32)%8)*.08,spread=.16+(Math.floor(seed/512)%2)*.12;
+ const secondSpeed=.28+(Math.floor(seed/16)%6)*.09,secondSpread=.14+(Math.floor(seed/128)%3)*.08;
+ const separation=(.20+(Math.floor(seed/4)%7)*.07)*tau,hasSecond=Math.floor(seed/64)%2===1;
+ const travel=style===1?.65:style===2?1.45:1,spreadScale=style===1?1.6:style===2?.65:1;
+ const center=start+direction*speed*elapsed*travel,secondCenter=start+separation-direction*secondSpeed*elapsed*travel;
+ const spot=(angle,position,size)=>{const distance=Math.abs(((angle-position+Math.PI)%tau+tau)%tau-Math.PI);return Math.exp(-.5*(distance/size)**2);};
  for(let n=0;n<=256;n++){
   const angle=n/256*Math.PI*2;
   const radius=ring.radius,width=ring.width;
-  const streamA=.5+.5*Math.sin(angle*5-phase*8.2+Math.sin(angle*3+phase*2.7)*.65+seed);
-  const streamB=.5+.5*Math.sin(angle*3+phase*2.5);
-  const flow=streamA**.65*.62+streamB*.38;
-  const sweep=(.5+.5*Math.sin(angle*3-phase*4.8+seed+index*1.7))**3;
-  let luminance=index===0?.78+flow*.35:.66+flow*.30+sweep*.24;
-  if(style===1){
-   const bundle=(.5+.5*Math.sin(angle*2+phase*2.4+Math.sin(angle*3+phase*.7)*.45+seed))**2.2;
-   luminance=index===0?.48+bundle*.95:.58+bundle*.95+streamB**3*.16;
-  }else if(style===2){
-   const pulseLight=(.5+.5*Math.sin(angle*8-phase*9.4+Math.sin(angle*2+phase)*.3+seed))**10;
-   luminance=index===0?.54+pulseLight*1.05:.58+pulseLight*1.10;
-  }
+  let highlight=spot(angle,center,spread*spreadScale);
+  if(hasSecond)highlight=Math.max(highlight,spot(angle,secondCenter,secondSpread*spreadScale)*.88);
+  const luminance=style===1?(index===0?.48:.58)+highlight*.95:style===2?(index===0?.54:.58)+highlight*1.10:(index===0?.78:.66)+highlight*.55;
   values.push({radius,width,luminance});
  }
  return {values,opacity:ring.opacity,index,coreScale,color};
@@ -176,6 +183,7 @@ function createRippleRenderer(){
  const gl=surface.getContext('webgl',{alpha:true,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,preserveDrawingBuffer:false});
  let program=null,buffer=null,uniforms=null,lost=false;
  const cached=new Map();
+ const pulses=new Float32Array(32),flowSeeds=new Float32Array(8);
  function initialize(){
   if(!gl)return false;
   const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){gl.deleteShader(shader);return null;}return shader;};
@@ -185,20 +193,20 @@ function createRippleRenderer(){
   if(!gl.getProgramParameter(program,gl.LINK_STATUS)){gl.deleteProgram(program);program=null;return false;}
   gl.useProgram(program);buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(program,'aPosition');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-  uniforms=Object.fromEntries(['Size','Count','Scale','Pixel','Style','Pulse[0]'].map(name=>[name,gl.getUniformLocation(program,'u'+name)]));
+  uniforms=Object.fromEntries(['Size','Count','Scale','Pixel','Style','Pulse[0]','FlowSeed0','FlowSeed1'].map(name=>[name,gl.getUniformLocation(program,'u'+name)]));
   gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);return true;
  }
  initialize();
  if(gl){listen(surface,'webglcontextlost',e=>{e.preventDefault();lost=true;});listen(surface,'webglcontextrestored',()=>{lost=!initialize();});}
  function fallback(group,w,h,scale,now,budget){
-  const step=Math.floor((now-group[0].born)/50),key=`g${group[0].groupId}:s${group[0].style}:`+group.map(b=>`${b.id}@${b.localX.toFixed(1)},${b.localY.toFixed(1)}:n${+b.birthNested}:a${+b.liveSDF}:r${b.retiredAt}`).join('|')+`:${w.toFixed(1)},${h.toFixed(1)}:${step}:${Math.floor(budget)}`;
+  const step=Math.floor((now-group[0].born)/50),key=`g${group[0].groupId}:s${group[0].style}:`+group.map(b=>`${b.id}@${b.localX.toFixed(1)},${b.localY.toFixed(1)}:n${+b.birthNested}:a${+b.liveSDF}:f${b.flowSeed}:r${b.retiredAt}`).join('|')+`:${w.toFixed(1)},${h.toFixed(1)}:${step}:${Math.floor(budget)}`;
   if(cached.has(key))return cached.get(key);
   const sprite=document.createElement('canvas'),ratio=Math.min(.7,Math.sqrt(Math.min(12000,budget)/(w*h)));
   sprite.width=Math.max(1,Math.floor(w*ratio));sprite.height=Math.max(1,Math.floor(h*ratio));
   const paint=sprite.getContext('2d');if(!paint)return null;
   const data=paint.createImageData(sprite.width,sprite.height),pixel=Math.max(w/sprite.width,h/sprite.height);
   const sampleTime=group[0].born+(step+.5)*50;
-  const tables=group.map(b=>({x:b.localX,y:b.localY,weight:visualWeight(b,sampleTime),bands:[0,1,2].map(i=>i===0&&!b.liveSDF?null:bandTable(visualElapsed(b,sampleTime),i,b.seed,b.style,b.birthNested))}));
+  const tables=group.map(b=>({x:b.localX,y:b.localY,weight:visualWeight(b,sampleTime),bands:[0,1,2].map(i=>i===0&&!b.liveSDF?null:bandTable(visualElapsed(b,sampleTime),i,b.flowSeed,b.style,b.birthNested))}));
   for(let y=0;y<sprite.height;y++)for(let x=0;x<sprite.width;x++){
    const px=(x+.5)/sprite.width*w,py=(y+.5)/sprite.height*h;
    const geometry=tables.map(pulse=>{const dx=(px-pulse.x)/scale,dy=(py-pulse.y)/scale;return{radius:Math.hypot(dx,dy),angle:(Math.atan2(dy,dx)/Math.PI/2+1)%1*256};});
@@ -230,11 +238,12 @@ function createRippleRenderer(){
   if(this.mode==='cached'){const sprite=fallback(group,w,h,scale,now,budget);canvas.dataset.lastTilePixels=String(sprite? sprite.width*sprite.height:0);return sprite;}
   const ratio=Math.min(1,Math.sqrt(Math.min(140000,budget,480000/group.length)/(w*h))),pw=Math.max(1,Math.floor(w*ratio)),ph=Math.max(1,Math.floor(h*ratio));
   if(surface.width!==pw)surface.width=pw;if(surface.height!==ph)surface.height=ph;
-  const pulses=new Float32Array(32);
   // Separate bits preserve the immutable nested launch and the live outer state.
-  group.forEach((b,i)=>{pulses.set([b.localX,b.localY,visualElapsed(b,now),b.variant*2+visualWeight(b,now)+(b.birthNested?8:0)+(b.liveSDF?0:16)],i*4);});
+  group.forEach((b,i)=>{pulses.set([b.localX,b.localY,visualElapsed(b,now),b.variant*2+visualWeight(b,now)+(b.birthNested?8:0)+(b.liveSDF?0:16)],i*4);flowSeeds[i]=b.flowSeed;});
   gl.viewport(0,0,pw,ph);gl.useProgram(program);gl.uniform2f(uniforms.Size,w,h);gl.uniform1f(uniforms.Count,group.length);gl.uniform1f(uniforms.Scale,scale);gl.uniform1f(uniforms.Pixel,Math.max(w/pw,h/ph));
   gl.uniform1f(uniforms.Style,group[0].style);
+  gl.uniform4f(uniforms.FlowSeed0,flowSeeds[0],flowSeeds[1],flowSeeds[2],flowSeeds[3]);
+  gl.uniform4f(uniforms.FlowSeed1,flowSeeds[4],flowSeeds[5],flowSeeds[6],flowSeeds[7]);
   gl.uniform4fv(uniforms['Pulse[0]'],pulses);gl.drawArrays(gl.TRIANGLES,0,6);
   canvas.dataset.lastTilePixels=String(pw*ph);canvas.dataset.maxTilePixels=String(Math.max(Number(canvas.dataset.maxTilePixels)||0,pw*ph));return surface;
  },destroy(){cached.clear();if(gl){if(buffer)gl.deleteBuffer(buffer);if(program)gl.deleteProgram(program);}program=null;}};
@@ -246,6 +255,8 @@ canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=St
 canvas.dataset.crossing='outer-rings-only';canvas.dataset.motion='circular-flow-only';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.clipMode='viewport-css-pixels';canvas.dataset.color='white';canvas.dataset.geometry='native-circular-clip';
 canvas.dataset.groupSize=String(CLICKS_PER_GROUP);canvas.dataset.styleCount=String(STYLE_COUNT);canvas.dataset.groupInteraction='same-group-id-only';
 canvas.dataset.maxMainGroups=String(MAX_MAIN_GROUPS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.maxVisuals=String(MAX_VISUAL_BURSTS);
+canvas.dataset.outerEndRadius=String(OUTER_END_RADIUS);canvas.dataset.outerWidthHalfRadius=String(OUTER_END_RADIUS*.5);canvas.dataset.outerExit='width-to-zero';
+canvas.dataset.flowHighlights='1-2';canvas.dataset.flowRandomness='fixed-per-birth';
 function updateLifecycle(now){
  for(let i=bursts.length-1;i>=0;i--){
   const burst=bursts[i];
@@ -253,7 +264,7 @@ function updateLifecycle(now){
   if(now-burst.born>=burst.life||(burst.retiredAt!==null&&now-burst.retiredAt>=EXIT_MS)){bursts.splice(i,1);continue;}
   if(burst.liveSDF&&now-burst.born>115){
    const outer=rippleState(visualElapsed(burst,now),0);
-   if(!outer||outer.opacity*visualWeight(burst,now)<=.008)burst.liveSDF=false;
+   if(!outer||outer.width<=0)burst.liveSDF=false;
   }
  }
 }
@@ -290,8 +301,8 @@ function outerCircleField(now,viewLeft,viewTop){
   if(!burst.liveSDF)continue;
   const scale=burst.touch?.68:1;
   const band=rippleState(visualElapsed(burst,now),0);if(!band)continue;
-  const opacity=band.opacity*visualWeight(burst,now);if(opacity<=.008)continue;
-  circles.push({id:burst.id,groupId:burst.groupId,x:burst.pageX-viewLeft,y:burst.pageY-viewTop,radius:band.radius*scale,opacity,scale});
+  const opacity=band.opacity*visualWeight(burst,now),widthWeight=band.width/RIPPLE_WIDTHS[0];if(opacity<=.008||widthWeight<=0)continue;
+  circles.push({id:burst.id,groupId:burst.groupId,x:burst.pageX-viewLeft,y:burst.pageY-viewTop,radius:band.radius*scale,opacity,widthWeight,scale});
  }
  canvas.dataset.cutoutResolution='independent-contour-alpha';
  return circles;
@@ -311,7 +322,7 @@ function featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders,budget){
  for(const other of occluders){
   const ox=other.x-left,oy=other.y-top,feather=OUTER_FEATHER;
   const mask=outerContext.createRadialGradient(ox,oy,other.radius,ox,oy,other.radius+feather);
-  const strength=smooth(.008,.18,other.opacity)*smooth(0,OUTER_FEATHER,other.partialDepth);
+  const strength=smooth(.008,.18,other.opacity)*other.widthWeight*smooth(0,OUTER_FEATHER,other.partialDepth);
   // sdCircle = distance - radius. Sample 1 - smoothstep(0, feather, sd)
   // as a radial alpha mask. Every disk is applied independently (no XOR).
   for(let stop=0;stop<=12;stop++){
@@ -323,10 +334,9 @@ function featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders,budget){
  outerContext.globalCompositeOperation='source-over';
  return {surface:outerSurface,x:left,y:top,w:tw,h:th};
 }
-function drawBursts(now){
+function drawBursts(now,viewLeft,viewTop){
  // Between material frames this absolute layer moves with native page scroll.
  // No scroll handler rebuilds the SDF or waits for the next 30fps material frame.
- canvas.style.left=scrollX+'px';canvas.style.top=scrollY+'px';
  canvas.dataset.godray='background-only';
  const clusters=[];
  for(const burst of bursts){
@@ -341,12 +351,11 @@ function drawBursts(now){
   cluster.sort((a,b)=>a.id-b.id);
   for(let offset=0;offset<cluster.length;offset+=MATERIAL_BATCH_SIZE)groups.push(cluster.slice(offset,offset+MATERIAL_BATCH_SIZE));
  }
- let visibleGroups=0,framePixels=0;const rect=canvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
+ let visibleGroups=0,framePixels=0;
  const circles=outerCircleField(now,viewLeft,viewTop);
  const outerCount=bursts.filter(b=>b.liveSDF&&rippleState(visualElapsed(b,now),0)).length;
  const featherBudget=FEATHER_PIXEL_BUDGET/Math.max(1,outerCount);
  for(const group of groups){
-  group.sort((a,b)=>a.id-b.id);
   const scale=group[0].touch?.68:1,pad=RIPPLE_SIZE*scale*.5;
   // Crop the sample domain, never stretch the geometry. Rings may leave the
   // screen without allocating their full RIPPLE_SIZE-square bounding box.
@@ -362,10 +371,12 @@ function drawBursts(now){
    if(ring===0&&!burst.liveSDF)continue;
    const band=rippleState(visualElapsed(burst,now),ring,burst.birthNested);if(!band)continue;
    const cx=x+burst.localX,cy=y+burst.localY,r=band.radius*scale;
-   const half=Math.max(band.width*scale,.95*width/canvas.width)*.5;
+   const thickness=ring===0?band.width*scale:Math.max(band.width*scale,.95*width/canvas.width);
+   if(thickness<=0)continue;
+   const half=thickness*.5,insideRadius=Math.max(0,r-half);
    ctx.save();ctx.beginPath();
    ctx.moveTo(cx+r+half,cy);ctx.arc(cx,cy,r+half,0,Math.PI*2);
-   ctx.moveTo(cx+r-half,cy);ctx.arc(cx,cy,r-half,0,Math.PI*2,true);
+   if(insideRadius>0){ctx.moveTo(cx+insideRadius,cy);ctx.arc(cx,cy,insideRadius,0,Math.PI*2,true);}
    ctx.clip();
    const occluders=[];
    if(ring===0)for(const other of circles){
@@ -390,29 +401,29 @@ function drawBursts(now){
 function updateAmbientWaves(now){
  for(let i=ambientWaves.length-1;i>=0;i--)if(now-ambientWaves[i].born>=AUTO_LIFE)ambientWaves.splice(i,1);
 }
-function drawAmbientWaves(now){
+function drawAmbientWaves(now,viewLeft,viewTop){
  // Filled annular areas, not stroked outlines, sparkles, trails or SDF masks.
  // Native paths clip at the viewport; a fivefold radius needs no large texture.
- const rect=canvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
- ctx.save();ctx.globalCompositeOperation='source-over';
+ ctx.save();ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
  for(const wave of ambientWaves){
   const elapsed=Math.max(0,now-wave.born),progress=Math.min(1,elapsed/AUTO_EXPAND_MS);
-  const radius=AUTO_RADIUS*(wave.touch?.68:1)*(1-(1-progress)**1.55);
-  const fade=smooth(0,150,elapsed)*(1-smooth(AUTO_EXPAND_MS*.62,AUTO_LIFE,elapsed));
+  const radialProgress=1-(1-progress)**1.55;
+  const radius=AUTO_RADIUS*(wave.touch?.68:1)*radialProgress;
+  // Disappearance changes geometry only: the fill never becomes translucent.
+  const widthScale=1-smooth(.5,1,radialProgress);
   const cx=wave.pageX-viewLeft,cy=wave.pageY-viewTop;
+  const near=Math.hypot(Math.max(0,-cx,cx-width),Math.max(0,-cy,cy-height));
+  const far=Math.hypot(Math.max(Math.abs(cx),Math.abs(width-cx)),Math.max(Math.abs(cy),Math.abs(height-cy)));
+  const palette=AUTO_PALETTES[wave.paletteIndex]||AUTO_PALETTES[0];
   let outside=radius;
-  for(const band of AUTO_BANDS){
+  for(let index=0;index<AUTO_BANDS.length;index++){
+   const band=AUTO_BANDS[index];
    outside-=band.gap;if(outside<=0)continue;
-   const inside=Math.max(0,outside-band.width),thickness=outside-inside;
-   const edge=Math.min(.45,.8/Math.max(1,thickness));
-   const fill=ctx.createRadialGradient(cx,cy,inside,cx,cy,outside);
-   fill.addColorStop(0,`rgba(${band.color},0)`);
-   fill.addColorStop(edge,`rgba(${band.color},${band.alpha*fade})`);
-   fill.addColorStop(1-edge,`rgba(${band.color},${band.alpha*fade})`);
-   fill.addColorStop(1,`rgba(${band.color},0)`);
+   const inside=Math.max(0,outside-band.width*widthScale);
+   if(outside-inside<=0||outside<near-1||inside>far+1){outside=inside;continue;}
    ctx.beginPath();ctx.arc(cx,cy,outside,0,Math.PI*2);
    if(inside>0){ctx.moveTo(cx+inside,cy);ctx.arc(cx,cy,inside,0,Math.PI*2,true);}
-   ctx.fillStyle=fill;ctx.fill();outside=inside;
+   ctx.fillStyle=palette[index];ctx.fill();outside=inside;
   }
  }
  ctx.restore();
@@ -421,24 +432,30 @@ function emitAmbientWave(x,y){
  if(!autoAllowed())return;
  updateAmbientWaves(performance.now());
  if(ambientWaves.length>=2)ambientWaves.shift();
- ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches});
- canvas.dataset.autoMaterial='two-filled-color-bands';canvas.dataset.autoWidths='200,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';
+ const paletteIndex=Math.floor(Math.random()*AUTO_PALETTES.length);
+ ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches,paletteIndex});
+ canvas.dataset.autoMaterial='two-opaque-color-bands';canvas.dataset.autoWidths='200,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';canvas.dataset.autoExit='width-to-zero';canvas.dataset.autoPalette=String(paletteIndex);
  if(!frame)frame=requestAnimationFrame(tick);state('active');saveContinuity();
 }
 function tick(now){
  frame=0;if(destroyed||suspended||document.hidden||reduced.matches){stop(reduced.matches?'disabled-motion':'suspended',true,!reduced.matches);return;}
+ let painted=false;
  if(now-lastDraw>=1000/30){
   lastDraw=now;ctx.clearRect(0,0,width,height);
   updateLifecycle(now);
   updateAmbientWaves(now);
   canvas.style.left=scrollX+'px';canvas.style.top=scrollY+'px';
-  drawAmbientWaves(now);
-  drawBursts(now);
+  // Both independent pools share one projection read per painted frame.
+  const rect=canvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
+  if(ambientWaves.length)drawAmbientWaves(now,viewLeft,viewTop);
+  if(bursts.length)drawBursts(now,viewLeft,viewTop);
+  else if(canvas.dataset.groups!=='0'){canvas.dataset.groups='0';canvas.dataset.mainGroups='0';canvas.dataset.frameTexturePixels='0';}
+  painted=true;
  }
- if(bursts.length||ambientWaves.length){frame=requestAnimationFrame(tick);state('active');}else stop();
+ if(bursts.length||ambientWaves.length){frame=requestAnimationFrame(tick);if(painted)state('active');}else stop();
 }
 function emit(x,y,keyboard,touch,bornAt=performance.now()){
- if(!ctx||destroyed||suspended||document.hidden||reduced.matches)return;
+ if(!manualAllowed())return;
  const rect=canvas.getBoundingClientRect();if(Math.abs(rect.width-width)>.01||Math.abs(rect.height-height)>.01)resize();
  const born=bornAt;
  updateLifecycle(born);
@@ -450,21 +467,96 @@ function emit(x,y,keyboard,touch,bornAt=performance.now()){
  const birthNested=bursts.some(other=>{
   if(!other.liveSDF||other.groupId!==groupId)return false;
   const band=rippleState(visualElapsed(other,born),0);if(!band)return false;
-  return band.opacity*visualWeight(other,born)>.008&&Math.hypot(pageX-other.pageX,pageY-other.pageY)<band.radius*(other.touch?.68:1);
+  return band.opacity*visualWeight(other,born)*(band.width/RIPPLE_WIDTHS[0])>.008&&Math.hypot(pageX-other.pageX,pageY-other.pageY)<band.radius*(other.touch?.68:1);
  });
  limitMainGroups(born,groupId);
  reserveVisualSlot(born);
  const variant=Math.floor(Math.random()*4);
- bursts.push({id:++nextBurstId,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,birthNested,liveSDF:!birthNested,seed:variant*1.37,variant,retiredAt:null,firstDrawAt:null});
+ const flowSeed=Math.floor(Math.random()*1024);
+ bursts.push({id:++nextBurstId,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,birthNested,liveSDF:!birthNested,flowSeed,variant,retiredAt:null,firstDrawAt:null});
  canvas.dataset.clickSequence=String(clickSequence);canvas.dataset.currentGroup=String(groupId);canvas.dataset.currentStyle=String(style);
  canvas.dataset.lastOuterEnabled=String(!birthNested);canvas.dataset.overlapRule='partial-intersections-only';
  canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='three-flowing-ripples';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.tailSlots=String(MAX_TAIL_BURSTS);
  if(!frame)frame=requestAnimationFrame(tick);state('active');
  saveContinuity();
 }
+function manualAllowed(){return !!ctx&&!destroyed&&!suspended&&!document.hidden&&!reduced.matches&&!window.PortfolioStartGate?.active;}
+function pendingRepeatCount(){return repeatQueue.reduce((count,action)=>count+action.remaining,0);}
+function stopRepeatTimer(){if(repeatTimer)clearTimeout(repeatTimer);repeatTimer=0;}
+function pruneMissedRepeats(now){
+ // A hidden page or a navigation gap never catches up with a burst of old jobs.
+ for(let i=repeatQueue.length-1;i>=0;i--){
+  const action=repeatQueue[i];
+  const missed=Math.min(action.remaining,Math.max(0,Math.ceil((now-action.nextDue)/REPEAT_DELAY_MS)));
+  action.remaining-=missed;action.nextDue+=missed*REPEAT_DELAY_MS;
+  if(!action.remaining)repeatQueue.splice(i,1);
+ }
+}
+function scheduleRepeats(){
+ stopRepeatTimer();canvas.dataset.pendingRepeats=String(pendingRepeatCount());
+ if(!manualAllowed()||!repeatQueue.length)return;
+ const nextDue=Math.min(...repeatQueue.map(action=>action.nextDue));
+ repeatTimer=setTimeout(runRepeat,Math.max(0,nextDue-performance.now()));
+}
+function syncRepeats(){
+ stopRepeatTimer();
+ if(!manualAllowed()){
+  repeatsPaused=true;
+  if(!ctx||reduced.matches)repeatQueue.length=0;
+  canvas.dataset.pendingRepeats=String(pendingRepeatCount());return;
+ }
+ if(repeatsPaused){pruneMissedRepeats(performance.now());repeatsPaused=false;saveContinuity();}
+ scheduleRepeats();
+}
+function runRepeat(){
+ repeatTimer=0;
+ if(!manualAllowed()){syncRepeats();return;}
+ const now=performance.now();
+ let index=-1;
+ for(let i=0;i<repeatQueue.length;i++)if(index<0||repeatQueue[i].nextDue<repeatQueue[index].nextDue)index=i;
+ if(index<0)return;
+ const action=repeatQueue[index];
+ if(action.nextDue>now){scheduleRepeats();return;}
+ // Mutate the reservation before emit snapshots it. Every actual birth receives
+ // its own time and advances the existing fifteen-pulse group sequence once.
+ action.remaining--;
+ if(!action.remaining)repeatQueue.splice(index,1);
+ else action.nextDue=now+REPEAT_DELAY_MS;
+ emit(action.pageX-scrollX,action.pageY-scrollY,action.keyboard,action.touch,now);
+ scheduleRepeats();
+}
+function beginClickSequence(pageX,pageY,keyboard,touch,bornAt){
+ if(!manualAllowed())return;
+ updateLifecycle(bornAt);
+ // Count manual visuals, including their tails, plus reserved emissions once.
+ // 0–8 => 6; 9–17 => 5; 18–26 => 4; 27–35 => 3; 36+ => 2.
+ const existing=bursts.length+pendingRepeatCount();
+ const repetitions=Math.max(2,6-Math.floor(existing/9)),reserved=repetitions-1;
+ let queued=pendingRepeatCount();
+ while(queued+reserved>MAX_PENDING_REPEATS){
+  // Bound pathological input: trim the furthest future OLD reservation first.
+  // A new action always retains its immediate pulse and its new reservations.
+  let furthest=0;
+  for(let i=1;i<repeatQueue.length;i++)if(repeatQueue[i].nextDue+(repeatQueue[i].remaining-1)*REPEAT_DELAY_MS>repeatQueue[furthest].nextDue+(repeatQueue[furthest].remaining-1)*REPEAT_DELAY_MS)furthest=i;
+  if(--repeatQueue[furthest].remaining===0)repeatQueue.splice(furthest,1);
+  queued--;canvas.dataset.repeatReclaims=String((Number(canvas.dataset.repeatReclaims)||0)+1);
+ }
+ // Make room gradually ahead of the visual cap, using the existing 280ms exit.
+ // Fresh/unpainted births retain their minimum visible time and hard-cap policy.
+ let excess=Math.max(0,bursts.filter(b=>b.retiredAt===null).length+queued+repetitions-MAX_VISUAL_BURSTS);
+ for(const burst of bursts){
+  if(!excess)break;
+  if(burst.retiredAt===null&&burst.firstDrawAt!==null&&bornAt-burst.firstDrawAt>=MIN_VISIBLE_MS){retireBurst(burst,bornAt);excess--;}
+ }
+ repeatQueue.push({pageX,pageY,keyboard,touch,remaining:reserved,nextDue:bornAt+REPEAT_DELAY_MS});
+ canvas.dataset.repeatExisting=String(existing);canvas.dataset.repeatCount=String(repetitions);canvas.dataset.repeatDelay=String(REPEAT_DELAY_MS);
+ // Reserve before the synchronous first birth: a link may navigate immediately.
+ emit(pageX-scrollX,pageY-scrollY,keyboard,touch,bornAt);
+ scheduleRepeats();
+}
 function saveContinuity(){
  const now=performance.now();
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:4,sequence:clickSequence,savedAt:Date.now(),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch})),pulses:bursts.map(b=>({groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:8,sequence:clickSequence,savedAt:Date.now(),repeats:repeatQueue.map(action=>({x:action.pageX-scrollX,y:action.pageY-scrollY,remaining:action.remaining,wait:action.nextDue-now,keyboard:action.keyboard,touch:action.touch})),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch,paletteIndex:w.paletteIndex})),pulses:bursts.map(b=>({groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,flowSeed:b.flowSeed,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
 }
 function restoreContinuity(){
  if(destroyed||suspended)return;
@@ -486,13 +578,23 @@ function restoreContinuity(){
  canvas.dataset.clickSequence=String(clickSequence);
  const currentGroup=Math.floor(Math.max(0,clickSequence-1)/CLICKS_PER_GROUP);
  canvas.dataset.currentGroup=String(currentGroup);canvas.dataset.currentStyle=String(currentGroup%STYLE_COUNT);
- // Consume only the carried visuals. Keep the tab's ordinal even if the gap
+ // Consume carried visuals and reservations. Keep the tab's ordinal even if the gap
  // is long, every circle has expired, or motion is currently disabled.
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:4,sequence:clickSequence,savedAt:Date.now(),pulses:[],waves:[]}));}catch{}
- if(document.hidden||reduced.matches||!ctx)return;
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:8,sequence:clickSequence,savedAt:Date.now(),pulses:[],waves:[],repeats:[]}));}catch{}
+ if(reduced.matches||!ctx)return;
  const gap=Date.now()-saved?.savedAt;
  if(!Number.isFinite(gap)||gap<0||gap>Math.max(RIPPLE_LIFE,AUTO_LIFE))return;
  const now=performance.now();
+ // Use the same viewport anchor as carried rings, then keep document coordinates
+ // fixed on this page. Only still-future slots survive the navigation interval.
+ for(const action of (Array.isArray(saved.repeats)?saved.repeats:[]).slice(-MAX_PENDING_REPEATS)){
+  if(!action||!Number.isFinite(action.x)||!Number.isFinite(action.y)||!Number.isFinite(action.wait)||action.wait>REPEAT_DELAY_MS*5||action.wait<-RIPPLE_LIFE||!Number.isInteger(action.remaining)||action.remaining<1||action.remaining>5)continue;
+  const missed=Math.min(action.remaining,Math.max(0,Math.ceil((gap-action.wait)/REPEAT_DELAY_MS)));
+  const remaining=Math.min(action.remaining-missed,MAX_PENDING_REPEATS-pendingRepeatCount());if(!remaining)continue;
+  repeatQueue.push({pageX:action.x+scrollX,pageY:action.y+scrollY,remaining,nextDue:now+action.wait+missed*REPEAT_DELAY_MS-gap,keyboard:!!action.keyboard,touch:!!action.touch});
+ }
+ syncRepeats();
+ if(document.hidden)return;
  for(const p of pulses.slice(-MAX_VISUAL_BURSTS)){
   if(bursts.length>=MAX_VISUAL_BURSTS)break;
   if(!p||!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.age))continue;
@@ -502,21 +604,23 @@ function restoreContinuity(){
   if(age>=life||retiredAge!==null&&(!Number.isFinite(retiredAge)||retiredAge>=EXIT_MS))continue;
   const variant=Math.max(0,Math.min(3,Math.floor(Number(p.variant)||0)));
   const groupId=validGroup(p.groupId)?p.groupId:-1,style=groupId<0?0:groupId%STYLE_COUNT;
+  const flowSeed=Number.isInteger(p.flowSeed)&&p.flowSeed>=0&&p.flowSeed<1024?p.flowSeed:((variant*239+(Math.max(0,groupId)%1024)*73)%1024);
   const outer=birthNested?null:rippleState(Math.max(.045,age/1000),0);
-  const liveSDF=!!outer&&outer.opacity>.008&&(saved.version<3||p.liveSDF!==false);
+  const liveSDF=!!outer&&outer.width>0&&(saved.version<6||p.liveSDF!==false);
   const drawnAge=p.drawnAge==null?null:Number(p.drawnAge)+gap;
-  bursts.push({id:++nextBurstId,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,birthNested,liveSDF,variant,seed:variant*1.37,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
+  bursts.push({id:++nextBurstId,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,birthNested,liveSDF,variant,flowSeed,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
  }
  for(const wave of (Array.isArray(saved.waves)?saved.waves:[]).slice(-2)){
   if(!wave||!Number.isFinite(wave.x)||!Number.isFinite(wave.y)||!Number.isFinite(wave.age))continue;
   const age=Math.max(0,wave.age)+gap;if(age>=AUTO_LIFE)continue;
-  ambientWaves.push({pageX:wave.x+scrollX,pageY:wave.y+scrollY,born:now-age,touch:!!wave.touch});
+  const paletteIndex=Number.isInteger(wave.paletteIndex)&&wave.paletteIndex>=0&&wave.paletteIndex<AUTO_PALETTES.length?wave.paletteIndex:0;
+  ambientWaves.push({pageX:wave.x+scrollX,pageY:wave.y+scrollY,born:now-age,touch:!!wave.touch,paletteIndex});
  }
  updateLifecycle(now);limitMainGroups(now);updateAmbientWaves(now);
  if((bursts.length||ambientWaves.length)&&!frame){frame=requestAnimationFrame(tick);state('active');}
 }
 function stopAuto(){if(autoTimer)clearTimeout(autoTimer);autoTimer=0;canvas.dataset.autoPending='false';}
-function autoAllowed(){return !!ctx&&!destroyed&&!suspended&&!document.hidden&&!reduced.matches;}
+function autoAllowed(){return !!ctx&&!destroyed&&!suspended&&!document.hidden&&!reduced.matches&&!window.PortfolioStartGate?.active;}
 function findAutoPoint(){
  if([...document.querySelectorAll('dialog[open],[aria-modal="true"]')].some(dialog=>dialog.getClientRects().length))return null;
  const avoid='header,.header,nav,a,button,summary,[role="button"],[role="slider"],video,iframe,.project-preview,.detail-player,.poster-button,dialog,[role="dialog"],form,input,select,textarea,label,[contenteditable="true"],[data-click-effects="off"]';
@@ -569,9 +673,8 @@ listen(document,'click',e=>{
  if(el?.closest('.header')){emitNavigationRipple(x,y);gesture=null;return;}
  const pageX=x+scrollX,pageY=y+scrollY,bornAt=performance.now();
  const touch=!keyboard&&(gesture?.touch||coarse.matches);
- // Create the independent pulse immediately. Only its drawing waits for RAF;
- // a busy material frame must not coalesce several input births into one time.
- emit(pageX-scrollX,pageY-scrollY,keyboard,touch,bornAt);gesture=null;
+ // One native click starts one sequence, including keyboard activation.
+ beginClickSequence(pageX,pageY,keyboard,touch,bornAt);gesture=null;
 },true);
 listen(window,'resize',availability,{passive:true});
 // A completed click belongs to the page, even when focus enters a player or
@@ -579,8 +682,11 @@ listen(window,'resize',availability,{passive:true});
 listen(window,'blur',()=>{gesture=null;});
 listen(document,'pointerout',e=>{if(e.pointerType==='mouse'&&!e.relatedTarget)gesture=null;});
 listen(document,'visibilitychange',availability);listen(reduced,'change',availability);
-export function destroyClickEffects(){if(destroyed)return;destroyed=true;stopAuto();stop('destroyed',true);ripples.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
-listen(window,'pagehide',e=>{stopAuto();saveContinuity();suspended=true;if(e.persisted)availability();else destroyClickEffects();});
-listen(window,'pageshow',e=>{suspended=false;if(e.persisted){stop('idle',true);availability();}restoreContinuity();});
+listen(window,'portfolio:enter',()=>{scheduleAuto();syncRepeats();});
+export function destroyClickEffects(){if(destroyed)return;saveContinuity();destroyed=true;stopAuto();stopRepeatTimer();repeatQueue.length=0;stop('destroyed',true);ripples.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
+listen(window,'pagehide',e=>{stopAuto();saveContinuity();suspended=true;stopRepeatTimer();if(e.persisted)availability();else destroyClickEffects();});
+// A normal load already consumes its snapshot below. BFCache needs one fresh
+// restore after clearing its retained in-memory queue, never a second replay.
+listen(window,'pageshow',e=>{suspended=false;if(e.persisted){stopRepeatTimer();repeatQueue.length=0;repeatsPaused=false;stop('idle',true);availability();restoreContinuity();}});
 availability();
 restoreContinuity();

@@ -8,6 +8,7 @@ const ownerKey = 'portfolio-music-owner';
 let volume = 0.35;
 let muted = false;
 let wanted = false;
+let hasPlaybackChoice = false;
 let resumeTime = 0;
 let unavailable = false;
 let pageActive = true;
@@ -17,6 +18,7 @@ try {
   if (Number.isFinite(preference?.volume)) volume = Math.max(0, Math.min(1, preference.volume));
   muted = Boolean(preference?.muted);
   const previous = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
+  hasPlaybackChoice = previous !== null;
   wanted = Boolean(previous?.playing);
   resumeTime = previous?.source === source ? Number(previous.time) || 0 : 0;
 } catch { /* Music still works when browser storage is disabled. */ }
@@ -48,7 +50,7 @@ const levels = {bass: 0, mid: 0, treble: 0, loudness: 0, outputVolume: 0, active
   snare: 0, snareConfidence: 0, snareLag: 0, speed: 0, snareCount: 0, onsetTime: 0,
   snareBodyFlux: 0, snareNoiseFlux: 0, kick: 0, kickConfidence: 0, kickLag: 0, kickCount: 0,
   kickFlux: 0, kickThreshold: 0, beat: 0, beatLag: 0, beatCount: 0, beatTime: 0, sampleId: 0};
-const playbackAllowed = () => wanted && pageActive && !document.hidden;
+const playbackAllowed = () => wanted && pageActive && !document.hidden && !window.PortfolioStartGate?.active;
 function suspendAnalysis() {
   if (audioContext && audioContext.state !== 'closed') audioContext.suspend().catch(() => {});
 }
@@ -244,7 +246,20 @@ async function start() {
   remember();
   draw();
 }
+// Called in the same event stack as the real START/skip/keyboard gesture.
+// Keep a saved pause, mute and volume preference when a previous music choice exists.
+function enterWithSound() {
+  if (!hasPlaybackChoice) wanted = true;
+  hasPlaybackChoice = true;
+  if (wanted) { enableAnalysis(true); start(); }
+  remember();
+  draw();
+}
+window.addEventListener('portfolio:enter', event => {
+  if (event.detail?.userInitiated) enterWithSound();
+});
 toggle.addEventListener('click', () => {
+  hasPlaybackChoice = true;
   wanted = !wanted;
   if (wanted) { enableAnalysis(true); start(); }
   else pausePlayback();
@@ -321,4 +336,7 @@ musicShader = mountMusicShader(panel, () => ({
   blocked: false,
 }), getLevels);
 draw();
-if (wanted) start();
+// A skipped gate can finish before this module arrives; native playback may then
+// require another gesture, which the existing header play control provides.
+if (window.PortfolioStartGate?.started) enterWithSound();
+else if (wanted) start();

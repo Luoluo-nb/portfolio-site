@@ -256,6 +256,7 @@ function mountCursorTrail() {
   function availability() {
     const reason = reducedMotion.matches ? 'disabled-motion'
       : !finePointer.matches ? 'disabled-input'
+      : window.PortfolioStartGate?.active ? 'waiting-start'
       : suspended || document.hidden ? 'suspended' : '';
     enabled = !reason;
     canvas.hidden = !enabled;
@@ -309,7 +310,7 @@ function mountCursorTrail() {
 
   function render(now) {
     frameId = 0;
-    if (!enabled || suspended || document.hidden) { stop('suspended'); return; }
+    if (!enabled || suspended || document.hidden || window.PortfolioStartGate?.active) { stop('suspended'); return; }
     syncScroll();
     refreshRegionSpacing(now);
     context.clearRect(0, 0, width, height);
@@ -587,7 +588,7 @@ function mountCursorTrail() {
   }
 
   function move(event) {
-    if (!enabled || event.pointerType !== 'mouse') return;
+    if (!enabled || window.PortfolioStartGate?.active || event.pointerType !== 'mouse') return;
     const samples = event.getCoalescedEvents?.() || [];
     for (const sample of samples) samplePointer(sample);
     // Coalesced samples may omit the final endpoint on some browsers.
@@ -600,6 +601,8 @@ function mountCursorTrail() {
   window.addEventListener('blur', () => { stop(enabled ? 'idle' : canvas.dataset.state); });
   window.addEventListener('resize', () => { if (enabled) { stop('idle'); resize(); } }, { passive: true });
   document.addEventListener('visibilitychange', availability);
+  // Resize after the gate restores scrolling; pagehide suspension wins as well.
+  window.addEventListener('portfolio:enter', () => queueMicrotask(availability));
   finePointer.addEventListener('change', availability);
   reducedMotion.addEventListener('change', availability);
   window.addEventListener('pagehide', () => { suspended = true; availability(); });

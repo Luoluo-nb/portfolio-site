@@ -15,6 +15,7 @@ void main() {
 }`;
 
 const AUDIO_SCENE_GAIN = Object.freeze({home: 1, content: .24});
+const FRAME_INTERVAL = 1000 / 24;
 const DEPTH_SPEED = Object.freeze({ambient: .010, audio: .030});
 const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
 // Retain scattering, but tone-map it with the sky rather than adding it after
@@ -73,6 +74,10 @@ vec3 StarLayer(vec2 uv) {
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
       vec2 offset = vec2(float(x), float(y));
+      // Every candidate star lies inside this unit cell. Reject cells farther
+      // than the existing .24 support radius before hashing or twinkling them.
+      vec2 cellGap = max(abs(gv - offset) - .5, vec2(0.));
+      if (dot(cellGap, cellGap) > .0576) continue;
       float n = Hash21(id + offset);
       // Leave more space between near points so they do not resemble snow.
       if (n < 0.40) continue;
@@ -111,11 +116,11 @@ void main() {
     if (float(layer) >= uLayers) break;
     float i = float(layer) / uLayers;
     float depth = fract(i + travel);
-    float scale = mix(CANVAS_VIEW, 0.65, depth);
     // Both ends fade to zero, so the near-to-far wrap has no hard jump.
     // Staggered depths populate the very first frame, including on mobile.
     float fade = depth * (1.0 - smoothstep(0.90, 1.0, depth));
     if (fade < 0.001) continue;
+    float scale = mix(CANVAS_VIEW, 0.65, depth);
     col += StarLayer(uv * scale + i * 453.2 - uTime * 0.006 + orbit + pointer) * fade;
   }
   vec3 color = col * EXPOSURE;
@@ -209,6 +214,8 @@ export class Starfield {
     this.ready = false;
     this.frame = 0;
     this.lastDraw = 0;
+    this.nextDraw = 0;
+    this.diagnosticsAt = -Infinity;
     this.time = 0;
     this.baseTime = 0;
     this.audioOffset = 0;
@@ -429,7 +436,7 @@ export class Starfield {
     return rect ? Math.max(0, Math.min(1, (rect.bottom - 100) / Math.max(innerHeight * .65, 1))) : 0;
   }
 
-  _draw() {
+  _draw(now = performance.now()) {
     if (!this.ready || this.destroyed || !this.sceneTarget || !this.rayTarget) return;
     const gl = this.gl;
     const levels = !this.reducedMotion && this.pageActive && !document.hidden ? this.audioLevels : null;
@@ -463,21 +470,36 @@ export class Starfield {
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.sceneTarget.texture);gl.uniform1i(this.compositeUniforms.Scene,0);
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.rayTarget.texture);gl.uniform1i(this.compositeUniforms.Rays,1);
     gl.uniform1f(this.compositeUniforms.RayStrength,rayStrength);gl.drawArrays(gl.TRIANGLES,0,3);
-    this.canvas.dataset.rayStrength=rayStrength.toFixed(4);
-    this.canvas.dataset.rayBaseline=rayBaseline.toFixed(4);
-    this.canvas.dataset.rayVolume=this.rayVolume.toFixed(4);
-    this.canvas.dataset.rayVolumeGain=volumeGain.toFixed(4);
-    this.canvas.dataset.rayCenterX=rayCenter.x.toFixed(4);
-    this.canvas.dataset.rayCenterY=rayCenter.y.toFixed(4);
-    this.canvas.dataset.rayPass=rayStrength>.0001?'radial-scatter':'idle';
+    // These attributes are diagnostics, not inputs to rendering or analysis.
+    if(now-this.diagnosticsAt>=500){
+      this.diagnosticsAt=now;
+      this.canvas.dataset.rayStrength=rayStrength.toFixed(4);
+      this.canvas.dataset.rayBaseline=rayBaseline.toFixed(4);
+      this.canvas.dataset.rayVolume=this.rayVolume.toFixed(4);
+      this.canvas.dataset.rayVolumeGain=volumeGain.toFixed(4);
+      this.canvas.dataset.rayCenterX=rayCenter.x.toFixed(4);
+      this.canvas.dataset.rayCenterY=rayCenter.y.toFixed(4);
+      this.canvas.dataset.rayPass=rayStrength>.0001?'radial-scatter':'idle';
+      this.canvas.dataset.visualTime=this.time.toFixed(3);
+      this.canvas.dataset.baseTime=this.baseTime.toFixed(3);
+      this.canvas.dataset.audioOffset=this.audioOffset.toFixed(5);
+      this.canvas.dataset.audioSpeed=this.audioSpeed.toFixed(4);
+      this.canvas.dataset.snareLag=(this.audioLevels?.snareLag||0).toFixed(4);
+      this.canvas.dataset.beatLag=(this.audioLevels?.beatLag||0).toFixed(4);
+      this.canvas.dataset.beatCount=String(this.audioLevels?.beatCount||0);
+      this.canvas.dataset.depthTravel=this.travel.toFixed(6);
+      this.canvas.dataset.depthSpeed=(DEPTH_SPEED.ambient+this.audioSpeed*DEPTH_SPEED.audio).toFixed(5);
+      this.canvas.dataset.heroMix=this.heroMix.toFixed(3);
+    }
   }
 
   _tick(now) {
     this.frame = 0;
     if (!this.ready || this.destroyed || !this.pageActive || this.paused || this.reducedMotion || document.hidden) return;
-    const elapsed = this.lastDraw ? now - this.lastDraw : 34;
+    const elapsed = this.lastDraw ? now - this.lastDraw : FRAME_INTERVAL;
     // A fixed background does not need to render at the display's refresh rate.
-    if (elapsed >= 32) {
+    if (!this.nextDraw || now >= this.nextDraw) {
+      this.nextDraw = this.nextDraw ? now + FRAME_INTERVAL - ((now - this.nextDraw) % FRAME_INTERVAL) : now + FRAME_INTERVAL;
       this.lastDraw = now;
       const seconds = Math.min(elapsed, 250) / 1000;
       this.audioLevels = window.PortfolioAudioAnalysis?.getLevels() || null;
@@ -497,28 +519,18 @@ export class Starfield {
       this.audioOffset += this.audioSpeed * seconds;
       this.time = this.baseTime + this.audioOffset;
       this.travel = this.baseTime * DEPTH_SPEED.ambient + this.audioOffset * DEPTH_SPEED.audio;
-      this.canvas.dataset.visualTime = this.time.toFixed(3);
-      this.canvas.dataset.baseTime = this.baseTime.toFixed(3);
-      this.canvas.dataset.audioOffset = this.audioOffset.toFixed(5);
-      this.canvas.dataset.audioSpeed = this.audioSpeed.toFixed(4);
-      this.canvas.dataset.snareLag = (this.audioLevels?.snareLag || 0).toFixed(4);
-      this.canvas.dataset.beatLag = (this.audioLevels?.beatLag || 0).toFixed(4);
-      this.canvas.dataset.beatCount = String(this.audioLevels?.beatCount || 0);
-      this.canvas.dataset.depthTravel = this.travel.toFixed(6);
-      this.canvas.dataset.depthSpeed = (DEPTH_SPEED.ambient + this.audioSpeed * DEPTH_SPEED.audio).toFixed(5);
-      this.canvas.dataset.heroMix = this.heroMix.toFixed(3);
       // Exponential easing is frame-rate independent; no input work on touch.
       const easing = 1 - Math.exp(-seconds * 4.5);
       this.pointer.x += (this.pointer.targetX - this.pointer.x) * easing;
       this.pointer.y += (this.pointer.targetY - this.pointer.y) * easing;
-      this._draw();
+      this._draw(now);
       // Visibility changes reset lastDraw, so genuinely slow frames should also
       // reduce resolution instead of being mistaken for time spent in another tab.
       this.frameTimes.push(Math.min(elapsed, 500));
       if (this.frameTimes.length === 60) {
         const average = this.frameTimes.reduce((sum, time) => sum + time, 0) / 60;
         this.frameTimes.length = 0;
-        if (average > 46 && this.resolutionScale > 0.55) {
+        if (average > FRAME_INTERVAL * 1.45 && this.resolutionScale > 0.55) {
           this.resolutionScale = Math.max(0.55, this.resolutionScale - 0.15);
           this._resize();
         }
@@ -531,6 +543,7 @@ export class Starfield {
     if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.lastDraw = 0;
+    this.nextDraw = 0;
     this.frameTimes.length = 0;
   }
 

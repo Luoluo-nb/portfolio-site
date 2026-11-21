@@ -277,3 +277,4 @@ window.addEventListener('pagehide', event => {
   $('detail-player').querySelector('video')?.pause();
   if (!event.persisted) sky?.destroy();
 });
+window.dispatchEvent(new Event('portfolio:app-ready'));
