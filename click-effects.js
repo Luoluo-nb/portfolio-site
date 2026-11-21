@@ -8,13 +8,13 @@ canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100vh;p
 document.body.append(canvas);
 const ctx = canvas.getContext('2d', {alpha:true});
 const outerSurface=document.createElement('canvas'),outerContext=outerSurface.getContext('2d',{alpha:true});
-const bursts = [], cleanups = [], pending = new Set();
+const bursts = [], ambientWaves = [], cleanups = [], pending = new Set();
 // Three independent fifteen-click groups own the live SDF slots. Inner-only
 // afterglow and short group exits have their own bounded visual allowance.
 const CLICKS_PER_GROUP=15,STYLE_COUNT=3,MAX_MAIN_GROUPS=3;
 const MAX_BURSTS=CLICKS_PER_GROUP*MAX_MAIN_GROUPS,MAX_TAIL_BURSTS=90,MAX_VISUAL_BURSTS=MAX_BURSTS+MAX_TAIL_BURSTS;
 const EXIT_MS=280,MIN_VISIBLE_MS=180,MATERIAL_BATCH_SIZE=8,MATERIAL_PIXEL_BUDGET=240000,FEATHER_PIXEL_BUDGET=1200000;
-const AUTO_MIN_MS=3000,AUTO_MAX_MS=12000,AUTO_STRENGTH=.5;
+const AUTO_MIN_MS=6000,AUTO_MAX_MS=12000;
 const CONTINUITY_KEY='portfolio-click-continuity-v1';
 // This ordinal belongs to the tab, not to the currently visible circles.
 let clickSequence=0;
@@ -23,9 +23,9 @@ let autoTimer=0;
 const ignored = 'input:not([type=button]):not([type=submit]):not([type=reset]),select,textarea,label,[contenteditable="true"],[role=slider],[data-click-effects="off"]';
 const interactive = 'a[href],button,summary,[role=button],input[type=button],input[type=submit],input[type=reset]';
 const listen = (target,type,fn,options) => { target.addEventListener(type,fn,options); cleanups.push(()=>target.removeEventListener(type,fn,options)); };
-function state(value){canvas.dataset.state=value;canvas.dataset.bursts=String(bursts.length);canvas.dataset.running=String(Boolean(frame));canvas.dataset.activeSdf=String(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).length);canvas.dataset.afterglow=String(bursts.filter(b=>!b.liveSDF&&b.retiredAt===null).length);canvas.dataset.retiring=String(bursts.filter(b=>b.retiredAt!==null).length);}
+function state(value){canvas.dataset.state=value;canvas.dataset.bursts=String(bursts.length);canvas.dataset.ambientWaves=String(ambientWaves.length);canvas.dataset.running=String(Boolean(frame));canvas.dataset.activeSdf=String(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).length);canvas.dataset.afterglow=String(bursts.filter(b=>!b.liveSDF&&b.retiredAt===null).length);canvas.dataset.retiring=String(bursts.filter(b=>b.retiredAt!==null).length);}
 function stop(reason='idle',cancelInput=false,preserveBursts=false){
- if(frame)cancelAnimationFrame(frame);frame=0;lastDraw=0;if(!preserveBursts)bursts.length=0;
+ if(frame)cancelAnimationFrame(frame);frame=0;lastDraw=0;if(!preserveBursts){bursts.length=0;ambientWaves.length=0;}
  if(cancelInput){for(const id of pending)cancelAnimationFrame(id);pending.clear();gesture=null;}
  ctx?.clearRect(0,0,width,height);canvas.style.left='0px';canvas.style.top='0px';state(reason);
 }
@@ -42,7 +42,7 @@ function availability(){
  const disabled=!ctx||reduced.matches||document.hidden||suspended;
  canvas.hidden=disabled;
  stop(!ctx?'unsupported':reduced.matches?'disabled-motion':disabled?'suspended':'idle',true,!!ctx&&!reduced.matches);
- if(!disabled){resize();updateLifecycle(performance.now());if(bursts.length){frame=requestAnimationFrame(tick);state('active');}scheduleAuto();}
+ if(!disabled){resize();updateLifecycle(performance.now());updateAmbientWaves(performance.now());if(bursts.length||ambientWaves.length){frame=requestAnimationFrame(tick);state('active');}scheduleAuto();}
 }
 // One material contains exactly three travelling bands, with no center flash,
 // cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
@@ -55,6 +55,9 @@ const RIPPLE_WIDTHS=[2.4,1.3,1.7],RIPPLE_MIN_WIDTHS=[1.2,.9,1.05];
 // not accidentally double the requested 1.3x travel speed. Inner rings outlive
 // the SDF contour; shortening its alpha also releases its cuts smoothly.
 const RIPPLE_LIFE=(1.42+.14*2)/RIPPLE_BASE_SPEED*1000*.5,OUTER_LIFE_SHARE=.56;
+// Ambient color planes have their own clock and pool, never an SDF group.
+const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS+500;
+const AUTO_BANDS=[{width:15,gap:0,color:'65,162,207',alpha:.28},{width:5,gap:8,color:'101,199,220',alpha:.22}];
 const OUTER_FEATHER=18;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
@@ -76,8 +79,7 @@ function rippleState(elapsed,index,birthNested=false){
 // starts immediately, while all inner afterglow keeps the same 3.825s lifetime.
 const visualElapsed=(burst,now)=>Math.max(.045,(now-burst.born)/1000);
 const exitWeight=(burst,now)=>burst.retiredAt===null?1:1-smooth(0,EXIT_MS,now-burst.retiredAt);
-// Idle accents use the same geometry and lifetime, with half the emitted light.
-const visualWeight=(burst,now)=>exitWeight(burst,now)*(burst.automatic?AUTO_STRENGTH:1);
+const visualWeight=(burst,now)=>exitWeight(burst,now);
 const RIPPLE_FRAGMENT=`#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -385,16 +387,57 @@ function drawBursts(now){
  }
  canvas.dataset.renderer=ripples.mode;canvas.dataset.groups=String(visibleGroups);canvas.dataset.mainGroups=String(new Set(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).map(b=>b.groupId)).size);canvas.dataset.frameTexturePixels=String(framePixels);canvas.dataset.featherPixelBudget=String(FEATHER_PIXEL_BUDGET);
 }
+function updateAmbientWaves(now){
+ for(let i=ambientWaves.length-1;i>=0;i--)if(now-ambientWaves[i].born>=AUTO_LIFE)ambientWaves.splice(i,1);
+}
+function drawAmbientWaves(now){
+ // Filled annular areas, not stroked outlines, sparkles, trails or SDF masks.
+ // Native paths clip at the viewport; a fivefold radius needs no large texture.
+ const rect=canvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
+ ctx.save();ctx.globalCompositeOperation='source-over';
+ for(const wave of ambientWaves){
+  const elapsed=Math.max(0,now-wave.born),progress=Math.min(1,elapsed/AUTO_EXPAND_MS);
+  const radius=AUTO_RADIUS*(wave.touch?.68:1)*(1-(1-progress)**1.55);
+  const fade=smooth(0,150,elapsed)*(1-smooth(AUTO_EXPAND_MS*.62,AUTO_LIFE,elapsed));
+  const cx=wave.pageX-viewLeft,cy=wave.pageY-viewTop;
+  let outside=radius;
+  for(const band of AUTO_BANDS){
+   outside-=band.gap;if(outside<=0)continue;
+   const inside=Math.max(0,outside-band.width),thickness=outside-inside;
+   const edge=Math.min(.45,.8/Math.max(1,thickness));
+   const fill=ctx.createRadialGradient(cx,cy,inside,cx,cy,outside);
+   fill.addColorStop(0,`rgba(${band.color},0)`);
+   fill.addColorStop(edge,`rgba(${band.color},${band.alpha*fade})`);
+   fill.addColorStop(1-edge,`rgba(${band.color},${band.alpha*fade})`);
+   fill.addColorStop(1,`rgba(${band.color},0)`);
+   ctx.beginPath();ctx.arc(cx,cy,outside,0,Math.PI*2);
+   if(inside>0){ctx.moveTo(cx+inside,cy);ctx.arc(cx,cy,inside,0,Math.PI*2,true);}
+   ctx.fillStyle=fill;ctx.fill();outside=inside;
+  }
+ }
+ ctx.restore();
+}
+function emitAmbientWave(x,y){
+ if(!autoAllowed())return;
+ updateAmbientWaves(performance.now());
+ if(ambientWaves.length>=2)ambientWaves.shift();
+ ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches});
+ canvas.dataset.autoMaterial='two-filled-color-bands';canvas.dataset.autoWidths='15,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';
+ if(!frame)frame=requestAnimationFrame(tick);state('active');saveContinuity();
+}
 function tick(now){
  frame=0;if(destroyed||suspended||document.hidden||reduced.matches){stop(reduced.matches?'disabled-motion':'suspended',true,!reduced.matches);return;}
  if(now-lastDraw>=1000/30){
   lastDraw=now;ctx.clearRect(0,0,width,height);
   updateLifecycle(now);
+  updateAmbientWaves(now);
+  canvas.style.left=scrollX+'px';canvas.style.top=scrollY+'px';
+  drawAmbientWaves(now);
   drawBursts(now);
  }
- if(bursts.length){frame=requestAnimationFrame(tick);state('active');}else stop();
+ if(bursts.length||ambientWaves.length){frame=requestAnimationFrame(tick);state('active');}else stop();
 }
-function emit(x,y,keyboard,touch,bornAt=performance.now(),source='manual'){
+function emit(x,y,keyboard,touch,bornAt=performance.now()){
  if(!ctx||destroyed||suspended||document.hidden||reduced.matches)return;
  const rect=canvas.getBoundingClientRect();if(Math.abs(rect.width-width)>.01||Math.abs(rect.height-height)>.01)resize();
  const born=bornAt;
@@ -412,22 +455,23 @@ function emit(x,y,keyboard,touch,bornAt=performance.now(),source='manual'){
  limitMainGroups(born,groupId);
  reserveVisualSlot(born);
  const variant=Math.floor(Math.random()*4);
- bursts.push({id:++nextBurstId,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,automatic:source==='auto',birthNested,liveSDF:!birthNested,seed:variant*1.37,variant,retiredAt:null,firstDrawAt:null});
+ bursts.push({id:++nextBurstId,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,birthNested,liveSDF:!birthNested,seed:variant*1.37,variant,retiredAt:null,firstDrawAt:null});
  canvas.dataset.clickSequence=String(clickSequence);canvas.dataset.currentGroup=String(groupId);canvas.dataset.currentStyle=String(style);
  canvas.dataset.lastOuterEnabled=String(!birthNested);canvas.dataset.overlapRule='partial-intersections-only';
- canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='three-flowing-ripples';canvas.dataset.source=source==='auto'?'auto':keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.tailSlots=String(MAX_TAIL_BURSTS);
+ canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='three-flowing-ripples';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.tailSlots=String(MAX_TAIL_BURSTS);
  if(!frame)frame=requestAnimationFrame(tick);state('active');
  saveContinuity();
 }
 function saveContinuity(){
  const now=performance.now();
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:3,sequence:clickSequence,savedAt:Date.now(),pulses:bursts.map(b=>({groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,automatic:b.automatic,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:4,sequence:clickSequence,savedAt:Date.now(),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch})),pulses:bursts.map(b=>({groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
 }
 function restoreContinuity(){
  if(destroyed||suspended)return;
  let saved;try{const value=sessionStorage.getItem(CONTINUITY_KEY);if(!value)return;saved=JSON.parse(value);}catch{return;}
  if(!saved||typeof saved!=='object')return;
- const pulses=Array.isArray(saved.pulses)?saved.pulses:[];
+ // Older automatic rings must not re-enter the manual SDF pool on navigation.
+ const pulses=Array.isArray(saved.pulses)?saved.pulses.filter(p=>p?.automatic!==true):[];
  const maxGroupId=Math.floor((Number.MAX_SAFE_INTEGER-CLICKS_PER_GROUP)/CLICKS_PER_GROUP);
  const validGroup=id=>Number.isSafeInteger(id)&&id>=0&&id<=maxGroupId;
  let latestGroup=-1;
@@ -444,10 +488,10 @@ function restoreContinuity(){
  canvas.dataset.currentGroup=String(currentGroup);canvas.dataset.currentStyle=String(currentGroup%STYLE_COUNT);
  // Consume only the carried visuals. Keep the tab's ordinal even if the gap
  // is long, every circle has expired, or motion is currently disabled.
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:3,sequence:clickSequence,savedAt:Date.now(),pulses:[]}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:4,sequence:clickSequence,savedAt:Date.now(),pulses:[],waves:[]}));}catch{}
  if(document.hidden||reduced.matches||!ctx)return;
  const gap=Date.now()-saved?.savedAt;
- if(!Number.isFinite(gap)||gap<0||gap>RIPPLE_LIFE)return;
+ if(!Number.isFinite(gap)||gap<0||gap>Math.max(RIPPLE_LIFE,AUTO_LIFE))return;
  const now=performance.now();
  for(const p of pulses.slice(-MAX_VISUAL_BURSTS)){
   if(bursts.length>=MAX_VISUAL_BURSTS)break;
@@ -459,12 +503,17 @@ function restoreContinuity(){
   const variant=Math.max(0,Math.min(3,Math.floor(Number(p.variant)||0)));
   const groupId=validGroup(p.groupId)?p.groupId:-1,style=groupId<0?0:groupId%STYLE_COUNT;
   const outer=birthNested?null:rippleState(Math.max(.045,age/1000),0);
-  const liveSDF=!!outer&&outer.opacity*(p.automatic===true?AUTO_STRENGTH:1)>.008&&(saved.version<3||p.liveSDF!==false);
+  const liveSDF=!!outer&&outer.opacity>.008&&(saved.version<3||p.liveSDF!==false);
   const drawnAge=p.drawnAge==null?null:Number(p.drawnAge)+gap;
-  bursts.push({id:++nextBurstId,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,automatic:p.automatic===true,birthNested,liveSDF,variant,seed:variant*1.37,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
+  bursts.push({id:++nextBurstId,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,birthNested,liveSDF,variant,seed:variant*1.37,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
  }
- updateLifecycle(now);limitMainGroups(now);
- if(bursts.length&&!frame){frame=requestAnimationFrame(tick);state('active');}
+ for(const wave of (Array.isArray(saved.waves)?saved.waves:[]).slice(-2)){
+  if(!wave||!Number.isFinite(wave.x)||!Number.isFinite(wave.y)||!Number.isFinite(wave.age))continue;
+  const age=Math.max(0,wave.age)+gap;if(age>=AUTO_LIFE)continue;
+  ambientWaves.push({pageX:wave.x+scrollX,pageY:wave.y+scrollY,born:now-age,touch:!!wave.touch});
+ }
+ updateLifecycle(now);limitMainGroups(now);updateAmbientWaves(now);
+ if((bursts.length||ambientWaves.length)&&!frame){frame=requestAnimationFrame(tick);state('active');}
 }
 function stopAuto(){if(autoTimer)clearTimeout(autoTimer);autoTimer=0;canvas.dataset.autoPending='false';}
 function autoAllowed(){return !!ctx&&!destroyed&&!suspended&&!document.hidden&&!reduced.matches;}
@@ -492,7 +541,7 @@ function scheduleAuto(){
   if(!autoAllowed())return;
   if(!gesture?.down){
    const point=findAutoPoint();
-   if(point)emit(point.x,point.y,false,coarse.matches,performance.now(),'auto');
+   if(point)emitAmbientWave(point.x,point.y);
   }
   // Busy content or an open dialog skips this occurrence instead of targeting UI.
   scheduleAuto();

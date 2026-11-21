@@ -5,7 +5,7 @@
  * Original shader and this adaptation: CC BY-NC-SA 3.0 Unported.
  * https://creativecommons.org/licenses/by-nc-sa/3.0/
  *
- * Adapted for a transparent, crisp white portfolio transition: retains the
+ * Adapted for a transparent, crisp blue-cyan portfolio transition: retains the
  * original moving 3x3 neighborhood, center links, four diagonal links, sparkle,
  * rotation and depth layers. Removes the audio fog and 230-second blackout.
  * Lines use CSS-pixel widths; all four edges dissolve well before the boundary.
@@ -92,11 +92,10 @@ void main(){
       float rasterScale=max(1.,uCssSize.y/max(uResolution.y,1.));
       float width=max(mix(1.05,2.15,foreground),.95*rasterScale);
       float net=NetLayer(st*size-M*z,n,uTime*.42,size/max(projection,1.),width);
-      vec3 tint=mix(vec3(.91,.95,1.),vec3(.99,.995,1.),.45+foreground*.50);
-      // A restrained pink drift occupies only a small fraction of the network.
-      float pink=smoothstep(.86,1.,sin(st.x*4.1+st.y*2.7+n*8.+t*.2)*.5+.5)*.14;
-      tint=mix(tint,vec3(.98,.93,.96),pink);
-      light+=tint*net*fade*.50;
+      // Blue depth and cyan foreground keep the brighter strokes in the scene's
+      // palette. Extra source energy compensates for the move away from white.
+      vec3 tint=mix(vec3(.22,.66,.94),vec3(.38,.91,1.),.30+foreground*.70);
+      light+=tint*net*fade*.95;
     }
   }
   vec2 edge=min(vUv,1.-vUv);
@@ -104,7 +103,7 @@ void main(){
   float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.20,edge.y),1.2);
   light*=dissolve;
   float energy=max(light.r,max(light.g,light.b));
-  float alpha=.56*(1.-exp(-energy/.56));
+  float alpha=.86*(1.-exp(-energy/.86));
   vec3 color=light/max(energy,.00001);
   // Premultiplied alpha leaves the existing starfield genuinely visible.
   gl_FragColor=vec4(color*alpha,alpha);
@@ -222,10 +221,10 @@ export class HomeNetwork {
       for(const p of points){
         for(const q of points){if(q.row<p.row||(q.row===p.row&&q.col<=p.col)||Math.abs(q.row-p.row)>1||Math.abs(q.col-p.col)>1)continue;
           const distance=Math.hypot(q.x-p.x,q.y-p.y)/spacing;if(distance>1.45)continue;
-          ctx.strokeStyle=`rgba(${layer?'252,254,255':'238,245,255'},${(.105+.065*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?2.05:1.05,.95*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+          ctx.strokeStyle=`rgba(${layer?'97,232,255':'71,196,255'},${(layer ? .2975 : .21)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?2.05:1.05,.95*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
         }
-        const pulse=.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8);
-        const tint=p.n>.9?'233,183,208':p.n>.35?'242,248,255':'137,180,231';
+        const pulse=(.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8))*1.75;
+        const tint=layer?'97,232,255':'71,196,255';
         ctx.strokeStyle=`rgba(${tint},${pulse*.22})`;ctx.lineWidth=.35;ctx.beginPath();ctx.moveTo(p.x,p.y-3.2);ctx.lineTo(p.x,p.y+3.2);ctx.moveTo(p.x-2.4,p.y);ctx.lineTo(p.x+2.4,p.y);ctx.stroke();
         ctx.fillStyle=`rgba(${tint},${pulse})`;ctx.beginPath();ctx.arc(p.x,p.y,.6,0,Math.PI*2);ctx.fill();
       }
