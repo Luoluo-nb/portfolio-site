@@ -19,7 +19,9 @@ const DEPTH_SPEED = Object.freeze({ambient: .010, audio: .030});
 const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
 // Retain scattering, but tone-map it with the sky rather than adding it after
 // exposure. Background contrast is independent of the foreground UI effects.
-const RAY_RESPONSE = Object.freeze({homeBase:.32, contentBase:.065, snareBoost:.24, contentMusicGain:.06});
+// Background shafts stay present across scroll positions; only measured
+// soundtrack loudness gives their strength a small lift.
+const RAY_RESPONSE = Object.freeze({base:.46, loudnessGain:.10});
 
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -138,7 +140,8 @@ uniform vec2 uRayOffset;
 uniform float uSamples,uDensity;
 void main(){
  vec2 tc=vUv;
- vec2 delta=(vUv+uRayOffset-.5)*(uDensity/uSamples);
+ vec2 center=vec2(.5)-uRayOffset;
+ vec2 delta=(vUv-center)*(uDensity/uSamples);
  float color=texture2D(uScene,tc).a*.305104;
  float illuminationDecay=1.;
  for(int i=0;i<55;i++){
@@ -165,7 +168,7 @@ uniform float uRayStrength;
 const float BASE_DISPLAY_GAIN=1.22;
 const float LIGHT_EXPOSURE=.32;
 const float LIGHT_SATURATION=.32;
-const float RAY_STYLE_GAIN=.35;
+const float RAY_STYLE_GAIN=.62;
 float grain(vec2 p){
  // Fixed screen-space interleaved gradient noise: sub-LSB, no temporal sparkle.
  return fract(52.9829189*fract(dot(mod(p,256.),vec2(.06711056,.00583715))));
@@ -220,6 +223,8 @@ export class Starfield {
     this.listeners = [];
     this.viewSize = { width: 1, height: 1, left: 0, top: 0 };
     this.pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
+    // WebGL UVs point upward: (0.5, 1) is the visible top centre.
+    this.rayCenter = { x: .5, y: 1 };
     this.pointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
     this._tick = this._tick.bind(this);
 
@@ -238,8 +243,15 @@ export class Starfield {
       const radius = Math.max(1, Math.hypot(nx, ny));
       this.pointer.targetX = nx / radius * 10;
       this.pointer.targetY = ny / radius * 10;
+      // Independent of the starfield's intentionally tiny eased parallax.
+      this.rayCenter.x = Math.max(0, Math.min(1, (nx + 1) * .5));
+      this.rayCenter.y = Math.max(0, Math.min(1, (ny + 1) * .5));
     });
-    const releasePointer = () => { this.pointer.targetX = 0; this.pointer.targetY = 0; };
+    const releasePointer = () => {
+      this.pointer.targetX = 0; this.pointer.targetY = 0;
+      this.rayCenter.x = .5; this.rayCenter.y = 1;
+    };
+    this._listen(this.pointerQuery, 'change', () => { releasePointer(); this._draw(); });
     this._listen(window, 'blur', releasePointer);
     this._listen(window, 'blur', () => { this._draw(); });
     this._listen(document, 'pointerout', event => { if (event.pointerType==='mouse'&&!event.relatedTarget) { releasePointer(); } });
@@ -254,6 +266,7 @@ export class Starfield {
     this._listen(canvas, 'webglcontextrestored', () => this._initialize());
     this.motionChanged = event => {
       this.reducedMotion = event.matches;
+      if (this.reducedMotion) releasePointer();
       this._sync();
     };
     if (this.motionQuery.addEventListener) this.motionQuery.addEventListener('change', this.motionChanged);
@@ -420,19 +433,19 @@ export class Starfield {
     const gl = this.gl;
     const levels = !this.reducedMotion && this.pageActive && !document.hidden ? this.audioLevels : null;
     const lag=levels?.active?levels.beatLag||0:0;
-    const rayTime=this.baseTime*.16;
-    const rayOffset=[Math.sin(rayTime*.7)*.3,-Math.cos(rayTime*.2)*.3];
-    const heroMix=this.reducedMotion?this._homeVisibility():this.heroMix;
-    const rayBaseline=RAY_RESPONSE.contentBase+(RAY_RESPONSE.homeBase-RAY_RESPONSE.contentBase)*heroMix;
-    const rayStrength=rayBaseline+lag*RAY_RESPONSE.snareBoost*(RAY_RESPONSE.contentMusicGain+heroMix*(1-RAY_RESPONSE.contentMusicGain));
+    const rayCenter=this.pointerQuery.matches&&!this.reducedMotion?this.rayCenter:{x:.5,y:1};
+    const rayOffset=[.5-rayCenter.x,.5-rayCenter.y];
+    const loudness=levels?.active&&Number.isFinite(levels.loudness)?Math.max(0,Math.min(1,levels.loudness)):0;
+    const rayBaseline=RAY_RESPONSE.base;
+    const rayStrength=rayBaseline+loudness*RAY_RESPONSE.loudnessGain;
     gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.bindFramebuffer(gl.FRAMEBUFFER,this.sceneTarget.framebuffer);gl.viewport(0,0,this.sceneTarget.width,this.sceneTarget.height);
     gl.useProgram(this.program);
     gl.uniform2f(this.uniforms.resolution, this.canvas.width, this.canvas.height);
     gl.uniform2f(this.uniforms.viewSize, this.viewSize.width, this.viewSize.height);
     gl.uniform2f(this.uniforms.pointer, this.pointer.x, this.pointer.y);
-    // Audio accelerates depth only. Twinkle, lateral drift and ambient Godray
-    // retain their slow clock, so a drum hit reads as travel rather than flash.
+    // Audio accelerates depth only. Twinkle and lateral drift retain their
+    // slow clock; the background shafts use a separate weak loudness response.
     gl.uniform1f(this.uniforms.time, this.baseTime);
     gl.uniform1f(this.uniforms.travel, this.travel);
     gl.uniform2f(this.uniforms.pulse, lag, this.heroMix);
@@ -442,7 +455,7 @@ export class Starfield {
       gl.bindFramebuffer(gl.FRAMEBUFFER,this.rayTarget.framebuffer);gl.viewport(0,0,this.rayTarget.width,this.rayTarget.height);gl.useProgram(this.rayProgram);
       gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.sceneTarget.texture);gl.uniform1i(this.rayUniforms.Scene,0);
       gl.uniform2f(this.rayUniforms.RayOffset,rayOffset[0],rayOffset[1]);gl.uniform1f(this.rayUniforms.Samples,this.raySamples);
-      gl.uniform1f(this.rayUniforms.Density,.926*(.95+lag*.1));gl.drawArrays(gl.TRIANGLES,0,3);
+      gl.uniform1f(this.rayUniforms.Density,.926);gl.drawArrays(gl.TRIANGLES,0,3);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.useProgram(this.compositeProgram);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.sceneTarget.texture);gl.uniform1i(this.compositeUniforms.Scene,0);
@@ -450,6 +463,8 @@ export class Starfield {
     gl.uniform1f(this.compositeUniforms.RayStrength,rayStrength);gl.drawArrays(gl.TRIANGLES,0,3);
     this.canvas.dataset.rayStrength=rayStrength.toFixed(4);
     this.canvas.dataset.rayBaseline=rayBaseline.toFixed(4);
+    this.canvas.dataset.rayCenterX=rayCenter.x.toFixed(4);
+    this.canvas.dataset.rayCenterY=rayCenter.y.toFixed(4);
     this.canvas.dataset.rayPass=rayStrength>.0001?'radial-scatter':'idle';
   }
 

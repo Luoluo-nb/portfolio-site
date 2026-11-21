@@ -40,7 +40,10 @@ float line(vec2 a,vec2 b,vec2 uv,float pixel,float width){
   float d=df_line(a,b,uv),d2=length(a-b);
   float fade=1.-smoothstep(.5,1.5,d2);
   fade+=1.-smoothstep(.02,.05,abs(d2-.75));
-  float halfWidth=width*.5*pixel,aa=.52*pixel;
+  // Cover the actual render pixels when the transition uses its pixel budget;
+  // CSS-only antialiasing can turn diagonal hairlines into isolated fragments.
+  float rasterScale=max(1.,uCssSize.y/max(uResolution.y,1.));
+  float halfWidth=width*.5*pixel,aa=.52*pixel*rasterScale;
   return (1.-smoothstep(max(0.,halfWidth-aa),halfWidth+aa,d))*fade;
 }
 float NetLayer(vec2 st,float n,float t,float pixel,float width){
@@ -86,15 +89,16 @@ void main(){
   for(int layer=0;layer<4;layer++){
     if(float(layer)<uLayers){
       float n=float(layer)/uLayers,z=fract(t+n);
-      float size=mix(7.2,1.4,z);
+      float size=mix(8.64,1.68,z);
       float fade=smoothstep(.04,.6,z)*(1.-smoothstep(.8,1.,z));
       float foreground=smoothstep(.58,.9,z);
-      float width=mix(.48,1.25,foreground);
+      float rasterScale=max(1.,uCssSize.y/max(uResolution.y,1.));
+      float width=max(mix(.80,2.0,foreground),.85*rasterScale);
       float net=NetLayer(st*size-M*z,n,uTime*.42,size/max(projection,1.),width);
-      vec3 tint=mix(vec3(.39,.62,.91),vec3(.97,.985,1.),.30+foreground*.55);
+      vec3 tint=mix(vec3(.80,.88,.97),vec3(.99,.995,1.),.45+foreground*.50);
       // A restrained pink drift occupies only a small fraction of the network.
-      float pink=smoothstep(.86,1.,sin(st.x*4.1+st.y*2.7+n*8.+t*.2)*.5+.5)*.42;
-      tint=mix(tint,vec3(.91,.72,.82),pink);
+      float pink=smoothstep(.86,1.,sin(st.x*4.1+st.y*2.7+n*8.+t*.2)*.5+.5)*.14;
+      tint=mix(tint,vec3(.98,.93,.96),pink);
       light+=tint*net*fade*.36;
     }
   }
@@ -192,7 +196,7 @@ export class HomeNetwork {
     ctx.setTransform(canvas.width/w,0,0,canvas.height/h,0,0);ctx.clearRect(0,0,w,h);
     const fract=x=>x-Math.floor(x),hash=(x,y)=>fract(Math.sin(x*127.1+y*311.7)*43758.5453);
     for(let layer=0;layer<2;layer++){
-      const spacing=Math.min(w,1328)/(layer?5.5:8),rows=Math.ceil(h/spacing)+2,points=[];
+      const spacing=Math.min(w,1328)/(layer?6.6:9.6),rows=Math.ceil(h/spacing)+2,points=[];
       for(let row=-1;row<rows;row++)for(let col=-1;col<Math.ceil(w/spacing)+1;col++){
         const n=hash(col+layer*17,row+layer*23),t=this.time*.42+n;
         points.push({col,row,x:(col+.5+Math.sin(t*fract(n*10))*.4)*spacing+this.pointer.x*5*(layer+1),y:(row+.5+Math.cos(t*fract(n*100))*.4)*spacing+this.pointer.y*5*(layer+1),n});
@@ -200,7 +204,7 @@ export class HomeNetwork {
       for(const p of points){
         for(const q of points){if(q.row<p.row||(q.row===p.row&&q.col<=p.col)||Math.abs(q.row-p.row)>1||Math.abs(q.col-p.col)>1)continue;
           const distance=Math.hypot(q.x-p.x,q.y-p.y)/spacing;if(distance>1.45)continue;
-          ctx.strokeStyle=`rgba(${layer?'237,246,255':'137,180,231'},${(.065+.045*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=layer?1.05:.48;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
+          ctx.strokeStyle=`rgba(${layer?'250,253,255':'226,238,251'},${(.065+.045*layer)*Math.max(0,(1.45-distance)/.85)})`;ctx.lineWidth=Math.max(layer?1.75:.80,.85*w/canvas.width);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();
         }
         const pulse=.12+.16*Math.pow(Math.sin(this.time*.42+p.n*20)*.5+.5,8);
         const tint=p.n>.9?'233,183,208':p.n>.35?'242,248,255':'137,180,231';

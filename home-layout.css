@@ -41,8 +41,8 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
 @keyframes home-arrow-flow{0%{stroke-dashoffset:12;opacity:0}18%{opacity:1}72%{opacity:1}100%{stroke-dashoffset:-76;opacity:0}}
 /* Let the introduction breathe before the project heading enters the page. */
 .home-featured{--transition-base:clamp(300px,36svh,460px);--transition-unit:calc(var(--transition-base) - 60px);--transition-space:calc(var(--transition-base)*1.5);position:relative;padding-top:var(--transition-space);padding-bottom:80px;scroll-margin-top:0}
-/* Extra depth reaches into the lower hero; the featured heading keeps its clear margin. */
-.home-transition{position:absolute;top:calc(var(--transition-space) - 40px - var(--transition-unit)*2.5);left:50%;transform:translateX(-50%);width:calc(100vw - 32px);max-width:1920px;height:calc(var(--transition-unit)*2.5);pointer-events:none;overflow:hidden}
+/* Shorten the vertical field to 80%; keep its bottom and heading clearance fixed. */
+.home-transition{position:absolute;top:calc(var(--transition-space) - 40px - var(--transition-unit)*2);left:50%;transform:translateX(-50%);width:calc(100vw - 32px);max-width:1920px;height:calc(var(--transition-unit)*2);pointer-events:none;overflow:hidden}
 .home-network{display:block;width:100%;height:100%;pointer-events:none}
 .home-effect-credit{display:flex;flex-wrap:wrap;gap:6px 12px;margin:36px 0 0;color:var(--muted);font-size:12px;line-height:1.7;font-weight:500}
 .home-effect-credit a{color:inherit;text-decoration:none;text-underline-offset:4px}
@@ -68,6 +68,31 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
 }
 #home-project-grid .home-card-media img{display:block;width:100%;height:100%;object-fit:cover;border-radius:0;filter:brightness(.88);transform:scale(1);transition:transform .55s cubic-bezier(.2,.6,.2,1),filter .3s;-webkit-mask:none;mask:none}
 #home-project-grid .project-card:is(:hover,:focus-visible) .home-card-media img{filter:brightness(1);transform:scale(1.025)}
+/* Thin-film interference stays inside the cover's existing fixed edge mask.
+   The title is a separate sibling; no reflection or grating crosses into it. */
+#home-project-grid .home-card-film{
+  position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0;mix-blend-mode:screen;
+  background:radial-gradient(ellipse at var(--film-x,50%) var(--film-y,42%),#d8f7ff2b,transparent 60%);
+  -webkit-mask-image:radial-gradient(ellipse 75% 90% at var(--film-x,50%) var(--film-y,42%),#000 5%,#000b 38%,transparent 78%);
+  mask-image:radial-gradient(ellipse 75% 90% at var(--film-x,50%) var(--film-y,42%),#000 5%,#000b 38%,transparent 78%);
+  transition:opacity .48s ease;
+}
+#home-project-grid .home-card-film::before,#home-project-grid .home-card-film::after{content:'';position:absolute;inset:0;pointer-events:none}
+#home-project-grid .home-card-film::before{
+  background:repeating-linear-gradient(var(--film-angle,112deg),transparent 0%,#8cc7ff30 10%,#a3f1ef40 19%,#f0bedc35 28%,#c5d8ff30 36%,transparent 46%),linear-gradient(112deg,transparent 35%,#eefaff45 49%,transparent 63%);
+  background-size:180% 180%;background-position:var(--film-shift-x,50%) var(--film-shift-y,48%);
+  opacity:calc(.64 + var(--film-energy,0)*.12);
+}
+#home-project-grid .home-card-film::after{
+  background:repeating-linear-gradient(var(--film-angle,112deg),transparent 0px,transparent 5px,#d9efff36 6px,#b8d7ed17 7px,transparent 9px);
+  background-position:var(--film-shift-x,50%) var(--film-shift-y,48%);background-size:180% 180%;
+  opacity:calc(.32 + var(--film-energy,0)*.18);
+}
+#home-project-grid .home-card-media[data-film-active=true] .home-card-film{opacity:.72}
+#home-project-grid .project-card:focus-visible .home-card-film{
+  --film-x:50%;--film-y:42%;--film-angle:112deg;--film-shift-x:50%;--film-shift-y:48%;--film-energy:0;opacity:.48;
+}
+@media(any-hover:none){#home-project-grid .home-card-film{opacity:0!important}}
 #home-project-grid .card-copy{position:relative;inset:auto;z-index:1;flex:1;display:flex;flex-direction:column;min-height:0;padding:16px 2px 4px;background:transparent}
 #home-project-grid .home-card-meta{display:flex;align-items:center;justify-content:space-between;gap:16px;color:#87bcd6;font-size:12px;line-height:1.5;font-weight:650;letter-spacing:.02em}
 #home-project-grid .home-card-duration{color:#7d94af;font-variant-numeric:tabular-nums;font-weight:500}
@@ -126,5 +151,6 @@ html[lang=en] #top h1{font-family:var(--font-ui);font-size:clamp(48px,5.8vw,82px
   #top .hero-scroll-flow{opacity:0}
   #top .hero-scroll,#top .hero-scroll-label,#top .hero-scroll-label::after,#top .hero-scroll-orbit::before{transition:none}
   #home-project-grid .home-card-media img,#home-project-grid .card-copy strong,#home-project-grid .card-arrow{transition:none}
+  #home-project-grid .home-card-film{--film-x:50%;--film-y:42%;--film-angle:112deg;--film-shift-x:50%;--film-shift-y:48%;--film-energy:0;transition:none}
   #home-project-grid .project-card:is(:hover,:focus-visible) .home-card-media img,#home-project-grid .project-card:is(:hover,:focus-visible) .card-arrow{transform:none}
 }

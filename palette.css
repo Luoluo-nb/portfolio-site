@@ -51,7 +51,6 @@ h2>i,.contact-inner h2 i{color:var(--pink)}
 #home-project-grid .card-copy strong{color:var(--fg)}
 #home-project-grid .project-card:is(:hover,:focus-visible) .card-arrow{color:var(--pink);filter:drop-shadow(0 0 8px rgb(var(--pink-rgb)/.24))}
 #project-grid .project-card[data-selected=true] .card-copy strong{color:var(--fg);text-shadow:0 0 12px rgb(var(--pink-rgb)/.18)}
-#project-grid .selection-nebula-layer-1{filter:hue-rotate(78deg) saturate(.66);opacity:.38}
 #project-grid .project-card:focus-visible{outline-color:var(--pink)}
 
 /* The music bar stays a fine line. Its small handle supplies one restrained

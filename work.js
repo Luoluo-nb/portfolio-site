@@ -1,4 +1,4 @@
-import { profile, projects } from './content.js';
+import { projects } from './content.js';
 import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
 import { projectDetails } from './project-details.js';
@@ -52,56 +52,66 @@ function help(message) {
   $('detail-playback-help').textContent = message;
   $('detail-playback-help').hidden = !message;
 }
-function play(startTime = project?.startTime ?? 0) {
-  if (!project) return;
-  if (project.videoSrc) {
-    const video = document.createElement('video');
-    video.controls = true;
-    video.playsInline = true;
-    video.loop = Boolean(project.loop);
-    video.preload = 'metadata';
-    video.poster = project.cover;
-    video.src = project.videoSrc;
-    video.defaultPlaybackRate = video.playbackRate = speed;
-    video.setAttribute('aria-label', project.title);
-    video.addEventListener('ratechange', () => { if (video.isConnected) syncSpeed(video.playbackRate); });
-    video.addEventListener('error', () => help('视频暂时无法加载，可点击下方「打开原视频」重试。'), {once:true});
-    $('detail-player').replaceChildren(video);
-    help('');
-    video.play().catch(() => help('点击播放器内的播放按钮继续观看。'));
-    announce(`正在播放：${project.title}`);
-  } else if (/^BV[a-zA-Z0-9]+$/.test(project.bvid)) {
-    const time = Number.isFinite(startTime) && startTime >= 0 ? startTime : 0;
-    const source = new URL('https://player.bilibili.com/player.html');
-    source.search = new URLSearchParams({bvid:project.bvid,...(project.cid ? {cid:String(project.cid)} : {}),p:String(project.page || 1),t:String(time),autoplay:'0',danmaku:'0',poster:'1'}).toString();
-    const frame = $('detail-player').querySelector('iframe') || document.createElement('iframe');
-    frame.src = source.href;
-    frame.title = `${project.title} — Bilibili 播放器`;
-    frame.allow = 'fullscreen; encrypted-media; picture-in-picture';
-    frame.allowFullscreen = true;
-    frame.referrerPolicy = 'strict-origin-when-cross-origin';
-    if (!frame.isConnected) {
-      const transferFocus = $('detail-player').contains(document.activeElement);
-      $('detail-player').replaceChildren(frame);
-      const close = document.createElement('button');
-      close.className = 'close-player';
-      close.type = 'button';
-      close.setAttribute('aria-label', '关闭播放器');
-      close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5 5 10 10m0-10L5 15"/></svg></span><span class="player-close-label">关闭</span>';
-      close.addEventListener('click', () => { showPoster(); help(''); $('detail-player').querySelector('.poster-button').focus({preventScroll:true}); });
-      $('detail-player').append(close);
-      if (transferFocus) frame.focus({preventScroll:true});
-    }
-    help(project.videoChapters?.length
-      ? '已打开所选章节，请在 Bilibili 播放器内点击播放。倍速可在播放器内调整。'
-      : '倍速请在 Bilibili 播放器内调整；若加载受限，可通过下方链接在 Bilibili 观看。');
-    announce('Bilibili 播放器已打开，请点击播放器内的播放按钮。');
+function replacePlayer(...nodes) {
+  const previous = $('detail-player').querySelector('video');
+  if (previous) {
+    previous.pause();
+    previous.removeAttribute('src');
+    previous.load();
   }
+  $('detail-player').replaceChildren(...nodes);
+}
+function play(startTime = project?.startTime ?? 0) {
+  if (!project?.videoSrc) return;
+  const transferFocus = $('detail-player').contains(document.activeElement);
+  const time = Number.isFinite(startTime) && startTime >= 0 ? startTime : 0;
+  const video = document.createElement('video');
+  video.controls = true;
+  video.playsInline = true;
+  video.loop = Boolean(project.loop);
+  video.muted = video.defaultMuted = Boolean(project.muted);
+  video.preload = 'metadata';
+  video.poster = project.cover;
+  video.src = project.videoSrc;
+  video.defaultPlaybackRate = video.playbackRate = speed;
+  video.setAttribute('aria-label', project.title);
+  video.addEventListener('ratechange', () => { if (video.isConnected) syncSpeed(video.playbackRate); });
+  video.addEventListener('error', () => { if (video.isConnected) help('视频暂时无法加载，可点击下方「打开原视频」重试。'); }, {once:true});
+  const close = document.createElement('button');
+  close.className = 'close-player';
+  close.type = 'button';
+  close.setAttribute('aria-label', '关闭播放器');
+  close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5 5 10 10m0-10L5 15"/></svg></span><span class="player-close-label">关闭</span>';
+  close.addEventListener('click', () => { showPoster(); help(''); $('detail-player').querySelector('.poster-button')?.focus({preventScroll:true}); });
+  replacePlayer(video, close);
+  help('');
+  const seek = () => {
+    if (!video.isConnected || $('detail-player').querySelector('video') !== video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    video.currentTime = Math.min(time, Math.max(0, video.duration - .05));
+  };
+  if (video.readyState >= 1) seek();
+  else video.addEventListener('loadedmetadata', seek, {once:true});
+  video.play().catch(() => { if (video.isConnected) help('点击播放器内的播放按钮继续观看。'); });
+  if (transferFocus) video.focus({preventScroll:true});
+  announce(`正在播放：${project.title}`);
 }
 
 function showPoster() {
   if (!project) return;
   $('detail-video-chapters')._chapterReset?.();
+  if (!project.videoSrc) {
+    const cover = document.createElement('figure');
+    cover.className = 'project-static-cover';
+    const image = document.createElement('img');
+    image.addEventListener('load', () => { image.style.maxWidth = image.naturalWidth+'px'; image.style.maxHeight = image.naturalHeight+'px'; }, {once:true});
+    image.src = project.cover;
+    image.alt = project.title;
+    image.referrerPolicy = 'no-referrer';
+    cover.append(image);
+    replacePlayer(cover);
+    help('');
+    return;
+  }
   const button = document.createElement('button');
   button.className = 'poster-button';
   button.type = 'button';
@@ -122,7 +132,7 @@ function showPoster() {
   caption.append(icon, text);
   button.append(image, caption);
   button.addEventListener('click', () => play());
-  $('detail-player').replaceChildren(button);
+  replacePlayer(button);
 }
 
 function renderBreakdown(detail) {
@@ -228,7 +238,7 @@ if (project) {
     $('work-next-name').className = 'detail-next-name';
     nextCopy.append($('work-next-label'), $('work-next-name'));
     $('work-next').prepend(nextCopy);
-    const nextShape = '<svg class="next-comet" viewBox="0 0 76 44" focusable="false"><path class="next-comet-envelope" d="M9 28C24 27 38 11 53 12C68 13 72 29 58 33C43 37 28 29 17 29"/><path class="next-comet-tail" d="M5 26C21 25 30 18 43 18"/><path class="next-comet-wake" pathLength="100" d="M5 26C21 25 30 18 43 18"/><path class="next-comet-guide" d="M44 23h18m-7-6 7 6-7 6"/><circle class="next-comet-spark" cx="62" cy="23" r="1.25"/></svg>';
+    const nextShape = '<svg class="next-direction" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><circle class="next-direction-ring" cx="24" cy="24" r="20"/><path class="next-direction-mark" d="M16 24h16m-6-6 6 6-6 6"/></svg>';
     for (const link of [$('work-next'), $('work-next-footer')]) link.querySelector('.detail-next-arrow').innerHTML = nextShape;
     $('work-next').hidden = $('work-next-navigation').hidden = false;
   }
@@ -241,7 +251,7 @@ if (project) {
   document.title = `${project.title} · 张致远作品集`;
   $('work-source').href = project.videoSrc || `https://www.bilibili.com/video/${project.bvid}/${Number.isFinite(project.startTime) && project.startTime > 0 ? `?t=${project.startTime}` : ''}`;
   $('work-source').textContent = project.videoSrc ? '打开原视频 ↗' : '在 Bilibili 打开 ↗';
-  $('work-profile').href = profile.bilibili;
+  $('work-profile').remove();
   $('detail-speed-controls').hidden = !project.videoSrc;
   for (const reference of project.references || []) {
     const link = document.createElement('a');
@@ -254,7 +264,7 @@ if (project) {
   $('work-references').hidden = !project.references?.length;
   $('work-content').hidden = false;
   showPoster();
-  renderVideoChapters($('detail-video-chapters'), project, () => $('detail-player').querySelector('video'), play);
+  renderVideoChapters($('detail-video-chapters'), project.videoSrc ? project : null, () => $('detail-player').querySelector('video'), play);
   renderBreakdown(projectDetails[project.id]);
 } else {
   document.title = '未找到作品 · 张致远作品集';
@@ -265,7 +275,5 @@ if (project) {
 $('detail-year').textContent = new Date().getFullYear();
 window.addEventListener('pagehide', event => {
   $('detail-player').querySelector('video')?.pause();
-  // Detaching the iframe also stops any cross-origin audio on browser back/forward.
-  if ($('detail-player').querySelector('iframe')) showPoster();
   if (!event.persisted) sky?.destroy();
 });

@@ -46,7 +46,7 @@ export function renderVideoChapters(container, project, getVideo, openPlayer) {
       if (!video) return;
       observe(video);
       const seek = () => {
-        if (!video.isConnected) return;
+        if (!video.isConnected || !Number.isFinite(video.duration) || video.duration <= 0) return;
         video.currentTime = Math.min(chapter.time, Math.max(0, video.duration - 0.05));
         update(video.currentTime);
         video.play().catch(() => {});

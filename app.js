@@ -86,6 +86,16 @@ function replacePreview(...nodes) {
 }
 function createPoster(project) {
   $('video-chapters')._chapterReset?.();
+  if (!project.videoSrc) {
+    const cover = element('figure', 'project-static-cover');
+    const image = element('img');
+    image.addEventListener('load', () => { image.style.maxWidth = image.naturalWidth+'px'; image.style.maxHeight = image.naturalHeight+'px'; }, {once:true});
+    image.src = project.cover;
+    image.alt = project.title;
+    image.referrerPolicy = 'no-referrer';
+    cover.append(image);
+    return cover;
+  }
   const button = element('button', 'poster-button');
   button.type = 'button';
   button.setAttribute('aria-label', `播放 ${project.title}`);
@@ -104,63 +114,50 @@ function createPoster(project) {
   return button;
 }
 function openPlayer(project, startTime = project.startTime ?? 0) {
-  if (project.videoSrc) {
-    const video = document.createElement('video');
-    video.controls = true;
-    video.playsInline = true;
-    video.loop = Boolean(project.loop);
-    video.preload = 'metadata';
-    video.poster = project.cover;
-    video.src = project.videoSrc;
-    video.defaultPlaybackRate = playbackSpeed;
-    video.playbackRate = playbackSpeed;
-    video.setAttribute('aria-label', project.title);
-    video.addEventListener('ratechange', () => {
-      if (video.isConnected && selected?.id === project.id) rememberPlaybackSpeed(video.playbackRate);
-    });
-    video.addEventListener('error', () => {
-      $('playback-help').textContent = '视频暂时无法加载，可通过「打开视频」重试。';
-      $('playback-help').hidden = false;
-    }, {once:true});
-    replacePreview(video);
-    $('playback-help').hidden = true;
-    // This is reached only from an explicit click on the play button.
-    video.play().catch(() => { /* Native controls remain available. */ });
-    announce(`正在播放：${project.title}`);
-    return;
-  }
-  if (!/^BV[a-zA-Z0-9]+$/.test(project.bvid)) return;
+  if (!project.videoSrc) return;
+  const transferFocus = $('project-preview').contains(document.activeElement);
   const time = Number.isFinite(startTime) && startTime >= 0 ? startTime : 0;
-  const source = new URL('https://player.bilibili.com/player.html');
-  source.search = new URLSearchParams({bvid:project.bvid, ...(project.cid ? {cid:String(project.cid)} : {}), p:String(project.page || 1), t:String(time), autoplay:'0', danmaku:'0', poster:'1'}).toString();
-  const frame = $('project-preview').querySelector('iframe') || document.createElement('iframe');
-  frame.src = source.href;
-  frame.title = `${project.title} — Bilibili 播放器`;
-  frame.allow = 'fullscreen; encrypted-media; picture-in-picture';
-  frame.allowFullscreen = true;
-  frame.referrerPolicy = 'strict-origin-when-cross-origin';
-  if (!frame.isConnected) {
-    const transferFocus = $('project-preview').contains(document.activeElement);
-    replacePreview(frame);
-    const close = element('button', 'close-player');
-    close.type = 'button';
-    close.setAttribute('aria-label', '关闭播放器');
-    close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-orbit" viewBox="0 0 40 40" focusable="false"><path d="M10 6.8A16.5 16.5 0 0 1 36.2 23M30 33.2A16.5 16.5 0 0 1 3.8 17"/></svg><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></span><span class="player-close-label">关闭</span>';
-    close.addEventListener('click', () => { replacePreview(createPoster(project)); $('playback-help').hidden = true; $('project-preview').querySelector('.poster-button').focus({preventScroll:true}); });
-    $('project-preview').append(close);
-    if (transferFocus) frame.focus({preventScroll:true});
-  }
-  $('playback-help').textContent = project.videoChapters?.length
-    ? '已打开所选章节，请在 Bilibili 播放器内点击播放。倍速可在播放器内调整。'
-    : '倍速请在 Bilibili 播放器内调整；若加载受限，可点击「在 Bilibili 打开」观看。';
-  $('playback-help').hidden = false;
-  announce('Bilibili 播放器已打开，请点击播放器内的播放按钮。');
+  const video = document.createElement('video');
+  video.controls = true;
+  video.playsInline = true;
+  video.loop = Boolean(project.loop);
+  video.muted = video.defaultMuted = Boolean(project.muted);
+  video.preload = 'metadata';
+  video.poster = project.cover;
+  video.src = project.videoSrc;
+  video.defaultPlaybackRate = video.playbackRate = playbackSpeed;
+  video.setAttribute('aria-label', project.title);
+  video.addEventListener('ratechange', () => {
+    if (video.isConnected && selected?.id === project.id) rememberPlaybackSpeed(video.playbackRate);
+  });
+  video.addEventListener('error', () => {
+    if (!video.isConnected || selected?.id !== project.id) return;
+    $('playback-help').textContent = '视频暂时无法加载，可通过「打开视频」重试。';
+    $('playback-help').hidden = false;
+  }, {once:true});
+  const close = element('button', 'close-player');
+  close.type = 'button';
+  close.setAttribute('aria-label', '关闭播放器');
+  close.innerHTML = '<span class="player-close-glyph" aria-hidden="true"><svg class="player-close-orbit" viewBox="0 0 40 40" focusable="false"><path d="M10 6.8A16.5 16.5 0 0 1 36.2 23M30 33.2A16.5 16.5 0 0 1 3.8 17"/></svg><svg class="player-close-mark" viewBox="0 0 20 20" focusable="false"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></span><span class="player-close-label">关闭</span>';
+  close.addEventListener('click', () => { replacePreview(createPoster(project)); $('playback-help').hidden = true; $('project-preview').querySelector('.poster-button')?.focus({preventScroll:true}); });
+  replacePreview(video, close);
+  $('playback-help').hidden = true;
+  const seek = () => {
+    if (!video.isConnected || $('project-preview').querySelector('video') !== video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    video.currentTime = Math.min(time, Math.max(0, video.duration - .05));
+  };
+  if (video.readyState >= 1) seek();
+  else video.addEventListener('loadedmetadata', seek, {once:true});
+  // This is reached only from an explicit play or chapter action.
+  video.play().catch(() => { /* Native controls remain available. */ });
+  if (transferFocus) video.focus({preventScroll:true});
+  announce(`正在播放：${project.title}`);
 }
 function selectProject(project, shouldScroll = false) {
   selected = project;
   replacePreview(createPoster(project));
   $('playback-controls').hidden = !project.videoSrc;
-  renderVideoChapters($('video-chapters'), project, () => $('project-preview').querySelector('video'), time => openPlayer(project, time));
+  renderVideoChapters($('video-chapters'), project.videoSrc ? project : null, () => $('project-preview').querySelector('video'), time => openPlayer(project, time));
   syncSpeedControl();
   $('project-title').textContent = project.title;
   $('project-platform').textContent = categoryName(project.category) + (project.subcategory === 'vehicle' ? ' / 车辆' : '');
@@ -209,8 +206,8 @@ function showEmpty() {
   $('project-link').textContent = 'Bilibili 空间 ↗';
   $('playback-help').hidden = true;
 }
-// Static noise displaces the edge mask once. Two complete noise color fields
-// flow behind it, so local wisps brighten and fade without moving the card shape.
+// Native rounded borders keep each option's silhouette fixed. Only the soft
+// highlight moves; no noise, displacement or filter touches the contour.
 const selectionFrames = new Set();
 function syncSelectionFrame(frame) {
   const moving = frame.dataset.visible === 'true' && !document.hidden && !reducedMotion.matches;
@@ -228,43 +225,10 @@ reducedMotion.addEventListener('change', syncSelectionFrames);
 document.addEventListener('visibilitychange', syncSelectionFrames);
 function createSelectionFrame(index) {
   const frame = element('span', 'selection-card-frame');
-  const id = `selection-nebula-${index}`;
   frame.setAttribute('aria-hidden', 'true');
   frame.dataset.visible = String(!selectionFrameObserver);
-  frame.style.setProperty('--nebula-delay', `${-index * 3.17}s`);
-  const layer = (n) => {
-    const layerId = `${id}-${n}`;
-    const texture = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="212" viewBox="0 0 320 212" preserveAspectRatio="none" fill="none">
-    <defs>
-      <linearGradient id="${layerId}-color" x1="0" y1="0" x2="320" y2="212" gradientUnits="userSpaceOnUse">
-        <stop stop-color="#78bce4" stop-opacity=".15"/><stop offset=".2" stop-color="#a3dcff" stop-opacity=".85"/><stop offset=".44" stop-color="#6786c0" stop-opacity=".22"/><stop offset=".7" stop-color="#91c9f4" stop-opacity=".95"/><stop offset="1" stop-color="#83ace2" stop-opacity=".2"/>
-      </linearGradient>
-      <filter id="${layerId}-flow" x="-12" y="-12" width="344" height="236" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="${n ? '.026 .036' : '.018 .045'}" numOctaves="2" seed="${index * 2 + n + 13}" result="field"/>
-        <feDisplacementMap in="SourceGraphic" in2="field" scale="9" xChannelSelector="R" yChannelSelector="G" result="warped"/>
-        <feColorMatrix in="field" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  3.4 0 0 0 -1.13" result="wisps"/>
-        <feComposite in="warped" in2="wisps" operator="in" result="threads"/>
-        <feGaussianBlur in="threads" stdDeviation="1.45" result="halo"/>
-        <feMerge><feMergeNode in="halo"/><feMergeNode in="threads"/></feMerge>
-      </filter>
-    </defs>
-    <g class="selection-nebula-ribbons" filter="url(#${layerId}-flow)" stroke="url(#${layerId}-color)">
-      <path stroke-width="1.65" stroke-linecap="round" d="M7 34C3 13 12 6 34 7C98 3 160 11 224 6S315 2 314 33C318 78 310 130 315 177S296 206 265 205C199 210 141 201 77 206S4 212 6 177C2 128 10 83 7 34Z"/>
-      <path stroke-width=".85" opacity=".58" stroke-linecap="round" d="M12 39C6 17 19 11 42 12C111 7 176 14 240 10S308 17 308 43C312 91 306 130 310 170S289 201 254 200C185 205 117 197 62 202S10 192 12 162C6 118 15 78 12 39Z"/>
-    </g>
-  </svg>`;
-    if (n === 0) frame.style.maskImage = `url("data:image/svg+xml,${encodeURIComponent(texture)}")`;
-    const field = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-      <filter id="field" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="${n ? '.047 .031' : '.031 .055'}" numOctaves="2" seed="${index * 2 + n + 31}" stitchTiles="stitch"/>
-        <feColorMatrix type="matrix" values="0 0 0 0 ${n ? '.32' : '.65'}  0 0 0 0 ${n ? '.58' : '.88'}  0 0 0 0 1  3.8 0 0 0 -1.35"/>
-      </filter><rect width="128" height="128" filter="url(#field)"/>
-    </svg>`;
-    const surface = element('span', `selection-nebula-layer selection-nebula-layer-${n}`);
-    surface.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(field)}")`;
-    return surface;
-  };
-  frame.append(layer(0), layer(1));
+  frame.style.setProperty('--selection-highlight-delay', `${-index * 2.4}s`);
+  frame.append(element('span', 'selection-frame-light'));
   selectionFrames.add(frame);
   return frame;
 }
@@ -435,6 +399,81 @@ const featuredTechniques = {
   'rain-vat': '雨滴材质 · 涟漪法线 · 水花粒子',
   'unreal-snow': '雪地压痕 · 车轮沾雪 · 接触映射',
 };
+function mountHomeCardFilm(card, media) {
+  const film = element('span', 'home-card-film');
+  film.setAttribute('aria-hidden', 'true');
+  media.append(film);
+  let active = false, frame = 0, lastFrame = 0, lastMove = 0;
+  let x = .5, y = .42, targetX = x, targetY = y, velocity = 0, energy = 0;
+  const clamp = value => Math.max(0, Math.min(1, value));
+  function paint() {
+    media.style.setProperty('--film-x', `${(x * 100).toFixed(2)}%`);
+    media.style.setProperty('--film-y', `${(y * 100).toFixed(2)}%`);
+    media.style.setProperty('--film-angle', `${(112 + (x - .5) * 14 + (y - .5) * 6 + energy * 2).toFixed(2)}deg`);
+    media.style.setProperty('--film-shift-x', `${(34 + x * 32 + energy * 4).toFixed(2)}%`);
+    media.style.setProperty('--film-shift-y', `${(38 + y * 24).toFixed(2)}%`);
+    media.style.setProperty('--film-energy', energy.toFixed(3));
+  }
+  function cancel() { cancelAnimationFrame(frame); frame = 0; lastFrame = 0; }
+  function tick(now) {
+    frame = 0;
+    if (!active || document.hidden || reducedMotion.matches) return;
+    const seconds = Math.min(.06, Math.max(.001, (now - (lastFrame || now - 16)) / 1000));
+    lastFrame = now;
+    const easing = 1 - Math.exp(-seconds / .09);
+    x += (targetX - x) * easing; y += (targetY - y) * easing;
+    velocity *= Math.exp(-seconds / .14);
+    energy += (velocity - energy) * easing;
+    paint();
+    // Only pointer movement and its short settling tail need animation frames.
+    if (Math.abs(targetX - x) + Math.abs(targetY - y) > .0005 || velocity > .002 || energy > .002) frame = requestAnimationFrame(tick);
+    else lastFrame = 0;
+  }
+  function queue() { if (!frame) frame = requestAnimationFrame(tick); }
+  function updatePointer(event, entering = false) {
+    const bounds = media.getBoundingClientRect();
+    const nextX = clamp((event.clientX - bounds.left) / Math.max(1, bounds.width));
+    const nextY = clamp((event.clientY - bounds.top) / Math.max(1, bounds.height));
+    const now = performance.now();
+    velocity = entering ? 0 : Math.min(1, Math.hypot(nextX - targetX, nextY - targetY) * 260 / Math.max(8, now - lastMove));
+    targetX = nextX; targetY = nextY; lastMove = now; queue();
+  }
+  function enter(event) {
+    if (event.pointerType !== 'mouse' || document.hidden) return;
+    active = true; media.dataset.filmActive = 'true';
+    if (!reducedMotion.matches) updatePointer(event, true);
+  }
+  function move(event) {
+    if (active && event.pointerType === 'mouse' && !reducedMotion.matches) updatePointer(event);
+  }
+  function leave() {
+    active = false; delete media.dataset.filmActive; cancel(); velocity = energy = 0;
+    // Keep the last light position while CSS fades the layer away.
+  }
+  function pointerDown(event) { if (event.pointerType !== 'mouse') leave(); }
+  function motionChanged() {
+    cancel(); x = targetX = .5; y = targetY = .42; velocity = energy = 0; paint();
+  }
+  function visibilityChanged() { if (document.hidden) leave(); }
+  function pageHidden(event) {
+    leave();
+    if (event.persisted) return;
+    card.removeEventListener('pointerenter', enter); card.removeEventListener('pointermove', move);
+    card.removeEventListener('pointerleave', leave); card.removeEventListener('pointercancel', leave);
+    card.removeEventListener('pointerdown', pointerDown);
+    reducedMotion.removeEventListener('change', motionChanged);
+    document.removeEventListener('visibilitychange', visibilityChanged);
+    window.removeEventListener('blur', leave); window.removeEventListener('pagehide', pageHidden);
+  }
+  card.addEventListener('pointerenter', enter, {passive: true});
+  card.addEventListener('pointermove', move, {passive: true});
+  card.addEventListener('pointerleave', leave, {passive: true});
+  card.addEventListener('pointercancel', leave, {passive: true});
+  card.addEventListener('pointerdown', pointerDown, {passive: true});
+  reducedMotion.addEventListener('change', motionChanged);
+  document.addEventListener('visibilitychange', visibilityChanged);
+  window.addEventListener('blur', leave); window.addEventListener('pagehide', pageHidden);
+}
 function createProjectLink(project) {
   const card = element('a', 'project-card');
   card.href = `./work.html?id=${encodeURIComponent(project.id)}`;
@@ -445,6 +484,7 @@ function createProjectLink(project) {
   image.loading = 'lazy';
   const media = element('span', 'home-card-media');
   media.append(image);
+  mountHomeCardFilm(card, media);
   const copy = element('span', 'card-copy');
   const meta = element('span', 'home-card-meta');
   const duration = Math.max(0, Math.round(project.duration || 0));

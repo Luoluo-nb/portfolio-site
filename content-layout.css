@@ -10,35 +10,34 @@
 .preview-column .project-caption h3{max-width:28ch;text-wrap:balance}
 .preview-column .project-caption .text-link{min-height:44px;display:inline-flex;align-items:center}
 .selection-tip{max-width:60ch}
-/* Clear covers sit inside a thin, noise-displaced nebula rim. Only the rim
-   receives the SVG filter; artwork and captions stay sharp and undistorted. */
+/* A fixed rounded outline separates every option from the player. A slow,
+   low-contrast reflection changes its light, never its silhouette. */
 #project-grid{gap:16px}
-#project-grid .project-card{border:0;border-radius:17px;background:transparent;box-shadow:none;clip-path:none;overflow:visible;isolation:isolate}
+#project-grid .project-card{border:0;border-radius:16px;background:#0a1322;box-shadow:0 4px 14px #02071324;clip-path:none;overflow:hidden;isolation:isolate}
 #project-grid .project-card::before{display:none}
-#project-grid .selection-card-media{position:absolute;inset:7px;display:block;overflow:hidden;border-radius:12px;background:#080f1b;isolation:isolate;z-index:0}
+#project-grid .selection-card-media{position:absolute;inset:7px;display:block;overflow:hidden;border-radius:10px;background:#080f1b;isolation:isolate;z-index:0}
 #project-grid .project-card img{filter:brightness(.78) saturate(.9);transform:scale(1);transition:filter .24s}
 #project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) img{filter:brightness(1.04) saturate(1.04);transform:scale(1)}
-/* The cover receives a narrow moving reflection, masked away from its caption.
-   The existing noise rim provides the edge flow; neither distorts the artwork. */
+/* Keep the cover reflection faint and away from the caption. */
 #project-grid .selection-card-media::before,#project-grid .selection-card-media::after{content:"";position:absolute;pointer-events:none;z-index:1;opacity:0;transition:opacity .24s}
-#project-grid .selection-card-media::before{inset:0;border-radius:inherit;background:radial-gradient(ellipse at 15% 0%,#b8e6ff35,transparent 55%),radial-gradient(ellipse at 100% 35%,#a0cfff17,transparent 48%);box-shadow:inset 0 0 18px #b5dcff12}
-#project-grid .selection-card-media::after{inset:-45%;background:linear-gradient(112deg,transparent 39%,#8cc2f414 45%,#eef9ff52 49%,#a1d7ff14 54%,transparent 61%);mix-blend-mode:screen;mask-image:radial-gradient(ellipse at 50% 24%,#000 18%,#0009 40%,transparent 65%);animation:selection-cover-flow 4.8s ease-in-out infinite alternate;animation-play-state:paused;transform:translate3d(-22%,0,0)}
-#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-media::before{opacity:.9}
-#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-media::after{opacity:.7}
+#project-grid .selection-card-media::before{inset:0;border-radius:inherit;background:radial-gradient(ellipse at 15% 0%,#b8e6ff20,transparent 55%),radial-gradient(ellipse at 100% 35%,#a0cfff0d,transparent 48%)}
+#project-grid .selection-card-media::after{inset:-45%;background:linear-gradient(112deg,transparent 37%,#8cc2f40a 44%,#eef9ff24 49%,#a1d7ff0a 55%,transparent 63%);mix-blend-mode:screen;mask-image:radial-gradient(ellipse at 50% 24%,#000 18%,#0009 40%,transparent 65%);animation:selection-cover-flow 12s ease-in-out infinite alternate;animation-play-state:paused;transform:translate3d(-22%,0,0)}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-media::before{opacity:.6}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-media::after{opacity:.35}
 #project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]):has(.selection-card-frame[data-motion=running]) .selection-card-media::after{animation-play-state:running;will-change:transform}
-#project-grid .project-card .card-copy{inset:auto 7px 7px;padding:38px 14px 16px;border-radius:0 0 12px 12px;background:linear-gradient(transparent,#071121dc 65%,#071121f0);z-index:1}
+#project-grid .project-card .card-copy{inset:auto 7px 7px;padding:38px 14px 16px;border-radius:0 0 10px 10px;background:linear-gradient(transparent,#071121dc 65%,#071121f0);z-index:1}
 #project-grid .project-card::after{display:none}
-#project-grid .selection-card-frame{position:absolute;inset:0;overflow:hidden;pointer-events:none;opacity:.24;filter:brightness(.9);transition:opacity .24s,filter .24s;z-index:2;mask-size:100% 100%;mask-repeat:no-repeat;mask-mode:alpha}
-#project-grid .selection-nebula-layer{position:absolute;inset:-128px;background-size:128px 128px;background-repeat:repeat;animation:selection-nebula-drift 6.8s linear infinite;animation-delay:var(--nebula-delay);animation-play-state:paused}
-#project-grid .selection-nebula-layer-1{opacity:.72;animation-name:selection-nebula-counterflow;animation-duration:9.4s}
-#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-frame[data-motion=running] .selection-nebula-layer{animation-play-state:running;will-change:transform}
-#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-frame{opacity:1;filter:brightness(1.5)}
+#project-grid .selection-card-frame{position:absolute;inset:0;pointer-events:none;border:1px solid #9cb8d940;border-radius:inherit;transition:border-color .3s;z-index:2}
+#project-grid .selection-frame-light{position:absolute;inset:-1px;box-sizing:border-box;padding:1px;border-radius:inherit;background:linear-gradient(110deg,transparent 25%,#b7d8f018 40%,#edf6ff8c 49%,#a5c6e533 58%,transparent 73%);background-size:280% 100%;opacity:0;transition:opacity .35s;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;animation:selection-frame-glint 12s ease-in-out infinite alternate;animation-delay:var(--selection-highlight-delay);animation-play-state:paused}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-card-frame[data-motion=running] .selection-frame-light{animation-play-state:running}
+#project-grid .project-card:is(:hover,:focus-visible) .selection-card-frame{border-color:#b9d4e869}
+#project-grid .project-card[data-selected=true] .selection-card-frame{border-color:#bdd9ee8c}
+#project-grid .project-card:is(:hover,:focus-visible,[data-selected=true]) .selection-frame-light{opacity:.6}
 #project-grid .project-card[data-selected=true] .card-copy strong{color:#f2faff;text-shadow:0 0 12px #8bbfe533}
 #project-grid .project-card:focus-visible{outline:1px dashed #9bdaf7;outline-offset:4px;box-shadow:none}
-@keyframes selection-nebula-drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(128px,128px,0)}}
-@keyframes selection-nebula-counterflow{from{transform:translate3d(0,0,0)}to{transform:translate3d(-128px,128px,0)}}
+@keyframes selection-frame-glint{from{background-position:100% 0}to{background-position:0 0}}
 @keyframes selection-cover-flow{from{transform:translate3d(-22%,0,0)}to{transform:translate3d(22%,0,0)}}
-@media(prefers-reduced-motion:reduce){#project-grid .project-card img,#project-grid .selection-card-frame,#project-grid .selection-card-media::before,#project-grid .selection-card-media::after{transition:none}#project-grid .selection-nebula-layer,#project-grid .selection-card-media::after{animation:none;will-change:auto}#project-grid .selection-card-media::after{transform:translate3d(0,0,0)}}
+@media(prefers-reduced-motion:reduce){#project-grid .project-card img,#project-grid .selection-card-frame,#project-grid .selection-frame-light,#project-grid .selection-card-media::before,#project-grid .selection-card-media::after{transition:none}#project-grid .selection-frame-light,#project-grid .selection-card-media::after{animation:none;will-change:auto}#project-grid .selection-card-media::after{transform:translate3d(0,0,0)}}
 @media(min-width:601px) and (max-width:1100px){
   .works-layout{grid-template-columns:1fr;gap:38px}
   #project-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}

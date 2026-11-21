@@ -86,7 +86,8 @@ function attachMask(root) {
   let visible = false, timer = 0, lastFrame = -1, disposed = false;
   let compact = false, lastCompact = false, lastControls = -1, controlStart = 0, controlTarget = 0, controlAt = 0;
   const isFullscreen = () => document.fullscreenElement && (document.fullscreenElement === root || root.contains(document.fullscreenElement));
-  const canAnimate = () => !disposed && !suspended && visible && !document.hidden && !reducedMotion.matches && !isFullscreen() && frames.length === FRAME_COUNT;
+  const hasMaskedMedia = () => Boolean(root.querySelector('.poster-button, :scope > video, :scope > iframe'));
+  const canAnimate = () => hasMaskedMedia() && !disposed && !suspended && visible && !document.hidden && !reducedMotion.matches && !isFullscreen() && frames.length === FRAME_COUNT;
   function stop() { clearTimeout(timer); timer = 0; root.dataset.playerMaskRunning = 'false'; }
   const controlsAt = now => reducedMotion.matches ? controlTarget : controlStart + (controlTarget - controlStart) * smooth(0, 500, now - controlAt);
   const transitioning = now => Math.abs(controlsAt(now) - controlTarget) > .001;
@@ -103,7 +104,7 @@ function attachMask(root) {
   }
   function tick() {
     timer = 0;
-    if (disposed || suspended || !visible || document.hidden || isFullscreen()) { stop(); return; }
+    if (disposed || suspended || !visible || document.hidden || isFullscreen() || !hasMaskedMedia()) { stop(); return; }
     refreshControls();
     const now = performance.now();
     apply(reducedMotion.matches ? 0 : Math.floor(now / 1000 * FPS) % frames.length);
@@ -112,6 +113,7 @@ function attachMask(root) {
   }
   function update() {
     stop(); if (disposed) return;
+    if (!hasMaskedMedia()) { root.style.removeProperty('--player-noise-mask'); delete root.dataset.playerMaskFrame; root.dataset.playerMaskState = 'image'; return; }
     if (visible) prepare();
     compact = root.getBoundingClientRect().width <= 600;
     root.dataset.playerMaskSize = compact ? 'compact' : 'wide';

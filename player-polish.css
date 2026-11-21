@@ -1,4 +1,7 @@
 @import url('./player-controls.css');
+/* Image-only projects keep the original image crisp and complete. */
+.project-preview .project-static-cover{display:grid;place-items:center;margin:0;width:100%;height:100%;overflow:hidden;border-radius:12px;background:#070c124d}
+.project-preview .project-static-cover>img{display:block;width:100%;height:100%;object-fit:contain;filter:none;transform:none;-webkit-mask:none;mask:none}
 /* Alpha masks reveal the real page background. No colored layer is drawn over
    the video, and the same soft boundary is used on all four sides. */
 .project-preview,.detail-player{border:0;background:transparent;aspect-ratio:16/9;min-height:0;max-height:none;overflow:visible;isolation:isolate}
