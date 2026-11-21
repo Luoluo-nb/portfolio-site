@@ -30,6 +30,7 @@ const requestedId = new URLSearchParams(location.search).get('id');
 const requestedProject = projects.find(item => item.id === (requestedId === 'ptcg-texture3d' ? 'ptcg-card' : requestedId));
 const detailProjects = projects.filter(item => !item.externalOnly);
 const project = requestedProject?.externalOnly ? null : requestedProject;
+let workPreparation;
 if (requestedProject?.externalOnly) location.replace(bilibiliVideoUrl(requestedProject));
 const speedKey = 'portfolio-video-speed';
 const validSpeed = value => Number.isFinite(value) && value >= 0.25 && value <= 4;
@@ -113,6 +114,15 @@ function play(startTime = project?.startTime ?? 0) {
 function showPoster() {
   if (!project) return;
   $('detail-video-chapters')._chapterReset?.();
+  if (!project.cover) {
+    const cover = document.createElement('span');
+    cover.className = 'project-type-cover';
+    cover.textContent = project.coverLabel || project.title;
+    cover.setAttribute('aria-hidden', 'true');
+    replacePlayer(cover);
+    help('');
+    return;
+  }
   if (!project.videoSrc) {
     const cover = document.createElement('figure');
     cover.className = 'project-static-cover';
@@ -251,7 +261,7 @@ if (project) {
     const nextUrl = `./work.html?id=${encodeURIComponent(nextProject.id)}`;
     $('work-next').href = $('work-next-footer').href = nextUrl;
     for (const link of [$('work-next'), $('work-next-footer')]) link.dataset.preloadWork = '';
-    setupWorkPreload([nextUrl], [nextProject.cover]);
+    workPreparation = setupWorkPreload([nextUrl], [nextProject.cover]);
     $('work-next-name').textContent = $('work-next-title').textContent = nextProject.title;
     const nextCopy = document.createElement('span');
     nextCopy.className = 'detail-next-compact-copy';
@@ -266,8 +276,11 @@ if (project) {
   $('work-category').textContent = platform + (project.subcategory === 'vehicle' ? ' / 车辆' : '');
   $('work-title').textContent = project.title;
   $('work-description').textContent = project.description || '';
-  const seconds = Math.max(0, Math.round(project.duration || 0));
-  $('work-duration').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.5V12l3.5 2"/></svg><span class="duration-value" data-no-translate>${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}</span><span class="duration-type">视频</span>`;
+  const seconds = Number.isFinite(project.duration) ? Math.round(project.duration) : 0;
+  $('work-duration').hidden = seconds <= 0;
+  if (seconds > 0) {
+    $('work-duration').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.5V12l3.5 2"/></svg><span class="duration-value" data-no-translate>${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}</span><span class="duration-type">视频</span>`;
+  }
   document.title = `${project.title} · 张致远作品集`;
   $('work-source').href = project.videoSrc || bilibiliVideoUrl(project);
   $('work-source').textContent = project.videoSrc ? '打开原视频 ↗' : '在 Bilibili 打开 ↗';
@@ -303,4 +316,4 @@ if (!requestedProject?.externalOnly) {
   scheduleSky();
   window.addEventListener('pageshow', event => { if (event.persisted) scheduleSky(); });
 }
-window.dispatchEvent(new Event('portfolio:app-ready'));
+window.dispatchEvent(new CustomEvent('portfolio:app-ready', {detail: {workPreparation}}));

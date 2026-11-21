@@ -85,8 +85,14 @@ function replacePreview(...nodes) {
   }
   $('project-preview').replaceChildren(...nodes);
 }
+function createTypeCover(project) {
+  const cover = element('span', 'project-type-cover', project.coverLabel || project.title);
+  cover.setAttribute('aria-hidden', 'true');
+  return cover;
+}
 function createPoster(project) {
   $('video-chapters')._chapterReset?.();
+  if (!project.cover) return createTypeCover(project);
   if (!project.videoSrc) {
     const cover = element('figure', 'project-static-cover');
     const image = element('img');
@@ -269,19 +275,21 @@ function renderProjects() {
     button.dataset.id = project.id;
     button.dataset.selected = String(selected?.id === project.id);
     button.setAttribute('aria-current', String(selected?.id === project.id));
-    const img = element('img');
-    img.src = project.cover;
-    img.alt = '';
-    img.loading = 'lazy';
-    img.referrerPolicy = 'no-referrer';
-    img.addEventListener('error', () => { img.hidden = true; }, {once:true});
     const label = element('span', 'card-copy');
-    const duration = Math.max(0, Math.round(project.duration || 0));
-    const minutes = Math.floor(duration / 60);
-    const seconds = String(duration % 60).padStart(2,'0');
-    label.append(element('strong','',project.title), element('small','',`${categoryName(project.category)} / ${minutes}:${seconds}`));
+    const duration = Number.isFinite(project.duration) ? Math.round(project.duration) : 0;
+    const platform = categoryName(project.category);
+    const meta = duration > 0 ? `${platform} / ${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}` : platform;
+    label.append(element('strong','',project.title), element('small','',meta));
     const media = element('span', 'selection-card-media');
-    media.append(img);
+    if (project.cover) {
+      const image = element('img');
+      image.alt = '';
+      image.loading = 'lazy';
+      image.referrerPolicy = 'no-referrer';
+      image.addEventListener('error', () => { image.hidden = true; }, {once:true});
+      image.src = project.cover;
+      media.append(image);
+    } else media.append(createTypeCover(project));
     const frame = createSelectionFrame(visible.indexOf(project));
     button.append(media,label,frame);
     button.addEventListener('click', (event) => {
@@ -553,9 +561,10 @@ renderProjects();
 showRoute();
 const initialGrid = activeView === 'top' ? $('home-project-grid') : activeView === 'works' ? $('project-grid') : null;
 const initialDetailLinks = initialGrid ? [...initialGrid.querySelectorAll('a[data-preload-work]')].slice(0, 2) : [];
-setupWorkPreload(
+const priorityCovers = initialDetailLinks.map(link => link.querySelector('img')).filter(Boolean);
+const workPreparation = setupWorkPreload(
   initialDetailLinks.map(link => link.href),
-  initialDetailLinks.map(link => link.querySelector('img')?.src).filter(Boolean),
+  window.PortfolioStartGate?.active ? [] : priorityCovers.map(image => image.src),
 );
 // A cold document's native fragment scroll can run after module evaluation.
 // Reapply the heading offset once after load, unless the visitor has moved on.
@@ -573,5 +582,5 @@ if (/^#home-projects(?:-title)?$/.test(location.hash)) {
   else window.addEventListener('load', settleFragment, {once:true});
 }
 window.addEventListener('pagehide', (event) => { if (!event.persisted) starfield?.destroy(); });
-window.dispatchEvent(new Event('portfolio:app-ready'));
+window.dispatchEvent(new CustomEvent('portfolio:app-ready', {detail: {workPreparation, priorityCovers}}));
 

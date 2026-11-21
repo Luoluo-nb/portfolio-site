@@ -82,6 +82,12 @@ const OUTER_END_RADIUS=8+(RIPPLE_RADIUS-8)*(1-(1-Math.min(1,RIPPLE_LIFE*OUTER_LI
 // Ambient color planes have their own clock and pool, never a manual group.
 const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS;
 const AUTO_BANDS=[{width:200,gap:0},{width:5,gap:8}];
+const AUTO_MOBILE_BANDS=[{width:72,gap:0},{width:2,gap:8}],AUTO_MOBILE_DURATION_SCALE=1.6;
+const AUTO_MAX_LIFE=AUTO_LIFE*AUTO_MOBILE_DURATION_SCALE;
+// The birth-time touch flag survives navigation; a carried wave keeps its clock
+// and band widths even if the current page's pointer media query changes.
+const autoWaveLife=wave=>AUTO_LIFE*(wave.touch?AUTO_MOBILE_DURATION_SCALE:1);
+const autoWaveBands=wave=>wave.touch?AUTO_MOBILE_BANDS:AUTO_BANDS;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
  const halfRadius=RIPPLE_RADIUS*.1;
@@ -108,11 +114,11 @@ let nextBurstId=0;
 canvas.dataset.renderer='native-conic-flow';canvas.dataset.material='independent-flowing-arcs';canvas.dataset.rippleCount='3';
 canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(',');canvas.dataset.rippleWidths=RIPPLE_WIDTHS.join(',');canvas.dataset.composition='independent-circle-overlap';canvas.dataset.anchor='document';canvas.dataset.sdf='disabled';
 canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=String(RIPPLE_DURATION);canvas.dataset.widthHalfRadius=String(RIPPLE_RADIUS*.1);canvas.dataset.widthOrder='thin-lines';
-canvas.dataset.crossing='uncut-overlap';canvas.dataset.motion='conic-head-and-tail';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.color='white';canvas.dataset.geometry='native-tapered-arc';
+canvas.dataset.crossing='uncut-overlap';canvas.dataset.motion='center-lit-conic';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.color='white';canvas.dataset.geometry='native-tapered-arc';
 canvas.dataset.groupSize=String(CLICKS_PER_GROUP);canvas.dataset.styleCount=String(STYLE_COUNT);canvas.dataset.groupInteraction='none';
 canvas.dataset.maxMainGroups=String(MAX_MAIN_GROUPS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.maxVisuals=String(MAX_VISUAL_BURSTS);
 canvas.dataset.outerEndRadius=String(OUTER_END_RADIUS);canvas.dataset.outerWidthHalfRadius=String(OUTER_END_RADIUS*.5);canvas.dataset.outerExit='width-to-zero';
-canvas.dataset.flowHighlights='1';canvas.dataset.flowArcRange='30-330';canvas.dataset.flowRandomness='fixed-per-ring';
+canvas.dataset.flowHighlights='1';canvas.dataset.flowArcRange='60-360';canvas.dataset.flowRandomness='fixed-per-ring';
 function updateLifecycle(now,reservedLoad=0){
  for(let i=bursts.length-1;i>=0;i--){
   const burst=bursts[i];
@@ -154,27 +160,33 @@ function reserveVisualSlot(now){
 function createFlowBands(seed,mode,style){
  const tau=Math.PI*2,count=mode==='crowded'?1:3,flows=[];
  const base=mode==='crowded'?[55,213,237]:style===1?[210,240,255]:style===2?[255,231,209]:[226,241,255];
- const head=mode==='crowded'?[195,253,255]:[255,255,255],peak=mode==='crowded'?.56:.98;
+ const center=mode==='crowded'?[195,253,255]:[255,255,255],peak=mode==='crowded'?.56:.98;
  for(let ring=0;ring<count;ring++){
   let randomState=(seed^Math.imul(ring+1,0x9e3779b9))>>>0;
   const random=()=>{randomState=(randomState+0x6d2b79f5)>>>0;let value=randomState;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return ((value^(value>>>14))>>>0)/4294967296;};
   // Every visible ring gets independent, stable arc length and motion.
-  const arc=(30+300*random())*Math.PI/180,start=random()*tau,direction=random()<.5?-1:1,speed=.38+.92*random();
+  const arc=(60+300*random())*Math.PI/180,start=random()*tau,direction=random()<.5?-1:1,speed=.38+.92*random();
   const taper=(style===1?.62:style===2?1.18:.82)*(.85+.3*random());
-  const segments=Math.max(16,Math.ceil(arc*32)),points=new Float32Array((segments+1)*3);
+  // Sample after the existing shape/motion sequence so saved seeds retain it.
+  const alphaPower=1+4*random();
+  const segments=Math.max(16,Math.ceil(arc*16)*2),points=new Float32Array((segments+1)*3);
   for(let n=0;n<=segments;n++){
    const t=n/segments,angle=direction*arc*(t-1);
-   const gain=Math.pow(Math.min(1,t/.95),taper)*(1-smooth(.97,1,t));
+   const gain=n===0||n===segments?0:Math.pow(Math.sin(Math.PI*t),taper);
    points.set([Math.cos(angle),Math.sin(angle),gain],n*3);
   }
-  // One bright head, a long transparent tail, and no full-circle underlay.
-  const profile=[[0,0],[.14,.012],[.40,.07],[.65,.22],[.84,.52],[.95,1],[.982,.72],[1,0]];
-  const color=(t,alpha)=>{const blend=smooth(.65,.97,t),rgb=base.map((value,i)=>Math.round(value+(head[i]-value)*blend));return 'rgba('+rgb.join(',')+','+(alpha*peak)+')';};
+  // The local arc midpoint is widest, brightest and whitest. Both endpoints
+  // taper to exactly zero, including the shared seam of a full 360-degree arc.
+  const profile=[[0,0],[.12,.04],[.28,.24],[.42,.68],[.5,1],[.58,.68],[.72,.24],[.88,.04],[1,0]];
+  const color=(t,alpha)=>{const blend=smooth(.35,1,1-Math.abs(t*2-1)),rgb=base.map((value,i)=>Math.round(value+(center[i]-value)*blend));return 'rgba('+rgb.join(',')+','+(Math.pow(alpha,alphaPower)*peak)+')';};
   const linearStops=profile.map(([t,alpha])=>({offset:t,color:color(t,alpha)}));
   const fraction=arc/tau;
   const stops=linearStops.map(stop=>({offset:direction>0?stop.offset*fraction:1-stop.offset*fraction,color:stop.color}));
   stops.push({offset:0,color:color(0,0)},{offset:1,color:color(0,0)});stops.sort((a,b)=>a.offset-b.offset);
-  flows.push({arc,start,direction,speed,segments,points,stops,linearStops});
+  // Radial fallback is centered on the same midpoint. Its chord-distance
+  // mapping stays non-degenerate even when the endpoints meet at 360 degrees.
+  const radialStops=linearStops.filter(stop=>stop.offset>=.5).map(stop=>({offset:Math.min(1,Math.sin((stop.offset-.5)*arc/2)/Math.sin(arc/4)),color:stop.color}));
+  flows.push({arc,start,direction,speed,alphaPower,segments,points,stops,radialStops});
  }
  return flows;
 }
@@ -196,22 +208,23 @@ function drawFlowBursts(now,viewLeft,viewTop){
    if(radius<near-3||radius>far+3)continue;
    const thickness=crowded?Math.max(1,CROWDED_WIDTH*scale):ring===0?band.width*scale:Math.max(band.width*scale,.95*width/canvas.width);
    if(thickness<=0)continue;
-   const flow=flows[ring],travel=burst.style===1?.65:burst.style===2?1.45:1;
-   const angle=flow.start+flow.direction*flow.speed*elapsed*travel,cos=Math.cos(angle),sin=Math.sin(angle),half=thickness*.5;
+   const flow=flows[ring];
+   const angle=flow.start+flow.direction*flow.speed*elapsed,cos=Math.cos(angle),sin=Math.sin(angle),half=thickness*.5;
    const tail=angle-flow.direction*flow.arc;
    let gradient;
    if(typeof ctx.createConicGradient==='function'){
     gradient=ctx.createConicGradient(tail,cx,cy);
     for(const stop of flow.stops)gradient.addColorStop(stop.offset,stop.color);
    }else{
-    // Older Canvas implementations keep the same moving tapered geometry.
-    gradient=ctx.createLinearGradient(cx+Math.cos(tail)*radius,cy+Math.sin(tail)*radius,cx+cos*radius,cy+sin*radius);
-    for(const stop of flow.linearStops)gradient.addColorStop(stop.offset,stop.color);
+    // Older Canvas implementations keep the same moving midpoint highlight.
+    const middle=angle-flow.direction*flow.arc*.5,mx=cx+Math.cos(middle)*radius,my=cy+Math.sin(middle)*radius;
+    gradient=ctx.createRadialGradient(mx,my,0,mx,my,Math.max(1,2*radius*Math.sin(flow.arc/4)));
+    for(const stop of flow.radialStops)gradient.addColorStop(stop.offset,stop.color);
    }
    ctx.globalAlpha=(crowded?band.opacity/.62:band.opacity)*visualWeight(burst,now)*birthOpacity*(!crowded&&burst.touch?.82:1);
    ctx.fillStyle=gradient;ctx.beginPath();
    // These cached points describe only this arc. Its centerline stays circular;
-   // head and tail meet at zero width, so no circle masking or extra pass is needed.
+   // both ends meet at zero width, so no circle masking or extra pass is needed.
    const points=flow.points;
    for(let n=0;n<=flow.segments;n++){
     const at=n*3,x=points[at]*cos-points[at+1]*sin,y=points[at]*sin+points[at+1]*cos,r=radius+half*points[at+2];
@@ -230,7 +243,7 @@ function drawFlowBursts(now,viewLeft,viewTop){
  canvas.dataset.groups=String(visibleGroups.size);canvas.dataset.mainGroups=String(new Set(bursts.filter(b=>b.outerAlive&&b.retiredAt===null).map(b=>b.groupId)).size);canvas.dataset.frameTexturePixels='0';
 }
 function updateAmbientWaves(now){
- for(let i=ambientWaves.length-1;i>=0;i--)if(now-ambientWaves[i].born>=AUTO_LIFE)ambientWaves.splice(i,1);
+ for(let i=ambientWaves.length-1;i>=0;i--)if(now-ambientWaves[i].born>=autoWaveLife(ambientWaves[i]))ambientWaves.splice(i,1);
 }
 function drawAmbientWaves(now,viewLeft,viewTop,viewportLeft,viewportTop){
  // Filled annular areas, not stroked outlines, sparkles, trails or SDF masks.
@@ -238,7 +251,7 @@ function drawAmbientWaves(now,viewLeft,viewTop,viewportLeft,viewportTop){
  const visibleBands=[],paint=ambientCtx;if(!paint)return visibleBands;
  paint.save();paint.globalCompositeOperation='source-over';paint.globalAlpha=1;paint.fillStyle='#ffffff';
  for(const wave of ambientWaves){
-  const elapsed=Math.max(0,now-wave.born),progress=Math.min(1,elapsed/AUTO_EXPAND_MS);
+  const elapsed=Math.max(0,now-wave.born),progress=Math.min(1,elapsed/autoWaveLife(wave)),bands=autoWaveBands(wave);
   const radialProgress=1-(1-progress)**1.55;
   const radius=AUTO_RADIUS*(wave.touch?.68:1)*radialProgress;
   // Disappearance changes geometry only: the fill never becomes translucent.
@@ -247,8 +260,8 @@ function drawAmbientWaves(now,viewLeft,viewTop,viewportLeft,viewportTop){
   const near=Math.hypot(Math.max(0,-cx,cx-width),Math.max(0,-cy,cy-height));
   const far=Math.hypot(Math.max(Math.abs(cx),Math.abs(width-cx)),Math.max(Math.abs(cy),Math.abs(height-cy)));
   let outside=radius;
-  for(let index=0;index<AUTO_BANDS.length;index++){
-   const band=AUTO_BANDS[index];
+  for(let index=0;index<bands.length;index++){
+   const band=bands[index];
    outside-=band.gap;if(outside<=0)continue;
    const inside=Math.max(0,outside-band.width*widthScale);
    if(outside-inside<=0||outside<near-1||inside>far+1){outside=inside;continue;}
@@ -268,8 +281,8 @@ function emitAmbientWave(x,y){
  if(!autoAllowed())return;
  updateAmbientWaves(performance.now());
  if(ambientWaves.length>=2)ambientWaves.shift();
- ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches});
- canvas.dataset.autoMaterial='two-opaque-color-bands';canvas.dataset.autoWidths='200,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';canvas.dataset.autoExit='width-to-zero';
+ const wave={pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches};ambientWaves.push(wave);
+ canvas.dataset.autoMaterial='two-opaque-color-bands';canvas.dataset.autoWidths=autoWaveBands(wave).map(band=>band.width).join(',');canvas.dataset.autoDuration=String(autoWaveLife(wave));canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';canvas.dataset.autoExit='width-to-zero';
  if(!frame)frame=requestAnimationFrame(tick);state('active');saveContinuity();
 }
 function tick(now){
@@ -435,7 +448,7 @@ function restoreContinuity(){
  try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:10,sequence:clickSequence,crowdedMode,savedAt:Date.now(),pulses:[],waves:[],repeats:[]}));}catch{}
  if(reduced.matches||!ctx&&!ambientCtx)return;
  const gap=Date.now()-saved?.savedAt;
- if(!Number.isFinite(gap)||gap<0||gap>Math.max(RIPPLE_LIFE,AUTO_LIFE))return;
+ if(!Number.isFinite(gap)||gap<0||gap>Math.max(RIPPLE_LIFE,AUTO_MAX_LIFE))return;
  const now=performance.now();
  // Use the same viewport anchor as carried rings, then keep document coordinates
  // fixed on this page. Only still-future slots survive the navigation interval.
@@ -464,7 +477,7 @@ function restoreContinuity(){
  }
  if(ambientCtx)for(const wave of (Array.isArray(saved.waves)?saved.waves:[]).slice(-2)){
   if(!wave||!Number.isFinite(wave.x)||!Number.isFinite(wave.y)||!Number.isFinite(wave.age))continue;
-  const age=Math.max(0,wave.age)+gap;if(age>=AUTO_LIFE)continue;
+  const age=Math.max(0,wave.age)+gap;if(age>=autoWaveLife(wave))continue;
   // Ignore legacy palette fields: both bands now always render opaque white.
   ambientWaves.push({pageX:wave.x+scrollX,pageY:wave.y+scrollY,born:now-age,touch:!!wave.touch});
  }

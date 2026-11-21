@@ -15,14 +15,14 @@
   let deadline, bootDeadline, language = 'zh';
   let previousFocus, scrollStyles, disposeFilm;
   const pendingCleanup = new Set();
-  const tasks = new Map([['page', null], ['type', null], ['brand', null], ['covers', null]]);
+  const tasks = new Map([['page', null], ['type', null], ['brand', null], ['covers', null], ['works', null]]);
   try { language = localStorage.getItem('portfolio-language') === 'en' ? 'en' : 'zh'; } catch {}
   const words = language === 'en' ? {
-    label: 'Enter portfolio', loading: 'Loading essentials', complete: 'Ready. Press Enter to start.',
+    label: 'Enter portfolio', loading: 'Preparing the portfolio and project details', complete: 'Ready. Press Enter to start.',
     partial: 'Ready · some resources unavailable',
     escape: 'Press Escape to enter now.',
   } : {
-    label: '进入作品集', loading: '正在加载首屏资源', complete: '准备就绪，按 Enter 进入',
+    label: '进入作品集', loading: '正在加载首屏和作品详情', complete: '准备就绪，按 Enter 进入',
     partial: '部分资源未就绪，可进入',
     escape: '可按 Esc 直接进入。',
   };
@@ -119,10 +119,10 @@
     });
   }
 
-  function prepareCovers() {
+  function prepareCovers(priorityCovers = []) {
     // Read the rendered route, including a saved category or direct work URL.
     // Only warm two initial covers; videos, embeds and breakdown images stay lazy.
-    let images = [...document.querySelectorAll('#detail-player img, #project-preview img')]
+    let images = [...priorityCovers, ...document.querySelectorAll('#detail-player img, #project-preview img')]
       .filter(image => !image.closest('[hidden]'));
     const grid = document.querySelector('[data-view-panel="works"]:not([hidden]) #project-grid')
       || document.querySelector('[data-view-panel="top"]:not([hidden]) #home-project-grid');
@@ -138,11 +138,15 @@
     Promise.all(images.map(imageReady)).then(results => settle('covers', results.every(Boolean)));
   }
 
-  function onAppReady() {
+  function onAppReady(event) {
     if (!active || appReady) return;
     appReady = true;
     settle('page', true);
-    prepareCovers();
+    prepareCovers(event.detail?.priorityCovers);
+    Promise.resolve(event.detail?.workPreparation).then(
+      success => settle('works', success !== false),
+      () => settle('works', false),
+    );
     // Wait for layout's actual font set, after the initial app has rendered text.
     Promise.resolve(document.fonts?.ready).then(
       () => settle('type', !document.fonts || [...document.fonts].every(font => font.status !== 'error')),

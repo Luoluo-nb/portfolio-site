@@ -6,11 +6,11 @@ const detailAssets = [
   './image-viewer.css',
 ];
 const requestLimit = 16;
-let installed = false;
+let startupPreparation;
 
 export function setupWorkPreload(initialUrls = [], initialCovers = []) {
-  if (installed || !['http:', 'https:'].includes(location.protocol)) return;
-  installed = true;
+  if (startupPreparation) return startupPreparation;
+  if (!['http:', 'https:'].includes(location.protocol)) return Promise.resolve(true);
 
   const detailPage = new URL('./work.html', location.href);
   const mediaDirectory = new URL('./media/', detailPage);
@@ -28,24 +28,39 @@ export function setupWorkPreload(initialUrls = [], initialCovers = []) {
       && !connection?.saveData && !['slow-2g', '2g', '3g'].includes(connection?.effectiveType);
   }
 
-  function detailUrl(value) {
+  function localUrl(value) {
     if (typeof value !== 'string' || !value) return null;
     let url;
     try {
-      url = new URL(value, location.href);
+      url = new URL(value, detailPage);
     } catch {
       return null;
     }
-    if (url.origin !== detailPage.origin || url.pathname !== detailPage.pathname
-      || url.username || url.password || !/^\?id=[\w-]+$/.test(url.search)) return null;
+    if (url.origin !== detailPage.origin || url.username || url.password) return null;
     url.hash = '';
-    return url.href;
+    return url;
   }
 
-  function warm(url) {
-    if (!url || !canWarmCache() || used.size >= requestLimit || used.has(url)) return;
+  function detailUrl(value) {
+    const url = localUrl(value);
+    return url?.pathname === detailPage.pathname && /^\?id=[\w-]+$/.test(url.search)
+      ? url.href
+      : null;
+  }
+
+  function coverUrl(value) {
+    const url = localUrl(value);
+    return url?.pathname.startsWith(mediaDirectory.pathname) && /\.(?:jpe?g|webp|png)$/i.test(url.pathname)
+      ? url.href
+      : null;
+  }
+
+  function warm(url, waitForBytes = false) {
+    if (!url || !canWarmCache() || used.size >= requestLimit || used.has(url)) {
+      return Promise.resolve(true);
+    }
     used.add(url);
-    if (supportsPrefetch) {
+    if (!waitForBytes && supportsPrefetch) {
       const link = document.createElement('link');
       link.rel = 'prefetch';
       link.href = url;
@@ -53,45 +68,51 @@ export function setupWorkPreload(initialUrls = [], initialCovers = []) {
       link.addEventListener('load', () => link.remove(), {once: true});
       link.addEventListener('error', () => link.remove(), {once: true});
       document.head.append(link);
-      return;
+      return Promise.resolve(true);
     }
     // Consume these small same-origin resources so the HTTP cache receives
-    // their full response even when the browser lacks link prefetch.
+    // their full response before START marks the preparation task complete.
     const controller = new AbortController();
     pendingFetches.set(url, controller);
-    fetch(url, {
+    return fetch(url, {
       credentials: 'same-origin',
       cache: 'force-cache',
       mode: 'same-origin',
       priority: 'low',
       signal: controller.signal,
-    }).then(response => response.ok ? response.arrayBuffer() : undefined)
-      .catch(() => {})
+    }).then(async response => {
+      if (!response.ok) return false;
+      await response.arrayBuffer();
+      return true;
+    })
+      .catch(() => false)
       .finally(() => {
         if (pendingFetches.get(url) === controller) pendingFetches.delete(url);
       });
   }
 
-  function warmInitial() {
+  function warmInitial(waitForBytes = false) {
     idleHandle = undefined;
-    if (!canWarmCache()) return;
+    if (!canWarmCache()) return Promise.resolve(true);
     initialWarmingDone = true;
-    for (const href of initialUrls.slice(0, 2)) warm(detailUrl(href));
-    if (location.pathname !== detailPage.pathname) {
-      for (const path of detailAssets) warm(new URL(path, detailPage).href);
-    }
-    for (const cover of initialCovers.slice(0, 2)) {
-      const url = new URL(cover, detailPage);
-      if (url.origin === mediaDirectory.origin && url.pathname.startsWith(mediaDirectory.pathname)
-        && /\.(?:jpg|webp|png)$/i.test(url.pathname)) warm(url.href);
-    }
+    const assets = location.pathname === detailPage.pathname
+      ? []
+      : detailAssets.map(path => new URL(path, detailPage).href);
+    const resources = new Set([
+      ...assets,
+      ...initialUrls.slice(0, 2).map(detailUrl),
+      ...initialCovers.slice(0, 2).map(coverUrl),
+    ]);
+    return Promise.all([...resources].map(url => warm(url, waitForBytes)))
+      .then(results => results.every(Boolean));
   }
 
   function scheduleInitial() {
     if (initialWarmingDone || idleHandle !== undefined || !canWarmCache()) return;
+    const run = () => warmInitial();
     idleHandle = idleCallback
-      ? requestIdleCallback(warmInitial, {timeout: 1200})
-      : setTimeout(warmInitial, 180);
+      ? requestIdleCallback(run, {timeout: 1200})
+      : setTimeout(run, 180);
   }
 
   function cancelInitial() {
@@ -132,5 +153,8 @@ export function setupWorkPreload(initialUrls = [], initialCovers = []) {
     suspended = false;
     scheduleInitial();
   });
-  scheduleInitial();
+  const gateActive = window.PortfolioStartGate?.active;
+  startupPreparation = gateActive ? warmInitial(true) : Promise.resolve(true);
+  if (!gateActive) scheduleInitial();
+  return startupPreparation;
 }

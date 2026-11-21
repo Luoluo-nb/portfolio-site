@@ -10,6 +10,31 @@
 .preview-column .project-caption h3{max-width:28ch;text-wrap:balance}
 .preview-column .project-caption .text-link{min-height:44px;display:inline-flex;align-items:center}
 .selection-tip{max-width:60ch}
+
+/* A typographic cover for a project whose source still has not been supplied. */
+.project-type-cover{
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:100%;
+  padding:12%;
+  overflow:hidden;
+  border-radius:10px;
+  background:
+    radial-gradient(ellipse at 50% 46%,#1e3650,transparent 66%),
+    linear-gradient(150deg,#0d1828,#050911 75%);
+  color:#dbeeff;
+  text-align:center;
+  text-wrap:balance;
+  font-size:clamp(22px,4.2vw,58px);
+  font-weight:720;
+  line-height:1.15;
+  letter-spacing:.06em;
+}
+.selection-card-media .project-type-cover{
+  padding:0 12% 19%;
+  font-size:clamp(16px,2.1vw,27px);
+}
 /* A fixed rounded outline separates every option from the player. A slow,
    low-contrast reflection changes its light, never its silhouette. */
 #project-grid{gap:16px}

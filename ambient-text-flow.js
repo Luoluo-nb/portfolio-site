@@ -1,4 +1,4 @@
-// Rose outline light on existing white type. The ambient-wave renderer owns
+// Rose diffraction outlines on large white type. The ambient-wave renderer owns
 // the clock and supplies its actual annuli; this module never starts a loop.
 const TARGETS = 'h1,h2,h3,h4,.card-copy strong,.contact-method strong,.contact-method-label,.hero-scroll-label,.action,.project-detail-link,.category-tabs button,.subcategory-row button,.preview-toolbar,.selection-heading,.detail-next-copy strong';
 const EXCLUDED = 'nav,.header,dialog,[role="dialog"],[aria-modal="true"],[hidden],.sr-only,svg,canvas,script,style,[aria-hidden="true"]';
@@ -101,6 +101,17 @@ export function createAmbientTextFlow() {
     return `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
   }
 
+  function minimumOutlineSize() {
+    // The shared shell contains this benchmark even when its home panel is hidden.
+    // Read its computed type size once per layout rebuild, never once per frame.
+    const benchmark = document.getElementById('home-projects-title');
+    const size = benchmark ? parseFloat(getComputedStyle(benchmark).fontSize) : NaN;
+    if (Number.isFinite(size) && size > 0) return size;
+    // work.html has no home panel. Match home-layout.css's actual cascade:
+    // clamp(30px,3.2vw,44px), overridden to 31px at max-width:600px.
+    return matchMedia('(max-width:600px)').matches ? 31 : Math.min(44, Math.max(30, innerWidth * .032));
+  }
+
   function applyFont(run) {
     context.font = run.font;
     context.textAlign = 'left';
@@ -126,6 +137,7 @@ export function createAmbientTextFlow() {
     runs = [];
     const visited = new Set(), styles = new Map();
     const pageLeft = scrollX, pageTop = scrollY;
+    const minimumSize = minimumOutlineSize();
     let glyphCount = 0;
     const range = document.createRange();
     const activeTargets = viewportObserver ? visible : targets;
@@ -140,11 +152,13 @@ export function createAmbientTextFlow() {
         const parent = node.parentElement;
         let style = styles.get(parent);
         if (!style) { style = getComputedStyle(parent); styles.set(parent, style); }
+        const size = parseFloat(style.fontSize);
+        if (!Number.isFinite(size) || size < minimumSize) continue;
         if (!whiteType(style, parent) || style.direction === 'rtl' || style.writingMode !== 'horizontal-tb') continue;
         const source = node.textContent;
         // This deliberately targets compact titles/labels, not body paragraphs.
         if (source.length > 320) continue;
-        const options = {font: fontFor(style), size: parseFloat(style.fontSize), spacing: style.letterSpacing === 'normal' ? '0px' : style.letterSpacing, kerning: style.fontKerning || 'auto'};
+        const options = {font: fontFor(style), size, spacing: style.letterSpacing === 'normal' ? '0px' : style.letterSpacing, kerning: style.fontKerning || 'auto'};
         const parts = segmenter ? [...segmenter.segment(source)].map(part => ({text: part.segment, index: part.index})) : (() => {
           let index = 0;
           return Array.from(source, text => { const part = {text, index}; index += text.length; return part; });
@@ -192,10 +206,20 @@ export function createAmbientTextFlow() {
     const edge = 'rgba(117,25,74,0)';
     const rose = 'rgba(117,25,74,.62)';
     const crest = 'rgba(213,49,121,.98)';
+    const coolPink = 'rgba(229,105,174,.94)';
+    const lilac = 'rgba(163,132,219,.92)';
+    const blueWhite = 'rgba(207,230,250,.88)';
     const stops = [[0, edge], [.025, rose], [.975, rose], [1, edge]];
     const phase = ((band.elapsed * .55) % .5 + .5) % .5;
+    // Small spectral splits travel with each radial crest. Most of the outline
+    // remains deep rose against white; the blue-white split is a narrow ridge.
+    // At most 28 native stops per band, with no extra surface, loop or shader.
+    const split = Math.min(.035, Math.max(.008, 1.5 / (band.outer - band.inner)));
+    const grating = [[-.12, rose], [-2.5 * split, crest], [-1.3 * split, coolPink],
+      [-.55 * split, lilac], [0, crest], [.45 * split, blueWhite],
+      [1.1 * split, lilac], [2.4 * split, crest], [.12, rose]];
     for (let center = phase - .5; center < 1.5; center += .5) {
-      for (const [offset, color] of [[-.12, rose], [0, crest], [.12, rose]]) {
+      for (const [offset, color] of grating) {
         const at = center + offset;
         if (at > .025 && at < .975) stops.push([at, color]);
       }

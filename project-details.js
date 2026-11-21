@@ -6,6 +6,61 @@ const figure = (name, width, height, caption, type = 'image') => ({
 });
 
 export const projectDetails = {
+  'unreal-multilegged-robot': {
+    title: '多足机器人制作流程',
+    introduction: '在 Blender 完成多足机器人的建模与骨骼绑定，接入 Unreal Engine 后用程序化骨骼动画驱动行走。',
+    chapters: [
+      {
+        id: 'robot-modeling', title: 'Blender 建模',
+        description: '在 Blender 中完成多足机器人的模型制作。',
+      },
+      {
+        id: 'robot-rigging', title: '骨骼绑定',
+        description: '为机器人模型完成骨骼绑定，让模型能够随骨骼姿态变化。',
+      },
+      {
+        id: 'robot-unreal-import', title: '接入 Unreal Engine',
+        description: '将完成绑定的机器人模型接入 Unreal Engine，用于后续的程序化动画。',
+      },
+      {
+        id: 'robot-procedural-walk', title: '程序化骨骼动画与行走',
+        description: '在 Unreal Engine 中以程序化方式驱动骨骼，形成这台多足机器人的行走动作。',
+      },
+    ],
+  },
+  'td-unreal-brush': {
+    title: '手势画笔与墨迹流程',
+    introduction: 'TouchDesigner 采集手部坐标并判断捏合，将滤波后的手势通过共享内存传给 Unreal Engine，在纸面绘制墨迹并表现随时间变干的效果。',
+    chapters: [
+      {
+        id: 'brush-hand-position', title: 'MediaPipe 手部位置采集',
+        description: 'TouchDesigner 通过 MediaPipe 获取手部和手指的 Position，作为画笔交互的输入。',
+      },
+      {
+        id: 'brush-pinch-filter', title: '捏合判断、映射与滤波',
+        description: '将手指位置转换为位置数据与捏合状态两类交互信号。',
+        steps: [
+          '用指尖之间的距离判断捏合状态。',
+          '对位置进行映射与滤波，减少坐标噪声传到后续绘制环节。',
+        ],
+      },
+      {
+        id: 'brush-shared-memory', title: '共享内存传入 UE',
+        description: '将处理后的手部位置与捏合状态通过共享内存传给 Unreal Engine。',
+        steps: [
+          '位置用于驱动画笔移动，捏合状态用于控制落笔与抬笔。',
+        ],
+      },
+      {
+        id: 'brush-rt-drying', title: 'RT 绘制与墨迹变干',
+        description: '在 Unreal Engine 中将交互笔迹写入 Render Target，并用 Decal 把墨迹颜色映射到纸面。',
+        steps: [
+          '第一个 Render Target 保留已绘制的笔迹，让轨迹持续留在纸面。',
+          'RT2 随时间更新墨迹的干燥表现，与保留笔迹的 RT 分开处理。',
+        ],
+      },
+    ],
+  },
   "unreal-car": {
   "title": "车辆材质实现方案",
   "introduction": "围绕车辆展示搭建车漆、水面与地面材质，结合按键变色、平面反射和接触涟漪，呈现材质与环境的交互。",

@@ -23,13 +23,15 @@ layer.setAttribute('data-no-translate', '');
 (document.body || document.documentElement).append(layer);
 
 function newArc() {
-  return {sweep: 30 + Math.random() * 300, start: Math.random() * 360,
-    direction: Math.random() < .5 ? -1 : 1, speed: 55 + Math.random() * 100};
+  return {sweep: 60 + Math.random() * 300, start: Math.random() * 360,
+    direction: Math.random() < .5 ? -1 : 1, speed: 55 + Math.random() * 100,
+    alphaPower: 1 + Math.random() * 4};
 }
 
 function validArc(arc) {
   return arc && [arc.sweep, arc.start, arc.speed].every(Number.isFinite)
-    && arc.sweep >= 30 && arc.sweep <= 330 && arc.start >= 0 && arc.start < 360
+    // Accept old v2 arcs below 60 degrees, then normalize their sweep on restore.
+    && arc.sweep >= 30 && arc.sweep <= 360 && arc.start >= 0 && arc.start < 360
     && (arc.direction === -1 || arc.direction === 1) && arc.speed >= 0 && arc.speed <= 360;
 }
 
@@ -38,12 +40,35 @@ function birthAlpha(age) {
   return BIRTH_ALPHA + (1 - BIRTH_ALPHA) * progress * progress * (3 - 2 * progress);
 }
 
+function midpointStrength(progress) {
+  return progress <= 0 || progress >= 1 ? 0 : Math.sin(Math.PI * progress);
+}
+
+function resolveAlphaPower(arc, index) {
+  if (Number.isFinite(arc.alphaPower) && arc.alphaPower >= 1 && arc.alphaPower <= 5) return arc.alphaPower;
+  // Old v2 records keep their geometry and motion. Derive a stable per-ring
+  // exponent once; the existing arcs snapshot then carries it on navigation.
+  let seed = (Math.round(arc.sweep * 1000) ^ Math.imul(Math.round(arc.start * 1000), 31)
+    ^ Math.imul(Math.round(arc.speed * 1000), 131) ^ Math.imul(index + 1, 0x9e3779b9)
+    ^ (arc.direction < 0 ? 0x85ebca6b : 0)) >>> 0;
+  seed = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b) >>> 0;
+  seed = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b) >>> 0;
+  return 1 + 4 * ((seed ^ (seed >>> 16)) >>> 0) / 4294967296;
+}
+
+function angularColor(progress, alphaPower, opacity = 1) {
+  const strength = midpointStrength(progress), light = strength ** 1.4;
+  const red = Math.round(142 + light * 106), green = Math.round(215 + light * 38);
+  const alpha = Math.pow(strength ** 1.65, alphaPower) * opacity;
+  return `rgba(${red},${green},255,${alpha})`;
+}
+
 function paintArc(ring, arc, index) {
   const size = index ? 64 : 76, radius = size / 2 - 3;
   const ratio = Math.min(devicePixelRatio || 1, 2), sweep = arc.sweep * Math.PI / 180;
   ring.width = Math.round(size * ratio); ring.height = Math.round(size * ratio);
   const paint = ring.getContext('2d', {alpha: true});
-  const count = Math.max(12, Math.ceil(arc.sweep / 5));
+  const count = Math.max(12, Math.ceil(arc.sweep / 10) * 2);
   const point = (progress, offset = 0) => {
     const angle = arc.direction * (progress - 1) * sweep;
     return {x: size / 2 + Math.cos(angle) * (radius + offset), y: size / 2 + Math.sin(angle) * (radius + offset)};
@@ -52,15 +77,14 @@ function paintArc(ring, arc, index) {
     // The same tapered open silhouette remains usable without a 2D context.
     const outside = [], inside = [];
     for (let step = 0; step <= count; step++) {
-      const progress = step / count, half = .7 * progress ** .7;
+      const progress = step / count, half = .7 * midpointStrength(progress) ** .7;
       for (const [points, offset] of [[outside, half], [inside, -half]]) {
         const p = point(progress, offset); points.push(`${p.x / size * 100}% ${p.y / size * 100}%`);
       }
     }
     ring.style.clipPath = `polygon(${outside.concat(inside.reverse()).join(',')})`;
-    ring.style.background = arc.direction > 0
-      ? `conic-gradient(from ${90 - arc.sweep}deg,transparent 0deg,#bdeaff ${arc.sweep * .75}deg,#f8fdff ${arc.sweep}deg,transparent ${arc.sweep}deg 360deg)`
-      : `conic-gradient(from 90deg,#f8fdff 0deg,#bdeaff ${arc.sweep * .25}deg,transparent ${arc.sweep}deg 360deg)`;
+    const stops = Array.from({length: 17}, (_, step) => `${angularColor(step / 16, arc.alphaPower)} ${arc.sweep * step / 16}deg`);
+    ring.style.background = `conic-gradient(from ${arc.direction > 0 ? 90 - arc.sweep : 90}deg,${stops.join(',')},transparent 360deg)`;
     return;
   }
   paint.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -72,13 +96,11 @@ function paintArc(ring, arc, index) {
     const start = point(a), end = point(b);
     const gradient = paint.createLinearGradient(start.x, start.y, end.x, end.y);
     for (const [stop, progress] of [[0, a], [1, b]]) {
-      const light = progress ** 1.4;
-      const red = Math.round(142 + light * 106), green = Math.round(215 + light * 38);
-      const alpha = progress ** 1.65 * (soft ? .15 : 1);
-      gradient.addColorStop(stop, `rgba(${red},${green},255,${alpha})`);
+      gradient.addColorStop(stop, angularColor(progress, arc.alphaPower, soft ? .15 : 1));
     }
     paint.strokeStyle = gradient;
-    paint.lineWidth = Math.max(.025, (index ? 1.15 : 1.4) * mid ** .7 + (soft ? 1.6 * mid : 0));
+    const strength = midpointStrength(mid);
+    paint.lineWidth = Math.max(.025, (index ? 1.15 : 1.4) * strength ** .7 + (soft ? 1.6 * strength : 0));
     paint.beginPath();
     paint.arc(size / 2, size / 2, radius, arc.direction * (a - 1) * sweep, arc.direction * (b - 1) * sweep, arc.direction < 0);
     paint.stroke();
@@ -154,7 +176,12 @@ function addEffect(record, now) {
   node.className = 'navigation-ripple-mark';
   // Keep the exact viewport activation location, never the latest pointer.
   node.style.transform = `translate3d(${record.x}px,${record.y}px,0)`;
-  const arcs = [0, 1].map(index => validArc(record.arcs?.[index]) ? {...record.arcs[index]} : newArc());
+  const arcs = [0, 1].map(index => {
+    const arc = validArc(record.arcs?.[index])
+      ? {...record.arcs[index], sweep: Math.max(60, record.arcs[index].sweep)} : newArc();
+    arc.alphaPower = resolveAlphaPower(arc, index);
+    return arc;
+  });
   const rings = [0, 1].map(index => {
     const ring = document.createElement('canvas');
     ring.className = 'navigation-ripple-ring' + (index ? ' navigation-ripple-ring-secondary' : '');

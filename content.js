@@ -36,6 +36,7 @@ export const projects = [
   {id:'unreal-car', title:'车辆材质与交互展示', category:'unreal', subcategory:'vehicle', description:"围绕车辆展示搭建车漆、水面与地面材质，结合按键变色、平面反射和接触涟漪，呈现材质与环境的交互。", bvid:'BV1oxd1BtEGy', cid:37683202347, duration:69, cover:'./media/BV1oxd1BtEGy.jpg'},
   {id:'rain-vat', title:'雨水材质与流体效果', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 车辆雨水、地面积水与降雨粒子。\n从世界法线分区、Flow Map 和涟漪法线，到 Niagara 粒子与 Houdini FLIP 序列帧的制作过程。', bvid:'BV1TCQEBtEJA', cid:37526242180, duration:20, cover:'./media/BV1TCQEBtEJA.jpg'},
   {id:'unreal-snow', title:'雪地交互与车轮沾雪', category:'unreal', subcategory:'vehicle', description:'Unreal Engine · 使用 Render Target 记录雪地交互，并将四个车轮的接触信息映射到轮胎材质。\n详情包含雪地自阴影、轮胎沾雪及蓝图参数的实现过程。', bvid:'BV1CZDzBCEyj', cid:37323869335, duration:40, cover:'./media/breakdowns/snow-tracks-overview.webp'},
+  {id:'unreal-multilegged-robot', title:'多足机器人 · 程序化行走', category:'unreal', description:'在 Blender 完成多足机器人的建模与骨骼绑定，接入 Unreal Engine 后用程序化骨骼动画驱动行走。', bvid:'BV1Q8Kj6EEB4', startTime:8.9, coverLabel:'程序化行走'},
   {id:'td-particle-gesture', title:'粒子上色与手势交互', category:'td', description:'为模型生成的粒子实例添加颜色与光照着色，结合手势输入进行交互。\n模型基于马南的 bioxelnode 案例。', bvid:'BV1tbiLBLExE', startTime:5.6, duration:84, cover:'./media/BV1tbiLBLExE.jpg'},
-  {id:'td-unreal-brush', title:'TD 与 UE 交互画笔', category:'td', description:'TD 与 Unreal Engine 5.7 联动的交互画笔展示。', bvid:'BV1g9xt6cEkk', cid:43243081546, startTime:6.1, duration:42, cover:'./media/BV1g9xt6cEkk.jpg'},
+  {id:'td-unreal-brush', title:'TD 与 UE 交互画笔', category:'td', description:'TouchDesigner 采集手部坐标并判断捏合，将滤波后的手势通过共享内存传给 Unreal Engine，在纸面绘制墨迹并表现随时间变干的效果。', bvid:'BV1g9xt6cEkk', cid:43243081546, startTime:6.1, duration:42, cover:'./media/BV1g9xt6cEkk.jpg'},
 ];
