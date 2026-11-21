@@ -5,10 +5,11 @@ const source = './media/bgm-new-days-hope-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
 const ownerKey = 'portfolio-music-owner';
+const ENTRY_DELAY_MS = 1000;
+const ENTRY_FADE_SECONDS = 2;
 let volume = 0.35;
 let muted = false;
 let wanted = false;
-let hasPlaybackChoice = false;
 let resumeTime = 0;
 let unavailable = false;
 let pageActive = true;
@@ -18,7 +19,6 @@ try {
   if (Number.isFinite(preference?.volume)) volume = Math.max(0, Math.min(1, preference.volume));
   muted = Boolean(preference?.muted);
   const previous = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
-  hasPlaybackChoice = previous !== null;
   wanted = Boolean(previous?.playing);
   resumeTime = previous?.source === source ? Number(previous.time) || 0 : 0;
 } catch { /* Music still works when browser storage is disabled. */ }
@@ -32,6 +32,56 @@ audio.volume = volume;
 audio.muted = muted;
 audio.hidden = true;
 document.body.append(audio);
+
+let entryIntro;
+let outputGain;
+let mediaVolume = volume;
+let outputVolume = volume;
+let volumeAnimation;
+
+function applyOutputVolume() {
+  outputVolume = mediaVolume * (entryIntro?.level ?? 1);
+  // Use the audio graph for volume where available, including on devices
+  // whose native media elements do not support programmatic volume changes.
+  if (outputGain) outputGain.gain.value = outputVolume;
+  else audio.volume = outputVolume;
+  audio.muted = muted || Boolean(entryIntro && outputVolume === 0);
+}
+
+function clearEntryIntro() {
+  if (!entryIntro) return;
+  clearTimeout(entryIntro.timer);
+  cancelAnimationFrame(entryIntro.frame);
+  entryIntro = undefined;
+}
+
+function beginEntryFade() {
+  const intro = entryIntro;
+  if (intro?.phase !== 'rewinding' || audio.seeking || !playbackAllowed()) return;
+  intro.phase = 'fading';
+  function fade() {
+    if (entryIntro !== intro || !playbackAllowed()) return;
+    // Drive the ramp with the media clock so a buffering pause cannot use up
+    // the fade before sound starts.
+    intro.level = Math.min(1, audio.currentTime / ENTRY_FADE_SECONDS);
+    if (intro.level === 1) clearEntryIntro();
+    applyOutputVolume();
+    if (entryIntro === intro) intro.frame = requestAnimationFrame(fade);
+  }
+  intro.frame = requestAnimationFrame(fade);
+}
+
+function scheduleEntryFade() {
+  const intro = entryIntro;
+  if (intro?.phase !== 'waiting') return;
+  clearTimeout(intro.timer);
+  intro.timer = setTimeout(() => {
+    if (entryIntro !== intro || !playbackAllowed()) return;
+    intro.phase = 'rewinding';
+    if (audio.currentTime > 0) audio.currentTime = 0;
+    beginEntryFade();
+  }, Math.max(0, intro.deadline - performance.now()));
+}
 
 // Analyse only this soundtrack when playback is wanted and the page is active.
 // Native playback survives Web Audio permission/capability failures.
@@ -56,7 +106,11 @@ function suspendAnalysis() {
 }
 function pausePlayback() {
   playbackRequest++; activityGeneration++; analysisPending = 0;
-  audio.pause(); suspendAnalysis();
+  audio.pause();
+  if (entryIntro && entryIntro.phase !== 'fading') audio.currentTime = 0;
+  clearEntryIntro();
+  applyOutputVolume();
+  suspendAnalysis();
 }
 async function enableAnalysis(fromGesture = false) {
   if (analysisUnavailable || (analysisPending && !fromGesture) || !playbackAllowed()) return;
@@ -77,25 +131,33 @@ async function enableAnalysis(fromGesture = false) {
     }
     if (audioContext.state !== 'running' || mediaSource) return;
     const nextAnalyser = audioContext.createAnalyser();
+    const nextGain = audioContext.createGain();
+    nextGain.gain.value = outputVolume;
     nextAnalyser.fftSize = 2048;
     nextAnalyser.smoothingTimeConstant = 0.28;
     nextAnalyser.minDecibels = -85;
     nextAnalyser.maxDecibels = -15;
     const nextData = new Float32Array(nextAnalyser.frequencyBinCount);
+    const nextWaveform = new Float32Array(nextAnalyser.fftSize);
     // Connect the downstream path first; createMediaElementSource is called once.
     nextAnalyser.connect(audioContext.destination);
     mediaSource = audioContext.createMediaElementSource(audio);
     try {
-      mediaSource.connect(nextAnalyser);
-      analyser = nextAnalyser;
-      frequencyData = nextData;
-      waveformData = new Float32Array(nextAnalyser.fftSize);
+      nextGain.connect(nextAnalyser);
+      mediaSource.connect(nextGain);
     } catch {
       // The media element is already attached: preserve a direct audible route.
       mediaSource.connect(audioContext.destination);
       nextAnalyser.disconnect();
       analysisUnavailable = true;
+      return;
     }
+    outputGain = nextGain;
+    audio.volume = 1;
+    applyOutputVolume();
+    analyser = nextAnalyser;
+    frequencyData = nextData;
+    waveformData = nextWaveform;
   } catch (error) {
     analysisUnavailable = error.name !== 'NotAllowedError' && error.name !== 'AbortError';
   } finally { if (analysisPending === request) analysisPending = 0; }
@@ -106,9 +168,9 @@ function getLevels() {
   // Refresh before the FFT cache return; native playback also works without FFT.
   const audible = playbackAllowed() && !audio.paused && !audio.ended && !audio.muted
     && (!mediaSource || audioContext?.state === 'running');
-  levels.outputVolume = audible ? Math.max(0, Math.min(1, audio.volume)) : 0;
+  levels.outputVolume = audible ? outputVolume : 0;
   const active = Boolean(analyser && audioContext?.state === 'running' && wanted && !audio.paused
-    && !audio.muted && audio.volume > 0 && pageActive && !document.hidden);
+    && !audio.muted && outputVolume > 0 && pageActive && !document.hidden);
   // Multiple visual consumers share one sample, rather than flattening flux by
   // repeatedly comparing the same FFT frame within a browser frame.
   if (now - sampledAt < 16 && active === levels.active) return {...levels};
@@ -133,13 +195,13 @@ function getLevels() {
     let power = 0;
     for (const sample of waveformData) power += sample * sample;
     const rms = Math.sqrt(power / waveformData.length);
-    // MediaElementSource already includes the element's volume (and ducking).
+    // The analyser receives the current output gain, including fade and ducking.
     // Fixed gain preserves quiet passages instead of normalizing them upward.
     const loudnessTarget = Math.min(1, rms * 6);
     const loudnessEase = 1 - Math.exp(-seconds / (loudnessTarget > levels.loudness ? .05 : .24));
     levels.loudness += (loudnessTarget - levels.loudness) * loudnessEase;
-    Object.assign(levels, percussion.update(frequencyData, rms, now, seconds, binHz, audio.volume));
-    for (let band = 0; band < targets.length; band++) targets[band] *= audio.volume;
+    Object.assign(levels, percussion.update(frequencyData, rms, now, seconds, binHz, outputVolume));
+    for (let band = 0; band < targets.length; band++) targets[band] *= outputVolume;
   } else {
     // Explicit silence/backgrounding discards stale FFT and envelope history.
     levels.loudness = 0;
@@ -217,8 +279,9 @@ function draw() {
 }
 function remember() {
   try {
+    const time = entryIntro && entryIntro.phase !== 'fading' ? 0 : audio.currentTime || resumeTime;
     localStorage.setItem(preferenceKey, JSON.stringify({volume, muted}));
-    sessionStorage.setItem(sessionKey, JSON.stringify({playing: wanted, time: audio.currentTime || resumeTime, tabId, source}));
+    sessionStorage.setItem(sessionKey, JSON.stringify({playing: wanted, time, tabId, source}));
   } catch { /* Playback does not depend on storage. */ }
 }
 function claimAudio() {
@@ -236,7 +299,7 @@ async function start() {
       return;
     }
     if (!playbackAllowed()) pausePlayback();
-    else { claimAudio(); enableAnalysis(); }
+    else { claimAudio(); enableAnalysis(); scheduleEntryFade(); }
   } catch (error) {
     if (request !== playbackRequest) return;
     if (error.name === 'NotAllowedError') wanted = false;
@@ -246,20 +309,29 @@ async function start() {
   remember();
   draw();
 }
-// Called in the same event stack as the real START/skip/keyboard gesture.
-// Keep a saved pause, mute and volume preference when a previous music choice exists.
-function enterWithSound() {
-  if (!hasPlaybackChoice) wanted = true;
-  hasPlaybackChoice = true;
-  if (wanted) { enableAnalysis(true); start(); }
+// Begin silent playback within the START gesture. The delayed seek restores
+// the beginning before opening the gain, without a second autoplay request.
+function enterWithSound(enteredAt = performance.now()) {
+  clearEntryIntro();
+  cancelAnimationFrame(volumeAnimation);
+  entryIntro = {deadline: enteredAt + ENTRY_DELAY_MS, level: 0, phase: 'waiting'};
+  wanted = true;
+  muted = false;
+  volume = 1;
+  slider.value = '100';
+  resumeTime = 0;
+  audio.currentTime = 0;
+  mediaVolume = targetMediaVolume();
+  applyOutputVolume();
+  enableAnalysis(true);
+  start();
   remember();
   draw();
 }
 window.addEventListener('portfolio:enter', event => {
-  if (event.detail?.userInitiated) enterWithSound();
+  if (event.detail?.userInitiated) enterWithSound(event.detail.enteredAt ?? undefined);
 });
 toggle.addEventListener('click', () => {
-  hasPlaybackChoice = true;
   wanted = !wanted;
   if (wanted) { enableAnalysis(true); start(); }
   else pausePlayback();
@@ -268,33 +340,36 @@ toggle.addEventListener('click', () => {
 });
 mute.addEventListener('click', () => {
   muted = !muted;
-  audio.muted = muted;
+  applyOutputVolume();
   remember();
   draw();
 });
-let volumeAnimation;
 function adjustVolume(target) {
   cancelAnimationFrame(volumeAnimation);
-  const from = audio.volume;
+  const from = mediaVolume;
   const began = performance.now();
   function frame(now) {
     const progress = Math.min(1, (now - began) / 180);
-    audio.volume = Math.max(0, Math.min(1, from + (target - from) * progress));
+    mediaVolume = from + (target - from) * progress;
+    applyOutputVolume();
     if (progress < 1) volumeAnimation = requestAnimationFrame(frame);
   }
   volumeAnimation = requestAnimationFrame(frame);
 }
-function syncMedia() {
+function targetMediaVolume() {
   // Embedded Bilibili playback never changes the visitor's BGM selection.
   // Only audible native videos retain their existing volume ducking behavior.
   const nativeVideoPlaying = [...document.querySelectorAll('video')].some(video => !video.paused && !video.ended && !video.muted && video.volume > 0);
-  adjustVolume(volume * (nativeVideoPlaying ? 0.18 : 1));
+  return volume * (nativeVideoPlaying ? 0.18 : 1);
+}
+function syncMedia() {
+  adjustVolume(targetMediaVolume());
   draw();
 }
 slider.addEventListener('input', () => {
   volume = Number(slider.value) / 100;
   if (volume > 0) muted = false;
-  audio.muted = muted;
+  applyOutputVolume();
   syncMedia();
   remember();
 });
@@ -302,6 +377,7 @@ audio.addEventListener('loadedmetadata', () => {
   if (Number.isFinite(audio.duration) && resumeTime > 0) audio.currentTime = resumeTime % audio.duration;
   resumeTime = 0;
 });
+audio.addEventListener('seeked', beginEntryFade);
 audio.addEventListener('play', draw);
 audio.addEventListener('pause', draw);
 audio.addEventListener('error', () => { unavailable = true; wanted = false; pausePlayback(); remember(); draw(); });
@@ -338,5 +414,5 @@ musicShader = mountMusicShader(panel, () => ({
 draw();
 // A skipped gate can finish before this module arrives; native playback may then
 // require another gesture, which the existing header play control provides.
-if (window.PortfolioStartGate?.started) enterWithSound();
+if (window.PortfolioStartGate?.started) enterWithSound(window.PortfolioStartGate.enteredAt ?? undefined);
 else if (wanted) start();

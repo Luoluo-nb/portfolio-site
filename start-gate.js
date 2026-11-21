@@ -6,11 +6,12 @@
   let seen = false;
   try { seen = sessionStorage.getItem(sessionKey) === '1'; } catch { /* Optional storage. */ }
   if (seen) {
-    window.PortfolioStartGate = Object.freeze({active: false, started: false, mount() {}});
+    window.PortfolioStartGate = Object.freeze({active: false, started: false, enteredAt: null, mount() {}});
     return;
   }
 
   let active = true, started = false, dialog, ready = false, appReady = false;
+  let enteredAt = null;
   let deadline, bootDeadline, language = 'zh';
   let previousFocus, scrollStyles, disposeFilm;
   const pendingCleanup = new Set();
@@ -28,6 +29,7 @@
 
   function release(userInitiated = false, restoreFocus = true) {
     if (!active) return;
+    enteredAt = userInitiated ? performance.now() : null;
     active = false;
     started = userInitiated;
     clearTimeout(deadline);
@@ -43,7 +45,7 @@
     }
     // Synchronous dispatch keeps the real button/keyboard activation for audio.play().
     // pagehide and recovery release the page without asking the soundtrack to play.
-    window.dispatchEvent(new CustomEvent('portfolio:enter', {detail: {userInitiated}}));
+    window.dispatchEvent(new CustomEvent('portfolio:enter', {detail: {userInitiated, enteredAt}}));
     const x = scrollX, y = scrollY;
     if (dialog?.open) dialog.close();
     dialog?.remove();
@@ -71,6 +73,7 @@
     const checked = [...tasks.values()].filter(value => value !== null).length;
     const complete = checked === tasks.size;
     const failed = [...tasks.values()].some(value => value === false);
+    dialog.style.setProperty('--start-progress', `${checked / tasks.size * 100}%`);
     const status = dialog.querySelector('.start-gate-status');
     if (status) status.textContent = complete
       ? (failed ? words.partial : words.complete) : `${words.loading} ${checked}/${tasks.size}。 ${words.escape}`;
@@ -226,6 +229,7 @@
       dialog.innerHTML = `
         <div class="start-gate-content">
           <button class="start-gate-start" type="button" aria-label="START · ${words.label}" disabled><span class="start-gate-label">START</span></button>
+          <span class="start-gate-progress" aria-hidden="true"><span class="start-gate-progress-fill"></span></span>
           <span class="start-gate-status" id="start-gate-status" role="status" aria-live="polite">${words.loading}。 ${words.escape}</span>
         </div>`;
       const button = dialog.querySelector('.start-gate-start');
@@ -266,7 +270,7 @@
     } catch { release(false, false); }
   }
 
-  window.PortfolioStartGate = Object.freeze({get active() { return active; }, get started() { return started; }, mount});
+  window.PortfolioStartGate = Object.freeze({get active() { return active; }, get started() { return started; }, get enteredAt() { return enteredAt; }, mount});
   window.addEventListener('portfolio:app-ready', onAppReady);
   window.addEventListener('pagehide', onPageHide, {once: true});
   document.addEventListener('DOMContentLoaded', mount, {once: true});

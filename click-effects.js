@@ -22,7 +22,7 @@ const bursts = [], ambientWaves = [], repeatQueue = [], cleanups = [], pending =
 const CLICKS_PER_GROUP=15,STYLE_COUNT=3,MAX_MAIN_GROUPS=3;
 const MAX_BURSTS=CLICKS_PER_GROUP*MAX_MAIN_GROUPS,MAX_TAIL_BURSTS=90,MAX_VISUAL_BURSTS=MAX_BURSTS+MAX_TAIL_BURSTS;
 const EXIT_MS=280,MIN_VISIBLE_MS=180,MATERIAL_BATCH_SIZE=8,MATERIAL_PIXEL_BUDGET=240000,FEATHER_PIXEL_BUDGET=1200000;
-const AUTO_MIN_MS=4000,AUTO_MAX_MS=6000,AMBIENT_PIXEL_BUDGET=900000;
+const AUTO_MIN_MS=6000,AUTO_MAX_MS=8000,AMBIENT_PIXEL_BUDGET=900000;
 const REPEAT_DELAY_MS=200,MAX_PENDING_REPEATS=90;
 const CROWDED_ENTER=36,CROWDED_EXIT=18,CROWDED_WIDTH=1.2;
 const CONTINUITY_KEY='portfolio-click-continuity-v1';
@@ -76,8 +76,6 @@ const OUTER_END_RADIUS=8+(RIPPLE_RADIUS-8)*(1-(1-Math.min(1,RIPPLE_LIFE*OUTER_LI
 // Ambient color planes have their own clock and pool, never an SDF group.
 const AUTO_RADIUS=RIPPLE_RADIUS*5,AUTO_EXPAND_MS=RIPPLE_DURATION*1000/1.6,AUTO_LIFE=AUTO_EXPAND_MS;
 const AUTO_BANDS=[{width:200,gap:0},{width:5,gap:8}];
-// One opaque, related pair is chosen at birth and carried across navigation.
-const AUTO_PALETTES=[['#a5e5e8','#d5f5f5'],['#b2d2f4','#e1edfc'],['#d2c6ed','#ebe4f8'],['#edc9dc','#f8e6ef'],['#edf2fa','#ffffff']];
 const OUTER_FEATHER=18;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 function rippleWidthScale(radius){
@@ -457,7 +455,7 @@ function drawAmbientWaves(now,viewLeft,viewTop){
  // Filled annular areas, not stroked outlines, sparkles, trails or SDF masks.
  // Native paths clip at the viewport; a fivefold radius needs no large texture.
  const paint=ambientCtx;if(!paint)return;
- paint.save();paint.globalCompositeOperation='source-over';paint.globalAlpha=1;
+ paint.save();paint.globalCompositeOperation='source-over';paint.globalAlpha=1;paint.fillStyle='#ffffff';
  for(const wave of ambientWaves){
   const elapsed=Math.max(0,now-wave.born),progress=Math.min(1,elapsed/AUTO_EXPAND_MS);
   const radialProgress=1-(1-progress)**1.55;
@@ -467,7 +465,6 @@ function drawAmbientWaves(now,viewLeft,viewTop){
   const cx=wave.pageX-viewLeft,cy=wave.pageY-viewTop;
   const near=Math.hypot(Math.max(0,-cx,cx-width),Math.max(0,-cy,cy-height));
   const far=Math.hypot(Math.max(Math.abs(cx),Math.abs(width-cx)),Math.max(Math.abs(cy),Math.abs(height-cy)));
-  const palette=AUTO_PALETTES[wave.paletteIndex]||AUTO_PALETTES[0];
   let outside=radius;
   for(let index=0;index<AUTO_BANDS.length;index++){
    const band=AUTO_BANDS[index];
@@ -476,7 +473,7 @@ function drawAmbientWaves(now,viewLeft,viewTop){
    if(outside-inside<=0||outside<near-1||inside>far+1){outside=inside;continue;}
    paint.beginPath();paint.arc(cx,cy,outside,0,Math.PI*2);
    if(inside>0){paint.moveTo(cx+inside,cy);paint.arc(cx,cy,inside,0,Math.PI*2,true);}
-   paint.fillStyle=palette[index];paint.fill();outside=inside;
+   paint.fill();outside=inside;
   }
  }
  paint.restore();
@@ -485,9 +482,8 @@ function emitAmbientWave(x,y){
  if(!autoAllowed())return;
  updateAmbientWaves(performance.now());
  if(ambientWaves.length>=2)ambientWaves.shift();
- const paletteIndex=Math.floor(Math.random()*AUTO_PALETTES.length);
- ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches,paletteIndex});
- canvas.dataset.autoMaterial='two-opaque-color-bands';canvas.dataset.autoWidths='200,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';canvas.dataset.autoExit='width-to-zero';canvas.dataset.autoPalette=String(paletteIndex);
+ ambientWaves.push({pageX:x+scrollX,pageY:y+scrollY,born:performance.now(),touch:coarse.matches});
+ canvas.dataset.autoMaterial='two-opaque-color-bands';canvas.dataset.autoWidths='200,5';canvas.dataset.autoGap='8';canvas.dataset.autoMaxRadius=String(AUTO_RADIUS);canvas.dataset.autoSdf='excluded';canvas.dataset.autoExit='width-to-zero';
  if(!frame)frame=requestAnimationFrame(tick);state('active');saveContinuity();
 }
 function tick(now){
@@ -622,7 +618,7 @@ function beginClickSequence(pageX,pageY,keyboard,touch,bornAt){
 }
 function saveContinuity(){
  const now=performance.now();
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:9,sequence:clickSequence,crowdedMode,savedAt:Date.now(),repeats:repeatQueue.map(action=>({x:action.pageX-scrollX,y:action.pageY-scrollY,remaining:action.remaining,wait:action.nextDue-now,keyboard:action.keyboard,touch:action.touch})),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch,paletteIndex:w.paletteIndex})),pulses:bursts.map(b=>({mode:b.mode||'normal',groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,flowSeed:b.flowSeed,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:9,sequence:clickSequence,crowdedMode,savedAt:Date.now(),repeats:repeatQueue.map(action=>({x:action.pageX-scrollX,y:action.pageY-scrollY,remaining:action.remaining,wait:action.nextDue-now,keyboard:action.keyboard,touch:action.touch})),waves:ambientWaves.map(w=>({x:w.pageX-scrollX,y:w.pageY-scrollY,age:now-w.born,touch:w.touch})),pulses:bursts.map(b=>({mode:b.mode||'normal',groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,flowSeed:b.flowSeed,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
 }
 function restoreContinuity(){
  if(destroyed||suspended)return;
@@ -681,8 +677,8 @@ function restoreContinuity(){
  if(ambientCtx)for(const wave of (Array.isArray(saved.waves)?saved.waves:[]).slice(-2)){
   if(!wave||!Number.isFinite(wave.x)||!Number.isFinite(wave.y)||!Number.isFinite(wave.age))continue;
   const age=Math.max(0,wave.age)+gap;if(age>=AUTO_LIFE)continue;
-  const paletteIndex=Number.isInteger(wave.paletteIndex)&&wave.paletteIndex>=0&&wave.paletteIndex<AUTO_PALETTES.length?wave.paletteIndex:0;
-  ambientWaves.push({pageX:wave.x+scrollX,pageY:wave.y+scrollY,born:now-age,touch:!!wave.touch,paletteIndex});
+  // Ignore legacy palette fields: both bands now always render opaque white.
+  ambientWaves.push({pageX:wave.x+scrollX,pageY:wave.y+scrollY,born:now-age,touch:!!wave.touch});
  }
  updateLifecycle(now);limitMainGroups(now);updateAmbientWaves(now);
  syncRepeats();

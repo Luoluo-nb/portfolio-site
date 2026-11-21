@@ -1,14 +1,14 @@
-/* The entry screen shows only START. Diffraction stays inside the local lettering. */
+/* START stays centered. A thin loading line disappears once essentials settle. */
 :root{--start-gate-styles:ready}
-html[data-start-gate="pending"]::after{content:"";position:fixed;inset:0;z-index:2147483646;background:#071323;pointer-events:none}
-dialog.start-gate{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;padding:24px;border:0;border-radius:0;box-shadow:none;box-sizing:border-box;overflow:auto;color:#e8f5ff;background:#071323;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",Arial,sans-serif;outline:none;overscroll-behavior:contain}
+html[data-start-gate="pending"]::after{content:"";position:fixed;inset:0;z-index:2147483646;background:#000;pointer-events:none}
+dialog.start-gate{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;padding:24px;border:0;border-radius:0;box-shadow:none;box-sizing:border-box;overflow:auto;color:#e8f5ff;background:#000;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",Arial,sans-serif;outline:none;overscroll-behavior:contain}
 dialog.start-gate[open]{display:grid;place-items:center}
-.start-gate::backdrop{background:#071323}
-.start-gate-content{margin:auto;text-align:center}
-.start-gate-start{position:relative;isolation:isolate;display:inline-block;min-height:72px;margin:0;padding:8px 12px;border:0;border-radius:0;box-shadow:none;background:transparent;color:#e8f5ff;font:400 clamp(38px,7vw,54px)/1.2 "Segoe UI",Arial,sans-serif;letter-spacing:.18em;text-indent:.18em;cursor:pointer;transition:opacity .18s,color .18s}
+.start-gate::backdrop{background:#000}
+.start-gate-content{position:relative;display:grid;place-items:center;margin:auto;text-align:center}
+.start-gate-start{position:relative;isolation:isolate;display:inline-grid;place-items:center;width:min(360px,calc(100vw - 48px));min-height:140px;margin:0;padding:0 24px;border:0;border-radius:0;box-shadow:none;background:transparent;color:#e8f5ff;font:400 clamp(38px,7vw,54px)/1.2 "Segoe UI",Arial,sans-serif;letter-spacing:.18em;text-indent:.18em;cursor:pointer;transition:opacity .18s,color .18s}
 .start-gate-start:disabled{opacity:.45;cursor:wait}
-.start-gate-label{display:block}
-.start-gate-start::before{content:"";position:absolute;inset:0 -8px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at var(--film-x,50%) var(--film-y,50%),#b5eeff30,transparent 60%),radial-gradient(ellipse at 65% 60%,#efb9d516,transparent 60%);filter:blur(12px);opacity:0;transition:opacity .2s}
+.start-gate-label{display:block;width:max-content}
+.start-gate-start::before{content:"";position:absolute;left:50%;top:50%;width:clamp(190px,42vw,250px);height:1.15em;transform:translate(-50%,-50%);z-index:-1;pointer-events:none;background:radial-gradient(ellipse at var(--film-x,50%) var(--film-y,50%),#b5eeff30,transparent 60%),radial-gradient(ellipse at 65% 60%,#efb9d516,transparent 60%);filter:blur(12px);opacity:0;transition:opacity .2s}
 .start-gate-start:not(:disabled):is(:hover,:focus-visible){color:#c3eeff}
 .start-gate-start:not(:disabled):is(:hover,:focus-visible)::before{opacity:1}
 .start-gate-start:focus-visible{outline:none;text-decoration:underline;text-decoration-color:#a5dfe8;text-decoration-thickness:1px;text-underline-offset:10px}
@@ -16,5 +16,10 @@ dialog.start-gate[open]{display:grid;place-items:center}
   .start-gate-start:not(:disabled):is(:hover,:focus-visible) .start-gate-label{background-image:repeating-linear-gradient(var(--film-angle,108deg),#c7fcff00 0,#cdfcff14 1px,#f4e9ff42 2px,#c7fcff00 4px),linear-gradient(var(--film-angle,108deg),#a2c6f1 0%,#e5f4ff 30%,#abebf3 43%,#ffffff 49%,#edcae2 57%,#d5efff 65%,#95badf 100%);background-size:180% 160%,240% 140%;background-position:var(--film-shift-x,50%) var(--film-shift-y,50%);background-clip:text;-webkit-background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
 }
 .start-gate-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-@media(prefers-reduced-motion:reduce){.start-gate *,.start-gate *::before{transition:none!important}}
+.start-gate-progress{position:absolute;top:calc(50% + 46px);left:50%;width:72%;max-width:180px;height:1px;transform:translateX(-50%);overflow:hidden;background:#728ca540;pointer-events:none;opacity:1;transition:opacity .35s ease}
+.start-gate-progress-fill{display:block;width:var(--start-progress,0%);height:100%;background:linear-gradient(90deg,#7fc7e0,#d7f8ff 35%,#e5cde7 50%,#a0e1ee 65%,#7fc7e0);background-size:200% 100%;animation:start-gate-progress-flow 1.6s linear infinite;transition:width .25s ease}
+.start-gate[data-ready="true"] .start-gate-progress{opacity:0}
+.start-gate[data-ready="true"] .start-gate-progress-fill{animation:none}
+@keyframes start-gate-progress-flow{from{background-position:200% 0}to{background-position:0 0}}
+@media(prefers-reduced-motion:reduce){.start-gate *,.start-gate *::before{transition:none!important;animation:none!important}}
 @media(forced-colors:active){.start-gate-start:not(:disabled):is(:hover,:focus-visible) .start-gate-label{background:none;color:ButtonText;-webkit-text-fill-color:ButtonText}.start-gate-start::before{display:none}.start-gate-start:focus-visible{text-decoration-color:ButtonText}}
