@@ -44,7 +44,7 @@ let analysisUnavailable = false;
 let sampledAt = 0;
 // Actual linear-amplitude drum attacks -> lag -> integrated visual speed.
 const percussion = createPercussionDetector();
-const levels = {bass: 0, mid: 0, treble: 0, active: false,
+const levels = {bass: 0, mid: 0, treble: 0, loudness: 0, outputVolume: 0, active: false,
   snare: 0, snareConfidence: 0, snareLag: 0, speed: 0, snareCount: 0, onsetTime: 0,
   snareBodyFlux: 0, snareNoiseFlux: 0, kick: 0, kickConfidence: 0, kickLag: 0, kickCount: 0,
   kickFlux: 0, kickThreshold: 0, beat: 0, beatLag: 0, beatCount: 0, beatTime: 0, sampleId: 0};
@@ -100,6 +100,11 @@ async function enableAnalysis(fromGesture = false) {
 }
 function getLevels() {
   const now = performance.now();
+  // Expose the audible element gain separately from the track's RMS envelope.
+  // Refresh before the FFT cache return; native playback also works without FFT.
+  const audible = playbackAllowed() && !audio.paused && !audio.ended && !audio.muted
+    && (!mediaSource || audioContext?.state === 'running');
+  levels.outputVolume = audible ? Math.max(0, Math.min(1, audio.volume)) : 0;
   const active = Boolean(analyser && audioContext?.state === 'running' && wanted && !audio.paused
     && !audio.muted && audio.volume > 0 && pageActive && !document.hidden);
   // Multiple visual consumers share one sample, rather than flattening flux by
@@ -126,10 +131,16 @@ function getLevels() {
     let power = 0;
     for (const sample of waveformData) power += sample * sample;
     const rms = Math.sqrt(power / waveformData.length);
+    // MediaElementSource already includes the element's volume (and ducking).
+    // Fixed gain preserves quiet passages instead of normalizing them upward.
+    const loudnessTarget = Math.min(1, rms * 6);
+    const loudnessEase = 1 - Math.exp(-seconds / (loudnessTarget > levels.loudness ? .05 : .24));
+    levels.loudness += (loudnessTarget - levels.loudness) * loudnessEase;
     Object.assign(levels, percussion.update(frequencyData, rms, now, seconds, binHz, audio.volume));
     for (let band = 0; band < targets.length; band++) targets[band] *= audio.volume;
   } else {
     // Explicit silence/backgrounding discards stale FFT and envelope history.
+    levels.loudness = 0;
     Object.assign(levels, percussion.reset());
   }
   ['bass', 'mid', 'treble'].forEach((band, index) => {

@@ -117,6 +117,9 @@ export class HomeNetwork {
   constructor(container) {
     if (!(container instanceof HTMLElement)) throw new TypeError('HomeNetwork requires a transition container.');
     this.container=container;this.listeners=[];this.time=17.3;this.frame=0;this.lastDraw=0;
+    this.anchor=document.querySelector('#top .hero-scroll');
+    this.hero=document.querySelector('#top');this.heroCopy=document.querySelector('#top .hero-copy');
+    this.featured=container.closest('.home-featured');this.heading=this.featured?.querySelector('.home-featured-heading');
     this.ready=false;this.destroyed=false;this.pageActive=true;this.inView=false;this.lost=false;
     this.pointer={x:0,y:0,targetX:0,targetY:0};this.size={width:0,height:0,left:0,top:0};
     this.motion=matchMedia('(prefers-reduced-motion:reduce)');this.fine=matchMedia('(hover:hover) and (pointer:fine)');
@@ -141,7 +144,7 @@ export class HomeNetwork {
     this._listen(this.canvas,'webglcontextrestored',()=>{this.lost=false;this.gl=null;this._initialize();this._sync();});
     this.motionChanged=()=>{this.pointer.x=this.pointer.y=this.pointer.targetX=this.pointer.targetY=0;this._sync();};
     if(this.motion.addEventListener)this.motion.addEventListener('change',this.motionChanged);else this.motion.addListener(this.motionChanged);
-    if('ResizeObserver'in window){this.resizeObserver=new ResizeObserver(()=>{this._measure();this._sync();});this.resizeObserver.observe(container);}
+    if('ResizeObserver'in window){this.resizeObserver=new ResizeObserver(()=>{this._measure();this._sync();});for(const element of new Set([container,this.anchor,this.hero,this.heroCopy,this.heading].filter(Boolean)))this.resizeObserver.observe(element);}
     if('IntersectionObserver'in window){
       this.intersectionObserver=new IntersectionObserver(entries=>{this.inView=entries[0].isIntersecting&&entries[0].intersectionRect.width>0&&entries[0].intersectionRect.height>0;this._measure();this._sync();},{threshold:0});
       this.intersectionObserver.observe(container);
@@ -156,6 +159,22 @@ export class HomeNetwork {
   _listen(target,type,callback,options){target.addEventListener(type,callback,options);this.listeners.push([target,type,callback,options]);}
   _measure(){
     if(this.destroyed)return;
+    const anchorBox=this.anchor?.getBoundingClientRect(),host=this.container.offsetParent||this.featured;
+    if(anchorBox?.width&&anchorBox.height&&host){
+      const hostBox=host.getBoundingClientRect(),centerX=anchorBox.left+anchorBox.width*.5,centerY=anchorBox.top+anchorBox.height*.5;
+      this.container.style.setProperty('--network-center-x',`${centerX-hostBox.left}px`);
+      this.container.style.setProperty('--network-center-y',`${centerY-hostBox.top}px`);
+      this.container.style.setProperty('--network-clear-x',`${anchorBox.width*.75}px`);
+      this.container.style.setProperty('--network-clear-y',`${anchorBox.height*.80}px`);
+      // Expansion is symmetric about the CTA. The existing upper feather may
+      // reach the hero's empty margin; the lower canvas stays above the heading.
+      const copyBox=this.heroCopy?.getBoundingClientRect(),headingBox=this.heading?.getBoundingClientRect();
+      const above=copyBox?.height?centerY-copyBox.bottom-32:Infinity;
+      const below=headingBox?.height?headingBox.top-centerY-36:Infinity;
+      const maximumHeight=Math.min(above/.36,below*2);
+      if(Number.isFinite(maximumHeight))this.container.style.setProperty('--network-max-height',`${Math.max(0,maximumHeight)}px`);
+      else this.container.style.removeProperty('--network-max-height');
+    }
     const box=this.container.getBoundingClientRect();
     this.size={width:box.width,height:box.height,left:box.left,top:box.top};
     if(!this.intersectionObserver)this.inView=box.width>0&&box.height>0&&box.bottom>0&&box.top<innerHeight;

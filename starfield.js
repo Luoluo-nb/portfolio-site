@@ -19,9 +19,9 @@ const DEPTH_SPEED = Object.freeze({ambient: .010, audio: .030});
 const RAY_QUALITY = Object.freeze({desktopSamples:55, mobileSamples:24, desktopPixels:32768, mobilePixels:12288});
 // Retain scattering, but tone-map it with the sky rather than adding it after
 // exposure. Background contrast is independent of the foreground UI effects.
-// Background shafts stay present across scroll positions; only measured
-// soundtrack loudness gives their strength a small lift.
-const RAY_RESPONSE = Object.freeze({base:.46, loudnessGain:.10});
+// The previous shaft strength is now the reference at one-third output volume.
+// The slider controls the main gain; RMS adds only the existing small variation.
+const RAY_RESPONSE = Object.freeze({base:.46, loudnessGain:.10, referenceVolume:1/3});
 
 const FRAGMENT = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -218,6 +218,7 @@ export class Starfield {
     this.heroTarget = 0;
     this.sceneMeasuredAt = -1000;
     this.audioLevels = null;
+    this.rayVolume = 0;
     this.resolutionScale = 1;
     this.frameTimes = [];
     this.listeners = [];
@@ -436,8 +437,9 @@ export class Starfield {
     const rayCenter=this.pointerQuery.matches&&!this.reducedMotion?this.rayCenter:{x:.5,y:1};
     const rayOffset=[.5-rayCenter.x,.5-rayCenter.y];
     const loudness=levels?.active&&Number.isFinite(levels.loudness)?Math.max(0,Math.min(1,levels.loudness)):0;
-    const rayBaseline=RAY_RESPONSE.base;
-    const rayStrength=rayBaseline+loudness*RAY_RESPONSE.loudnessGain;
+    const volumeGain=levels?this.rayVolume/RAY_RESPONSE.referenceVolume:0;
+    const rayBaseline=RAY_RESPONSE.base*volumeGain;
+    const rayStrength=rayBaseline+loudness*RAY_RESPONSE.loudnessGain*volumeGain;
     gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.bindFramebuffer(gl.FRAMEBUFFER,this.sceneTarget.framebuffer);gl.viewport(0,0,this.sceneTarget.width,this.sceneTarget.height);
     gl.useProgram(this.program);
@@ -445,7 +447,7 @@ export class Starfield {
     gl.uniform2f(this.uniforms.viewSize, this.viewSize.width, this.viewSize.height);
     gl.uniform2f(this.uniforms.pointer, this.pointer.x, this.pointer.y);
     // Audio accelerates depth only. Twinkle and lateral drift retain their
-    // slow clock; the background shafts use a separate weak loudness response.
+    // slow clock; the shafts follow the output volume independently of beat speed.
     gl.uniform1f(this.uniforms.time, this.baseTime);
     gl.uniform1f(this.uniforms.travel, this.travel);
     gl.uniform2f(this.uniforms.pulse, lag, this.heroMix);
@@ -463,6 +465,8 @@ export class Starfield {
     gl.uniform1f(this.compositeUniforms.RayStrength,rayStrength);gl.drawArrays(gl.TRIANGLES,0,3);
     this.canvas.dataset.rayStrength=rayStrength.toFixed(4);
     this.canvas.dataset.rayBaseline=rayBaseline.toFixed(4);
+    this.canvas.dataset.rayVolume=this.rayVolume.toFixed(4);
+    this.canvas.dataset.rayVolumeGain=volumeGain.toFixed(4);
     this.canvas.dataset.rayCenterX=rayCenter.x.toFixed(4);
     this.canvas.dataset.rayCenterY=rayCenter.y.toFixed(4);
     this.canvas.dataset.rayPass=rayStrength>.0001?'radial-scatter':'idle';
@@ -477,6 +481,8 @@ export class Starfield {
       this.lastDraw = now;
       const seconds = Math.min(elapsed, 250) / 1000;
       this.audioLevels = window.PortfolioAudioAnalysis?.getLevels() || null;
+      const outputVolume=Number.isFinite(this.audioLevels?.outputVolume)?Math.max(0,Math.min(1,this.audioLevels.outputVolume)):0;
+      this.rayVolume+=(outputVolume-this.rayVolume)*(1-Math.exp(-seconds/.12));
       if (now - this.sceneMeasuredAt > 240) {
         this.sceneMeasuredAt = now;
         this.heroTarget = this._homeVisibility();
@@ -530,7 +536,7 @@ export class Starfield {
 
   _sync() {
     this._stop();
-    if (!this.pageActive || document.hidden || this.reducedMotion) this.audioLevels = null;
+    if (!this.pageActive || document.hidden || this.reducedMotion) {this.audioLevels = null;this.rayVolume = 0;}
     if (!this.ready || this.destroyed || !this.pageActive || document.hidden) return;
     this._draw();
     if (!this.paused && !this.reducedMotion) this.frame = requestAnimationFrame(this._tick);

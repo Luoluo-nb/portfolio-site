@@ -9,17 +9,21 @@ document.body.append(canvas);
 const ctx = canvas.getContext('2d', {alpha:true});
 const outerSurface=document.createElement('canvas'),outerContext=outerSurface.getContext('2d',{alpha:true});
 const bursts = [], cleanups = [], pending = new Set();
-// Thirty visible points total, including two short retirement slots.
-const MAX_BURSTS = 30, EXIT_SLOTS = 2, EXIT_MS = 220, MATERIAL_BATCH_SIZE = 8;
-const CLICKS_PER_GROUP=15,STYLE_COUNT=3;
+// Three independent fifteen-click groups own the live SDF slots. Inner-only
+// afterglow and short group exits have their own bounded visual allowance.
+const CLICKS_PER_GROUP=15,STYLE_COUNT=3,MAX_MAIN_GROUPS=3;
+const MAX_BURSTS=CLICKS_PER_GROUP*MAX_MAIN_GROUPS,MAX_TAIL_BURSTS=90,MAX_VISUAL_BURSTS=MAX_BURSTS+MAX_TAIL_BURSTS;
+const EXIT_MS=280,MIN_VISIBLE_MS=180,MATERIAL_BATCH_SIZE=8,MATERIAL_PIXEL_BUDGET=240000,FEATHER_PIXEL_BUDGET=1200000;
+const AUTO_MIN_MS=1000,AUTO_MAX_MS=4000;
 const CONTINUITY_KEY='portfolio-click-continuity-v1';
 // This ordinal belongs to the tab, not to the currently visible circles.
 let clickSequence=0;
 let width = 0, height = 0, frame = 0, lastDraw = 0, gesture = null, destroyed = false, suspended = false;
+let autoTimer=0;
 const ignored = 'input:not([type=button]):not([type=submit]):not([type=reset]),select,textarea,label,[contenteditable="true"],[role=slider],[data-click-effects="off"]';
 const interactive = 'a[href],button,summary,[role=button],input[type=button],input[type=submit],input[type=reset]';
 const listen = (target,type,fn,options) => { target.addEventListener(type,fn,options); cleanups.push(()=>target.removeEventListener(type,fn,options)); };
-function state(value){canvas.dataset.state=value;canvas.dataset.bursts=String(bursts.length);canvas.dataset.running=String(Boolean(frame));}
+function state(value){canvas.dataset.state=value;canvas.dataset.bursts=String(bursts.length);canvas.dataset.running=String(Boolean(frame));canvas.dataset.activeSdf=String(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).length);canvas.dataset.afterglow=String(bursts.filter(b=>!b.liveSDF&&b.retiredAt===null).length);canvas.dataset.retiring=String(bursts.filter(b=>b.retiredAt!==null).length);}
 function stop(reason='idle',cancelInput=false,preserveBursts=false){
  if(frame)cancelAnimationFrame(frame);frame=0;lastDraw=0;if(!preserveBursts)bursts.length=0;
  if(cancelInput){for(const id of pending)cancelAnimationFrame(id);pending.clear();gesture=null;}
@@ -34,10 +38,11 @@ function resize(){
  canvas.dataset.pixelBudget=String(canvas.width*canvas.height);
 }
 function availability(){
+ stopAuto();
  const disabled=!ctx||reduced.matches||document.hidden||suspended;
  canvas.hidden=disabled;
  stop(!ctx?'unsupported':reduced.matches?'disabled-motion':disabled?'suspended':'idle',true,!!ctx&&!reduced.matches);
- if(!disabled){resize();if(bursts.length){frame=requestAnimationFrame(tick);state('active');}}
+ if(!disabled){resize();updateLifecycle(performance.now());if(bursts.length){frame=requestAnimationFrame(tick);state('active');}scheduleAuto();}
 }
 // One material contains exactly three travelling bands, with no center flash,
 // cloud sprites or extra shell. Distances are in CSS pixels before touch scaling.
@@ -56,9 +61,10 @@ function rippleWidthScale(radius){
  const halfRadius=RIPPLE_RADIUS*.1;
  return radius<=halfRadius?1-.5*smooth(8,halfRadius,radius):.5-.25*smooth(halfRadius,RIPPLE_RADIUS,radius);
 }
-function rippleState(elapsed,index){
- const sinceBirth=elapsed-index*RIPPLE_DELAY,age=sinceBirth/RIPPLE_DURATION;
- const fadeDuration=RIPPLE_LIFE/1000*(index===0?OUTER_LIFE_SHARE:1)-index*RIPPLE_DELAY;
+function rippleState(elapsed,index,birthNested=false){
+ const delay=(index-(birthNested?1:0))*RIPPLE_DELAY;
+ const sinceBirth=elapsed-delay,age=sinceBirth/RIPPLE_DURATION;
+ const fadeDuration=RIPPLE_LIFE/1000*(index===0?OUTER_LIFE_SHARE:1)-delay;
  const fadeAge=sinceBirth/fadeDuration;
  if(age<=0||age>=1||fadeAge>=1)return null;
  // Ease-out preserves the fast start and progressively slower expansion.
@@ -66,7 +72,10 @@ function rippleState(elapsed,index){
  return {age,radius,width:Math.max(RIPPLE_MIN_WIDTHS[index],RIPPLE_WIDTHS[index]*rippleWidthScale(radius)),
   opacity:smooth(0,.115,sinceBirth)*(1-fadeAge)**(index===0?1.1:.62)*[.92,.62,.46][index]};
 }
-const visualElapsed=(burst,now)=>(now-burst.born)/1000+(burst.outerEnabled?0:RIPPLE_DELAY);
+// Birth shape never changes when SDF influence dies. A nested first inner ring
+// starts immediately, while all inner afterglow keeps the same 3.825s lifetime.
+const visualElapsed=(burst,now)=>Math.max(.045,(now-burst.born)/1000);
+const exitWeight=(burst,now)=>burst.retiredAt===null?1:1-smooth(0,EXIT_MS,now-burst.retiredAt);
 const RIPPLE_FRAGMENT=`#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -87,10 +96,11 @@ void main(){
    float r=length(p),angle=atan(p.y,p.x),elapsed=uPulse[pulse].z,seed=mod(floor(uPulse[pulse].w*.5),4.)*1.37;
    float exitWeight=mod(uPulse[pulse].w,2.);
   for(int i=0;i<3;i++){
-   if(i==0&&uPulse[pulse].w>=8.)continue;
+   if(i==0&&uPulse[pulse].w>=16.)continue;
    float baseWidth=(i==0?${RIPPLE_WIDTHS[0].toFixed(8)}:i==1?${RIPPLE_WIDTHS[1].toFixed(8)}:${RIPPLE_WIDTHS[2].toFixed(8)})*uScale;
-   float index=float(i),sinceBirth=elapsed-index*${RIPPLE_DELAY},age=sinceBirth/${RIPPLE_DURATION};
-   float fadeDuration=${RIPPLE_LIFE/1000}*(i==0?${OUTER_LIFE_SHARE}:1.)-index*${RIPPLE_DELAY};
+   float index=float(i),delay=(index-(mod(floor(uPulse[pulse].w/8.),2.)>.5?1.:0.))*${RIPPLE_DELAY};
+   float sinceBirth=elapsed-delay,age=sinceBirth/${RIPPLE_DURATION};
+   float fadeDuration=${RIPPLE_LIFE/1000}*(i==0?${OUTER_LIFE_SHARE}:1.)-delay;
    float fadeAge=sinceBirth/fadeDuration;
    if(age<=0.||age>=1.||fadeAge>=1.)continue;
    float radius=8.+${(RIPPLE_RADIUS-8).toFixed(8)}*(1.-pow(1.-age,${RIPPLE_EASE}));
@@ -104,17 +114,17 @@ void main(){
    float streamB=.5+.5*sin(angle*3.+phase*2.5);
    float flow=pow(streamA,.65)*.62+streamB*.38;
    float sweep=pow(.5+.5*sin(angle*3.-phase*4.8+seed+index*1.7),3.);
-   float luminance=i==0?.80+flow*.22:.42+flow*.35+sweep*.25;
+   float luminance=i==0?.78+flow*.35:.66+flow*.30+sweep*.24;
    float coreScale=1.;vec3 localColor=vec3(1.);
    if(uStyle>.5&&uStyle<1.5){
     // Broad, softly bundled light arcs; geometry is still a complete circle.
-    float bundle=pow(.5+.5*sin(angle*2.-phase*3.8+sin(angle*3.+phase*.9)*.4+seed),1.65);
-    luminance=i==0?.52+bundle*.65:.40+bundle*.85+pow(streamB,3.)*.18;
+    float bundle=pow(.5+.5*sin(angle*2.+phase*2.4+sin(angle*3.+phase*.7)*.45+seed),2.2);
+    luminance=i==0?.48+bundle*.95:.58+bundle*.95+pow(streamB,3.)*.16;
     coreScale=1.12;localColor=vec3(.94,.985,1.);
    }else if(uStyle>1.5){
     // Narrower light pulses travel inside the same circular contour.
-    float pulseLight=pow(.5+.5*sin(angle*6.-phase*6.6+sin(angle*2.+phase)*.3+seed),9.);
-    luminance=i==0?.62+pulseLight*.72:.24+pulseLight*.95;
+    float pulseLight=pow(.5+.5*sin(angle*8.-phase*9.4+sin(angle*2.+phase)*.3+seed),10.);
+    luminance=i==0?.54+pulseLight*1.05:.58+pulseLight*1.10;
     coreScale=.80;localColor=vec3(1.,.975,.94);
    }
    float localFade=smoothstep(0.,.115,sinceBirth)*pow(1.-fadeAge,i==0?1.1:.62)*strength*luminance*exitWeight;
@@ -133,8 +143,8 @@ void main(){
 }`;
 // CPU fallback samples the same light bands at a bounded resolution. Angular
 // lookups avoid evaluating many sine fields per pixel; native cuts stay separate.
-function bandTable(elapsed,index,seed,style){
- const ring=rippleState(elapsed,index);if(!ring)return null;
+function bandTable(elapsed,index,seed,style,birthNested){
+ const ring=rippleState(elapsed,index,birthNested);if(!ring)return null;
  const values=[],phase=elapsed+index*.31;
  const coreScale=style===1?1.12:style===2?.80:1;
  const color=style===1?[.94,.985,1]:style===2?[1,.975,.94]:[1,1,1];
@@ -145,13 +155,13 @@ function bandTable(elapsed,index,seed,style){
   const streamB=.5+.5*Math.sin(angle*3+phase*2.5);
   const flow=streamA**.65*.62+streamB*.38;
   const sweep=(.5+.5*Math.sin(angle*3-phase*4.8+seed+index*1.7))**3;
-  let luminance=index===0?.80+flow*.22:.42+flow*.35+sweep*.25;
+  let luminance=index===0?.78+flow*.35:.66+flow*.30+sweep*.24;
   if(style===1){
-   const bundle=(.5+.5*Math.sin(angle*2-phase*3.8+Math.sin(angle*3+phase*.9)*.4+seed))**1.65;
-   luminance=index===0?.52+bundle*.65:.40+bundle*.85+streamB**3*.18;
+   const bundle=(.5+.5*Math.sin(angle*2+phase*2.4+Math.sin(angle*3+phase*.7)*.45+seed))**2.2;
+   luminance=index===0?.48+bundle*.95:.58+bundle*.95+streamB**3*.16;
   }else if(style===2){
-   const pulseLight=(.5+.5*Math.sin(angle*6-phase*6.6+Math.sin(angle*2+phase)*.3+seed))**9;
-   luminance=index===0?.62+pulseLight*.72:.24+pulseLight*.95;
+   const pulseLight=(.5+.5*Math.sin(angle*8-phase*9.4+Math.sin(angle*2+phase)*.3+seed))**10;
+   luminance=index===0?.54+pulseLight*1.05:.58+pulseLight*1.10;
   }
   values.push({radius,width,luminance});
  }
@@ -176,15 +186,15 @@ function createRippleRenderer(){
  }
  initialize();
  if(gl){listen(surface,'webglcontextlost',e=>{e.preventDefault();lost=true;});listen(surface,'webglcontextrestored',()=>{lost=!initialize();});}
- function fallback(group,w,h,scale,now){
-  const step=Math.floor((now-group[0].born)/50),key=`g${group[0].groupId}:s${group[0].style}:`+group.map(b=>`${b.id}@${b.localX.toFixed(1)},${b.localY.toFixed(1)}`).join('|')+`:${w.toFixed(1)},${h.toFixed(1)}:${step}`;
+ function fallback(group,w,h,scale,now,budget){
+  const step=Math.floor((now-group[0].born)/50),key=`g${group[0].groupId}:s${group[0].style}:`+group.map(b=>`${b.id}@${b.localX.toFixed(1)},${b.localY.toFixed(1)}:n${+b.birthNested}:a${+b.liveSDF}:r${b.retiredAt}`).join('|')+`:${w.toFixed(1)},${h.toFixed(1)}:${step}:${Math.floor(budget)}`;
   if(cached.has(key))return cached.get(key);
-  const sprite=document.createElement('canvas'),ratio=Math.min(.7,Math.sqrt(12000/(w*h)));
+  const sprite=document.createElement('canvas'),ratio=Math.min(.7,Math.sqrt(Math.min(12000,budget)/(w*h)));
   sprite.width=Math.max(1,Math.floor(w*ratio));sprite.height=Math.max(1,Math.floor(h*ratio));
   const paint=sprite.getContext('2d');if(!paint)return null;
   const data=paint.createImageData(sprite.width,sprite.height),pixel=Math.max(w/sprite.width,h/sprite.height);
   const sampleTime=group[0].born+(step+.5)*50;
-  const tables=group.map(b=>({x:b.localX,y:b.localY,weight:b.retiredAt===null?1:1-smooth(0,EXIT_MS,sampleTime-b.retiredAt),bands:[0,1,2].map(i=>i===0&&!b.outerEnabled?null:bandTable(visualElapsed(b,sampleTime),i,b.seed,b.style))}));
+  const tables=group.map(b=>({x:b.localX,y:b.localY,weight:exitWeight(b,sampleTime),bands:[0,1,2].map(i=>i===0&&!b.liveSDF?null:bandTable(visualElapsed(b,sampleTime),i,b.seed,b.style,b.birthNested))}));
   for(let y=0;y<sprite.height;y++)for(let x=0;x<sprite.width;x++){
    const px=(x+.5)/sprite.width*w,py=(y+.5)/sprite.height*h;
    const geometry=tables.map(pulse=>{const dx=(px-pulse.x)/scale,dy=(py-pulse.y)/scale;return{radius:Math.hypot(dx,dy),angle:(Math.atan2(dy,dx)/Math.PI/2+1)%1*256};});
@@ -213,12 +223,12 @@ function createRippleRenderer(){
   paint.putImageData(data,0,0);if(cached.size>=32)cached.delete(cached.keys().next().value);cached.set(key,sprite);return sprite;
  }
  return {get mode(){return gl&&program&&!lost&&!gl.isContextLost()?'webgl':'cached';},get cacheSize(){return cached.size;},draw(group,w,h,scale,now,budget){
-  if(this.mode==='cached'){const sprite=fallback(group,w,h,scale,now);canvas.dataset.lastTilePixels=String(sprite? sprite.width*sprite.height:0);return sprite;}
+  if(this.mode==='cached'){const sprite=fallback(group,w,h,scale,now,budget);canvas.dataset.lastTilePixels=String(sprite? sprite.width*sprite.height:0);return sprite;}
   const ratio=Math.min(1,Math.sqrt(Math.min(140000,budget,480000/group.length)/(w*h))),pw=Math.max(1,Math.floor(w*ratio)),ph=Math.max(1,Math.floor(h*ratio));
   if(surface.width!==pw)surface.width=pw;if(surface.height!==ph)surface.height=ph;
   const pulses=new Float32Array(32);
-  // Bit 3 of the packed phase disables the outer band without more uniforms.
-  group.forEach((b,i)=>{const weight=b.retiredAt===null?1:1-smooth(0,EXIT_MS,now-b.retiredAt);pulses.set([b.localX,b.localY,visualElapsed(b,now),b.variant*2+weight+(b.outerEnabled?0:8)],i*4);});
+  // Separate bits preserve the immutable nested launch and the live outer state.
+  group.forEach((b,i)=>{pulses.set([b.localX,b.localY,visualElapsed(b,now),b.variant*2+exitWeight(b,now)+(b.birthNested?8:0)+(b.liveSDF?0:16)],i*4);});
   gl.viewport(0,0,pw,ph);gl.useProgram(program);gl.uniform2f(uniforms.Size,w,h);gl.uniform1f(uniforms.Count,group.length);gl.uniform1f(uniforms.Scale,scale);gl.uniform1f(uniforms.Pixel,Math.max(w/pw,h/ph));
   gl.uniform1f(uniforms.Style,group[0].style);
   gl.uniform4fv(uniforms['Pulse[0]'],pulses);gl.drawArrays(gl.TRIANGLES,0,6);
@@ -231,28 +241,64 @@ canvas.dataset.rippleDelays=[0,1,2].map(index=>index*RIPPLE_DELAY*1000).join(','
 canvas.dataset.rippleSpeed=String(RIPPLE_SPEED);canvas.dataset.rippleDuration=String(RIPPLE_DURATION);canvas.dataset.widthHalfRadius=String(RIPPLE_RADIUS*.1);canvas.dataset.widthOrder='outer-thicker';
 canvas.dataset.crossing='outer-rings-only';canvas.dataset.motion='circular-flow-only';canvas.dataset.scrollProjection='native-document-layer';canvas.dataset.maxRadius=String(RIPPLE_RADIUS);canvas.dataset.clipMode='viewport-css-pixels';canvas.dataset.color='white';canvas.dataset.geometry='native-circular-clip';
 canvas.dataset.groupSize=String(CLICKS_PER_GROUP);canvas.dataset.styleCount=String(STYLE_COUNT);canvas.dataset.groupInteraction='same-group-id-only';
+canvas.dataset.maxMainGroups=String(MAX_MAIN_GROUPS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.maxVisuals=String(MAX_VISUAL_BURSTS);
+function updateLifecycle(now){
+ for(let i=bursts.length-1;i>=0;i--){
+  const burst=bursts[i];
+  if(burst.retiredAt!==null&&burst.firstDrawAt===null&&now-burst.born<burst.life)burst.retiredAt=Math.max(burst.retiredAt,now+MIN_VISIBLE_MS);
+  if(now-burst.born>=burst.life||(burst.retiredAt!==null&&now-burst.retiredAt>=EXIT_MS)){bursts.splice(i,1);continue;}
+  if(burst.liveSDF&&now-burst.born>115){
+   const outer=rippleState(visualElapsed(burst,now),0);
+   if(!outer||outer.opacity*exitWeight(burst,now)<=.008)burst.liveSDF=false;
+  }
+ }
+}
+function retireBurst(burst,now){
+ if(burst.retiredAt!==null)return;
+ // Protect the first visible frame, including a busy frame after the birth.
+ burst.retiredAt=Math.max(now,(burst.firstDrawAt??now)+MIN_VISIBLE_MS);
+}
+function limitMainGroups(now,incomingGroup){
+ const ids=new Set(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).map(b=>b.groupId));
+ if(incomingGroup!==undefined)ids.add(incomingGroup);
+ const ordered=[...ids].sort((a,b)=>a-b);
+ while(ordered.length>MAX_MAIN_GROUPS){
+  const oldGroup=ordered.shift();
+  for(const burst of bursts)if(burst.groupId===oldGroup)retireBurst(burst,now);
+ }
+}
+function reserveVisualSlot(now){
+ while(bursts.length>=MAX_VISUAL_BURSTS){
+  // Live SDF does not compete with invisible outer shells' inner afterglow.
+  // At pathological event rates, prefer already-seen tails before any fresh birth.
+  const ranked=bursts.map((burst,index)=>({burst,index,seen:burst.firstDrawAt!==null,protected:burst.firstDrawAt===null||now-burst.firstDrawAt<MIN_VISIBLE_MS}));
+  ranked.sort((a,b)=>Number(a.protected)-Number(b.protected)||Number(!a.seen)-Number(!b.seen)||Number(a.burst.liveSDF&&a.burst.retiredAt===null)-Number(b.burst.liveSDF&&b.burst.retiredAt===null)||a.burst.born-b.burst.born||a.burst.id-b.burst.id);
+  bursts.splice(ranked[0].index,1);
+  canvas.dataset.pressureReclaims=String((Number(canvas.dataset.pressureReclaims)||0)+1);
+ }
+}
 // Boolean subtraction of whole disks with a soft alpha edge. Circle distance
 // controls opacity only; neither radius nor the inner bands are distorted.
 // Inner bands are drawn separately and do not participate in this operation.
 function outerCircleField(now,viewLeft,viewTop){
  const circles=[];
  for(const burst of bursts){
-  if(!burst.outerEnabled)continue;
-  const scale=burst.touch?.68:1,exitWeight=burst.retiredAt===null?1:1-smooth(0,EXIT_MS,now-burst.retiredAt);
-  const band=rippleState((now-burst.born)/1000,0);if(!band)continue;
-  const opacity=band.opacity*exitWeight;if(opacity<=.008)continue;
+  if(!burst.liveSDF)continue;
+  const scale=burst.touch?.68:1;
+  const band=rippleState(visualElapsed(burst,now),0);if(!band)continue;
+  const opacity=band.opacity*exitWeight(burst,now);if(opacity<=.008)continue;
   circles.push({id:burst.id,groupId:burst.groupId,x:burst.pageX-viewLeft,y:burst.pageY-viewTop,radius:band.radius*scale,opacity,scale});
  }
  canvas.dataset.cutoutResolution='independent-contour-alpha';
  return circles;
 }
-function featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders){
+function featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders,budget){
  if(!outerContext||!occluders.length)return null;
  const left=Math.max(0,cx-r-half-2),top=Math.max(0,cy-r-half-2);
  const right=Math.min(width,cx+r+half+2),bottom=Math.min(height,cy+r+half+2);
  const tw=right-left,th=bottom-top;if(tw<=0||th<=0)return null;
- const ratio=Math.min(1,Math.sqrt(600000/(tw*th)));
- const pw=Math.max(1,Math.ceil(tw*ratio)),ph=Math.max(1,Math.ceil(th*ratio));
+ const ratio=Math.min(1,Math.sqrt(Math.min(600000,budget)/(tw*th)));
+ const pw=Math.max(1,Math.floor(tw*ratio)),ph=Math.max(1,Math.floor(th*ratio));
  if(outerSurface.width!==pw)outerSurface.width=pw;if(outerSurface.height!==ph)outerSurface.height=ph;
  outerContext.setTransform(pw/tw,0,0,ph/th,0,0);
  outerContext.globalCompositeOperation='source-over';outerContext.globalAlpha=1;outerContext.clearRect(0,0,tw,th);
@@ -293,6 +339,8 @@ function drawBursts(now){
  }
  let visibleGroups=0,framePixels=0;const rect=canvas.getBoundingClientRect(),viewLeft=scrollX+rect.left,viewTop=scrollY+rect.top;
  const circles=outerCircleField(now,viewLeft,viewTop);
+ const outerCount=bursts.filter(b=>b.liveSDF&&rippleState(visualElapsed(b,now),0)).length;
+ const featherBudget=FEATHER_PIXEL_BUDGET/Math.max(1,outerCount);
  for(const group of groups){
   group.sort((a,b)=>a.id-b.id);
   const scale=group[0].touch?.68:1,pad=RIPPLE_SIZE*scale*.5;
@@ -303,12 +351,12 @@ function drawBursts(now){
   const w=right-left,h=bottom-top,x=left-viewLeft,y=top-viewTop;
   if(w<=0||h<=0)continue;
   group.forEach(b=>{b.localX=b.pageX-left;b.localY=b.pageY-top;});
-  const material=ripples.draw(group,w,h,scale,now,240000/groups.length);if(!material)continue;
+  const material=ripples.draw(group,w,h,scale,now,MATERIAL_PIXEL_BUDGET/groups.length);if(!material)continue;
   // Draw each contour independently so an outer cut cannot erase an inner ring
   // or another click's unrelated contour underneath it.
   for(const burst of group)for(let ring=0;ring<3;ring++){
-   if(ring===0&&!burst.outerEnabled)continue;
-   const band=rippleState(visualElapsed(burst,now),ring);if(!band)continue;
+   if(ring===0&&!burst.liveSDF)continue;
+   const band=rippleState(visualElapsed(burst,now),ring,burst.birthNested);if(!band)continue;
    const cx=x+burst.localX,cy=y+burst.localY,r=band.radius*scale;
    const half=Math.max(band.width*scale,.95*width/canvas.width)*.5;
    ctx.save();ctx.beginPath();
@@ -324,56 +372,54 @@ function drawBursts(now){
     // both kinds of tangency stay whole; the pair's influence eases in afterward.
     if(partialDepth>0)occluders.push({...other,partialDepth});
    }
-   const feathered=featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders);
+   const feathered=featherOuterContour(material,x,y,w,h,cx,cy,r,half,occluders,featherBudget);
    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=burst.touch?.82:1;
    if(feathered)ctx.drawImage(feathered.surface,feathered.x,feathered.y,feathered.w,feathered.h);
    else ctx.drawImage(material,x,y,w,h);
    ctx.restore();
+   if(burst.firstDrawAt===null){burst.firstDrawAt=now;if(burst.retiredAt!==null)burst.retiredAt=Math.max(burst.retiredAt,now+MIN_VISIBLE_MS);}
   }
   visibleGroups++;framePixels+=Number(canvas.dataset.lastTilePixels)||0;
  }
- canvas.dataset.renderer=ripples.mode;canvas.dataset.groups=String(visibleGroups);canvas.dataset.frameTexturePixels=String(framePixels);
+ canvas.dataset.renderer=ripples.mode;canvas.dataset.groups=String(visibleGroups);canvas.dataset.mainGroups=String(new Set(bursts.filter(b=>b.liveSDF&&b.retiredAt===null).map(b=>b.groupId)).size);canvas.dataset.frameTexturePixels=String(framePixels);canvas.dataset.featherPixelBudget=String(FEATHER_PIXEL_BUDGET);
 }
 function tick(now){
- frame=0;if(destroyed||suspended||document.hidden||reduced.matches){stop(reduced.matches?'disabled-motion':'suspended',true);return;}
+ frame=0;if(destroyed||suspended||document.hidden||reduced.matches){stop(reduced.matches?'disabled-motion':'suspended',true,!reduced.matches);return;}
  if(now-lastDraw>=1000/30){
   lastDraw=now;ctx.clearRect(0,0,width,height);
-  for(let i=bursts.length-1;i>=0;i--)if(now-bursts[i].born>=bursts[i].life||(bursts[i].retiredAt!==null&&now-bursts[i].retiredAt>=EXIT_MS))bursts.splice(i,1);
+  updateLifecycle(now);
   drawBursts(now);
  }
  if(bursts.length){frame=requestAnimationFrame(tick);state('active');}else stop();
 }
-function emit(x,y,keyboard,touch,bornAt=performance.now()){
+function emit(x,y,keyboard,touch,bornAt=performance.now(),source='manual'){
  if(!ctx||destroyed||suspended||document.hidden||reduced.matches)return;
  const rect=canvas.getBoundingClientRect();if(Math.abs(rect.width-width)>.01||Math.abs(rect.height-height)>.01)resize();
  const born=bornAt;
+ updateLifecycle(born);
  const pageX=x+scrollX,pageY=y+scrollY;
  const groupId=Math.floor(clickSequence/CLICKS_PER_GROUP),style=groupId%STYLE_COUNT;
  clickSequence++;
  // Capture containment at birth. A nested click stays a two-ring accent for
  // its entire life, even if its containing circle later fades or moves away.
- const outerEnabled=!bursts.some(other=>{
-  if(!other.outerEnabled||other.groupId!==groupId)return false;
-  const band=rippleState((born-other.born)/1000,0);if(!band)return false;
-  const weight=other.retiredAt===null?1:1-smooth(0,EXIT_MS,born-other.retiredAt);
-  return band.opacity*weight>.008&&Math.hypot(pageX-other.pageX,pageY-other.pageY)<band.radius*(other.touch?.68:1);
+ const birthNested=bursts.some(other=>{
+  if(!other.liveSDF||other.groupId!==groupId)return false;
+  const band=rippleState(visualElapsed(other,born),0);if(!band)return false;
+  return band.opacity*exitWeight(other,born)>.008&&Math.hypot(pageX-other.pageX,pageY-other.pageY)<band.radius*(other.touch?.68:1);
  });
- const limit=MAX_BURSTS-EXIT_SLOTS,active=bursts.filter(b=>b.retiredAt===null);
- if(active.length>=limit)active[0].retiredAt=born;
- // Normal/nearby clicks never replace an existing pulse. Extreme floods may
- // reclaim only the oldest exit slot; 28 normal + 2 retiring points never exceed 30.
- while(bursts.length>=MAX_BURSTS){const oldest=bursts.findIndex(b=>b.retiredAt!==null);bursts.splice(oldest<0?0:oldest,1);}
+ limitMainGroups(born,groupId);
+ reserveVisualSlot(born);
  const variant=Math.floor(Math.random()*4);
- bursts.push({id:++nextBurstId,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE-(outerEnabled?0:RIPPLE_DELAY*1000),touch,outerEnabled,seed:variant*1.37,variant,retiredAt:null});
+ bursts.push({id:++nextBurstId,groupId,style,pageX,pageY,born,life:RIPPLE_LIFE,touch,birthNested,liveSDF:!birthNested,seed:variant*1.37,variant,retiredAt:null,firstDrawAt:null});
  canvas.dataset.clickSequence=String(clickSequence);canvas.dataset.currentGroup=String(groupId);canvas.dataset.currentStyle=String(style);
- canvas.dataset.lastOuterEnabled=String(outerEnabled);canvas.dataset.overlapRule='partial-intersections-only';
- canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='three-flowing-ripples';canvas.dataset.source=keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(limit);canvas.dataset.exitSlots=String(EXIT_SLOTS);
+ canvas.dataset.lastOuterEnabled=String(!birthNested);canvas.dataset.overlapRule='partial-intersections-only';
+ canvas.dataset.lastX=String(x);canvas.dataset.lastY=String(y);canvas.dataset.mode='three-flowing-ripples';canvas.dataset.source=source==='auto'?'auto':keyboard?'keyboard':touch?'touch':'mouse';canvas.dataset.maxBursts=String(MAX_BURSTS);canvas.dataset.maxActive=String(MAX_BURSTS);canvas.dataset.tailSlots=String(MAX_TAIL_BURSTS);
  if(!frame)frame=requestAnimationFrame(tick);state('active');
  saveContinuity();
 }
 function saveContinuity(){
  const now=performance.now();
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:2,sequence:clickSequence,savedAt:Date.now(),pulses:bursts.map(b=>({groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,outerEnabled:b.outerEnabled,variant:b.variant,retiredAge:b.retiredAt===null?null:now-b.retiredAt}))}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:3,sequence:clickSequence,savedAt:Date.now(),pulses:bursts.map(b=>({groupId:b.groupId,style:b.style,x:b.pageX-scrollX,y:b.pageY-scrollY,age:now-b.born,touch:b.touch,birthNested:b.birthNested,liveSDF:b.liveSDF,variant:b.variant,retiredAge:b.retiredAt===null?null:now-b.retiredAt,drawnAge:b.firstDrawAt===null?null:now-b.firstDrawAt}))}));}catch{}
 }
 function restoreContinuity(){
  if(destroyed||suspended)return;
@@ -396,32 +442,72 @@ function restoreContinuity(){
  canvas.dataset.currentGroup=String(currentGroup);canvas.dataset.currentStyle=String(currentGroup%STYLE_COUNT);
  // Consume only the carried visuals. Keep the tab's ordinal even if the gap
  // is long, every circle has expired, or motion is currently disabled.
- try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:2,sequence:clickSequence,savedAt:Date.now(),pulses:[]}));}catch{}
+ try{sessionStorage.setItem(CONTINUITY_KEY,JSON.stringify({version:3,sequence:clickSequence,savedAt:Date.now(),pulses:[]}));}catch{}
  if(document.hidden||reduced.matches||!ctx)return;
  const gap=Date.now()-saved?.savedAt;
  if(!Number.isFinite(gap)||gap<0||gap>RIPPLE_LIFE)return;
  const now=performance.now();
- for(const p of pulses.slice(-MAX_BURSTS)){
-  if(bursts.length>=MAX_BURSTS)break;
+ for(const p of pulses.slice(-MAX_VISUAL_BURSTS)){
+  if(bursts.length>=MAX_VISUAL_BURSTS)break;
   if(!p||!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.age))continue;
-  const outerEnabled=p.outerEnabled!==false,age=Math.max(0,p.age)+gap;
-  const life=RIPPLE_LIFE-(outerEnabled?0:RIPPLE_DELAY*1000);
+  const birthNested=saved.version>=3?!!p.birthNested:p.outerEnabled===false,age=Math.max(0,p.age)+gap;
+  const life=RIPPLE_LIFE;
   const retiredAge=p.retiredAge==null?null:Number(p.retiredAge)+gap;
   if(age>=life||retiredAge!==null&&(!Number.isFinite(retiredAge)||retiredAge>=EXIT_MS))continue;
   const variant=Math.max(0,Math.min(3,Math.floor(Number(p.variant)||0)));
   const groupId=validGroup(p.groupId)?p.groupId:-1,style=groupId<0?0:groupId%STYLE_COUNT;
-  bursts.push({id:++nextBurstId,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,outerEnabled,variant,seed:variant*1.37,retiredAt:retiredAge===null?null:now-retiredAge});
+  const outer=birthNested?null:rippleState(Math.max(.045,age/1000),0);
+  const liveSDF=!!outer&&outer.opacity>.008&&(saved.version<3||p.liveSDF!==false);
+  const drawnAge=p.drawnAge==null?null:Number(p.drawnAge)+gap;
+  bursts.push({id:++nextBurstId,groupId,style,pageX:p.x+scrollX,pageY:p.y+scrollY,born:now-age,life,touch:!!p.touch,birthNested,liveSDF,variant,seed:variant*1.37,retiredAt:retiredAge===null?null:now-retiredAge,firstDrawAt:drawnAge!==null&&Number.isFinite(drawnAge)?now-drawnAge:null});
  }
+ updateLifecycle(now);limitMainGroups(now);
  if(bursts.length&&!frame){frame=requestAnimationFrame(tick);state('active');}
+}
+function stopAuto(){if(autoTimer)clearTimeout(autoTimer);autoTimer=0;canvas.dataset.autoPending='false';}
+function autoAllowed(){return !!ctx&&!destroyed&&!suspended&&!document.hidden&&!reduced.matches;}
+function findAutoPoint(){
+ if([...document.querySelectorAll('dialog[open],[aria-modal="true"]')].some(dialog=>dialog.getClientRects().length))return null;
+ const avoid='header,.header,nav,a,button,summary,[role="button"],[role="slider"],video,iframe,.project-preview,.detail-player,.poster-button,dialog,[role="dialog"],form,input,select,textarea,label,[contenteditable="true"],[data-click-effects="off"]';
+ const content='img,picture,svg,canvas,h1,h2,h3,h4,h5,h6,p,li,figcaption,pre,code,blockquote';
+ const viewWidth=document.documentElement.clientWidth,viewHeight=innerHeight;
+ const insetX=Math.min(48,viewWidth*.12),insetY=Math.min(48,viewHeight*.12);
+ for(let attempt=0;attempt<24;attempt++){
+  const x=insetX+Math.random()*Math.max(1,viewWidth-insetX*2),y=insetY+Math.random()*Math.max(1,viewHeight-insetY*2);
+  const target=document.elementFromPoint(x,y);
+  if(!(target instanceof Element)||target.closest(avoid)||target.closest(content))continue;
+  if([...target.childNodes].some(node=>node.nodeType===3&&node.textContent.trim()))continue;
+  return {x,y};
+ }
+ return null;
+}
+function scheduleAuto(){
+ stopAuto();if(!autoAllowed())return;
+ const delay=AUTO_MIN_MS+Math.random()*(AUTO_MAX_MS-AUTO_MIN_MS);
+ canvas.dataset.autoPending='true';canvas.dataset.autoDelay=String(Math.round(delay));
+ autoTimer=setTimeout(()=>{
+  autoTimer=0;canvas.dataset.autoPending='false';
+  if(!autoAllowed())return;
+  if(!gesture?.down){
+   const point=findAutoPoint();
+   if(point)emit(point.x,point.y,false,coarse.matches,performance.now(),'auto');
+  }
+  // Busy content or an open dialog skips this occurrence instead of targeting UI.
+  scheduleAuto();
+ },delay);
 }
 listen(document,'pointerdown',e=>{
  if(!e.isPrimary||e.button!==0){gesture=null;return;}
- gesture={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),touch:e.pointerType==='touch',dragged:false,ignored:!!e.target.closest?.(ignored)};
+ scheduleAuto();
+ gesture={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),touch:e.pointerType==='touch',down:true,dragged:false,ignored:!!e.target.closest?.(ignored)};
 },{passive:true});
 listen(document,'pointermove',e=>{if(gesture&&gesture.id===e.pointerId&&Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>8)gesture.dragged=true;},{passive:true});
-listen(document,'pointercancel',()=>{if(gesture)gesture.dragged=true;},{passive:true});
+listen(document,'pointerup',e=>{if(gesture?.id===e.pointerId)gesture.down=false;},{passive:true});
+listen(document,'pointercancel',()=>{if(gesture){gesture.dragged=true;gesture.down=false;}},{passive:true});
+listen(document,'keydown',e=>{if(!e.repeat&&(e.key==='Enter'||e.key===' '))scheduleAuto();},{passive:true});
 listen(window,'scroll',()=>{if(gesture)gesture.dragged=true;},{passive:true,capture:true});
 listen(document,'click',e=>{
+ if(e.button===0)scheduleAuto();
  if(e.button!==0||!(e.target instanceof Element)||e.target.closest(ignored))return;
  const keyboard=e.detail===0,el=e.target.closest(interactive);
  if(el?.matches(':disabled,[aria-disabled="true"]'))return;
@@ -442,8 +528,8 @@ listen(window,'resize',availability,{passive:true});
 listen(window,'blur',()=>{gesture=null;});
 listen(document,'pointerout',e=>{if(e.pointerType==='mouse'&&!e.relatedTarget)gesture=null;});
 listen(document,'visibilitychange',availability);listen(reduced,'change',availability);
-export function destroyClickEffects(){if(destroyed)return;destroyed=true;stop('destroyed',true);ripples.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
-listen(window,'pagehide',e=>{saveContinuity();suspended=true;if(e.persisted)availability();else destroyClickEffects();});
+export function destroyClickEffects(){if(destroyed)return;destroyed=true;stopAuto();stop('destroyed',true);ripples.destroy();cleanups.splice(0).forEach(fn=>fn());canvas.remove();}
+listen(window,'pagehide',e=>{stopAuto();saveContinuity();suspended=true;if(e.persisted)availability();else destroyClickEffects();});
 listen(window,'pageshow',e=>{suspended=false;if(e.persisted){stop('idle',true);availability();}restoreContinuity();});
 availability();
 restoreContinuity();
