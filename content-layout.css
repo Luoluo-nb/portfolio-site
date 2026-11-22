@@ -3,6 +3,7 @@
 
 /* The preview and the project index share a baseline beneath the filters. */
 #works{padding-block:clamp(112px,8.5vw,126px) clamp(42px,6vw,84px)}
+#works>.shell{width:min(1720px,calc(100% - clamp(28px,4vw,80px)))}
 #works .section-head{
   display:flex;
   align-items:baseline;
@@ -13,18 +14,18 @@
   padding-bottom:15px;
   border-bottom:1px solid #b1d1f52b;
 }
-#works-title{font-size:clamp(36px,3.5vw,54px);font-weight:750;line-height:1.1;letter-spacing:-.035em}
+#works-title{font-size:clamp(42px,4.5vw,72px);font-weight:750;line-height:1.1;letter-spacing:-.035em}
 #works .category-tabs{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;width:auto;margin:0}
 #works .category-tabs button{
   width:auto;
   min-width:44px;
-  min-height:44px;
-  padding:8px 12px;
+  min-height:48px;
+  padding:8px 14px;
   border:0;
   border-radius:0;
   background:transparent;
   color:var(--muted);
-  font-size:14px;
+  font-size:clamp(15px,1.08vw,18px);
   font-weight:600;
   text-shadow:none;
   white-space:nowrap;
@@ -33,7 +34,7 @@
 #works .category-tabs button[aria-pressed=true]{color:var(--fg);box-shadow:inset 0 -2px #a4d9ef}
 #works .subcategory-row{justify-content:flex-start;margin-top:-12px;margin-bottom:16px}
 #works .subcategory-row button{padding-inline:10px}
-#works .works-layout{display:grid;grid-template-columns:minmax(0,1.95fr) minmax(290px,1fr);align-items:start;gap:clamp(24px,3vw,48px)}
+#works .works-layout{display:grid;grid-template-columns:minmax(0,2.04fr) minmax(290px,1fr);align-items:start;gap:clamp(22px,2.6vw,48px)}
 #works .selection-column{min-width:0}
 #works .preview-toolbar,#works .selection-heading{
   display:flex;
@@ -43,7 +44,7 @@
   margin:0;
   padding:0 0 9px;
   color:var(--muted);
-  font-size:13px;
+  font-size:clamp(14px,1.04vw,17px);
   line-height:1.4;
   font-weight:600;
   letter-spacing:.02em;
@@ -52,10 +53,10 @@
 #works #preview-index,#works #project-count{color:var(--muted);font-variant-numeric:tabular-nums}
 #works .project-preview{border-radius:10px;background:#060a11;scroll-margin-top:4px}
 #works .project-preview :is(.project-static-cover,.poster-button),#works .project-preview>video{border-radius:inherit;overflow:hidden}
-#works #project-title{margin-top:clamp(17px,2vw,26px);color:var(--fg);font-size:clamp(24px,2.3vw,34px);font-weight:720;letter-spacing:-.025em;line-height:1.28;text-wrap:balance}
-#works .project-description{max-width:64ch;margin-top:9px;font-size:clamp(15px,1vw,17px);line-height:1.75;font-weight:500}
+#works #project-title{margin-top:clamp(17px,2vw,26px);color:var(--fg);font-size:clamp(28px,2.8vw,46px);font-weight:720;letter-spacing:-.025em;line-height:1.28;text-wrap:balance}
+#works .project-description{max-width:64ch;margin-top:9px;font-size:clamp(16px,1.2vw,20px);line-height:1.7;font-weight:500}
 #works .project-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px 22px;margin-top:15px}
-#works .project-actions>a{display:inline-flex;align-items:center;min-height:44px;margin:0;font-size:14px;font-weight:650}
+#works .project-actions>a{display:inline-flex;align-items:center;min-height:48px;margin:0;font-size:clamp(15px,1.05vw,18px);font-weight:650}
 #works .project-detail-link{gap:16px;padding:8px 16px;border:1px solid #98cce94d;border-radius:6px;background:#17283d;color:#edf7ff;box-shadow:none}
 #works .project-detail-link:is(:hover,:focus-visible){border-color:#c1e4f5ab;background:#203750}
 #works .project-actions .text-link{color:var(--ice)}

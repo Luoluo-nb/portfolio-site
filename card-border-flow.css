@@ -8,11 +8,11 @@
 .project-entry {
   position: relative;
   display: grid;
-  grid-template-columns: clamp(68px, 5.6vw, 88px) minmax(0, 1fr) 18px;
+  grid-template-columns: clamp(82px, 8vw, 136px) minmax(0, 1fr) 20px;
   align-items: center;
-  gap: 12px;
-  min-height: 60px;
-  padding: 7px 9px;
+  gap: clamp(10px, 1vw, 16px);
+  min-height: 72px;
+  padding: 9px 10px;
   border-block-end: 1px solid #aec6e51c;
   color: #e5ecf5;
   text-decoration: none;
@@ -44,17 +44,17 @@
 .project-entry-copy {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 4px;
 }
 .project-entry-copy strong {
-  font-size: clamp(14px, 1.1vw, 17px);
+  font-size: clamp(16px, 1.4vw, 22px);
   line-height: 1.38;
   font-weight: 650;
   overflow-wrap: anywhere;
 }
 .project-entry-copy small {
   color: #a0b2c7;
-  font-size: 11px;
+  font-size: clamp(12px, .94vw, 15px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: .045em;
@@ -62,7 +62,7 @@
 }
 .project-entry-arrow {
   color: #8399af;
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 400;
   line-height: 1;
   text-align: center;

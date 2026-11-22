@@ -42,7 +42,7 @@
 /* The fixed bar keeps its layout dimensions while its lower edge lifts and fades. */
 .header-dock{
   --nav-hit-height:78px;
-  --nav-mesh-height:74px;
+  --nav-meter-height:74px;
   position:fixed;inset:0 0 auto;z-index:30;
 }
 .header-dock.is-collapsed{height:var(--nav-hit-height)}
@@ -64,6 +64,17 @@
   transition:clip-path .16s ease-out,transform .16s ease-out,opacity .12s linear;
 }
 @media(prefers-reduced-motion:no-preference){
+  html[data-start-gate] .header-dock>.header{
+    opacity:0;transform:translateY(-10px);clip-path:inset(0 0 65% 0);
+  }
+  .header-reveal-handle.first-spectrum canvas{
+    transform-origin:50% 0;
+    animation:header-spectrum-enter .64s cubic-bezier(.22,.7,.25,1) both;
+  }
+  @keyframes header-spectrum-enter{
+    from{opacity:0;transform:scaleY(.15)}
+    to{opacity:1;transform:scaleY(1)}
+  }
   .header[data-reveal]>:is(.brand,nav,.header-tools){
     opacity:1;
     translate:0 0;
@@ -89,12 +100,11 @@
   transition:opacity .18s ease-out,visibility 0s;
 }
 .header-reveal-handle canvas{
-  position:absolute;inset:0 0 auto;width:100%;height:var(--nav-mesh-height);pointer-events:none;
-  mask-image:linear-gradient(to bottom,#000 58%,transparent);
+  position:absolute;inset:0 0 auto;width:100%;height:var(--nav-meter-height);pointer-events:none;
 }
 .header-reveal-handle:focus-visible{outline:2px solid #9ad7ea;outline-offset:-2px}
 @media(max-width:900px){
-  .header-dock{--nav-hit-height:96px;--nav-mesh-height:90px}
+  .header-dock{--nav-hit-height:96px;--nav-meter-height:90px}
 }
 @media(prefers-reduced-motion:reduce){
   .header[data-reveal],.header-reveal-handle[aria-expanded]{transition:none}

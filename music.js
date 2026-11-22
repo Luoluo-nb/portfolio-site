@@ -1,5 +1,6 @@
 import { mountMusicShader } from './music-shader.js';
 import { createPercussionDetector, PERCUSSION_SETTINGS as SNARE_ANALYSIS } from './audio-onsets.js';
+import { createSpectrumMixer } from './audio-spectrum.js';
 
 const source = './media/bgm-new-days-hope-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
@@ -89,6 +90,7 @@ let audioContext;
 let mediaSource;
 let analyser;
 let frequencyData;
+let mixMusicSpectrum;
 let waveformData;
 let analysisPending;
 let analysisRequest = 0, activityGeneration = 0, playbackRequest = 0;
@@ -161,6 +163,7 @@ async function enableAnalysis(fromGesture = false) {
     analyser = nextAnalyser;
     frequencyData = nextData;
     waveformData = nextWaveform;
+    mixMusicSpectrum = createSpectrumMixer(audioContext.sampleRate, analyser.fftSize);
   } catch (error) {
     analysisUnavailable = error.name !== 'NotAllowedError' && error.name !== 'AbortError';
   } finally { if (analysisPending === request) analysisPending = 0; }
@@ -218,7 +221,15 @@ function getLevels() {
   levels.active = active;
   return {...levels};
 }
-window.PortfolioAudioAnalysis = Object.freeze({getLevels, snareSettings:SNARE_ANALYSIS, beatSettings:SNARE_ANALYSIS});
+// The header reads the same post-volume FFT frame as the other visuals.
+function readSpectrum(bands) {
+  bands.fill(0);
+  if (!bands.length || !mixMusicSpectrum) return;
+  try {
+    if (getLevels().active) mixMusicSpectrum(frequencyData, bands);
+  } catch { /* Keep the display at rest when spectrum data is unavailable. */ }
+}
+window.PortfolioAudioAnalysis = Object.freeze({getLevels, readSpectrum, snareSettings:SNARE_ANALYSIS, beatSettings:SNARE_ANALYSIS});
 audio.addEventListener('pause', () => getLevels());
 audio.addEventListener('volumechange', () => { if (audio.muted || audio.volume === 0) getLevels(); });
 // Keep a gesture retry available if an automatic cross-page resume was denied.
