@@ -41,7 +41,8 @@
 
 /* The fixed bar keeps its layout dimensions while its lower edge lifts and fades. */
 .header-dock{
-  --nav-hit-height:56px;
+  --nav-hit-height:78px;
+  --nav-mesh-height:74px;
   position:fixed;inset:0 0 auto;z-index:30;
 }
 .header-dock.is-collapsed{height:var(--nav-hit-height)}
@@ -88,16 +89,12 @@
   transition:opacity .18s ease-out,visibility 0s;
 }
 .header-reveal-handle canvas{
-  position:absolute;top:0;left:-10px;width:calc(100% + 20px);height:38px;pointer-events:none;
-  mask-image:linear-gradient(to bottom,#000 45%,transparent);
+  position:absolute;inset:0 0 auto;width:100%;height:var(--nav-mesh-height);pointer-events:none;
+  mask-image:linear-gradient(to bottom,#000 58%,transparent);
 }
 .header-reveal-handle:focus-visible{outline:2px solid #9ad7ea;outline-offset:-2px}
-@media(prefers-reduced-motion:no-preference){
-  .header-reveal-handle[aria-expanded=false] canvas{animation:nav-star-drift 9s ease-in-out infinite alternate}
-  @keyframes nav-star-drift{to{transform:translate(8px,-2px);opacity:.78}}
-}
-@media(hover:none),(pointer:coarse){
-  .header-dock{--nav-hit-height:60px}
+@media(max-width:900px){
+  .header-dock{--nav-hit-height:96px;--nav-mesh-height:90px}
 }
 @media(prefers-reduced-motion:reduce){
   .header[data-reveal],.header-reveal-handle[aria-expanded]{transition:none}
