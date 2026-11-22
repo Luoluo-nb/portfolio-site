@@ -249,7 +249,7 @@ const mute = panel.querySelector('#music-mute');
 const slider = panel.querySelector('#music-volume');
 const status = panel.querySelector('#music-status');
 let musicShader;
-const creditTarget = document.querySelector('.detail-footer, .footer-bottom');
+const creditTarget = document.querySelector('.detail-footer, #about');
 if (creditTarget) {
   const credit = document.createElement('p');
   credit.className = 'music-credit';

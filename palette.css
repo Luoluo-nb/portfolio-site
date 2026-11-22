@@ -76,27 +76,6 @@ h2>i,.contact-inner h2 i{color:var(--pink)}
 .contact-method:is(:hover,:focus-visible,.is-copied) strong{filter:drop-shadow(0 0 9px rgb(var(--blue-rgb)/.18))}
 .contact-method:is(:hover,:focus-visible,.is-copied)::after{background:linear-gradient(90deg,transparent,#8bbcf245 25%,#e9b7d06b 45%,transparent 78%)}
 .contact-method:focus-visible{outline-color:rgb(var(--pink-rgb)/.55)}
-.footer-bottom,.detail-footer{color:var(--muted)}
+.detail-footer{color:var(--muted)}
 .shell-navigated [data-view-panel]:not([hidden]){animation:none}
-/* A smaller version of the home constellation above the footer links. */
-.contact-section .footer-bottom{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  column-gap:16px;
-  row-gap:8px;
-  border-top:0;
-  padding-block:20px 28px;
-}
-.contact-network{
-  position:relative;
-  grid-column:1/-1;
-  grid-row:1;
-  height:clamp(70px,10vw,120px);
-  margin-bottom:4px;
-  opacity:.68;
-  pointer-events:none;
-}
-.footer-bottom>span:nth-of-type(2){display:none}
-.footer-bottom>a{justify-self:end;min-height:44px;display:inline-flex;align-items:center;white-space:nowrap}
-.footer-bottom>.music-credit{grid-column:1/-1;padding-bottom:0}
 @media(forced-colors:active){.contact-method strong{background:none;color:ButtonText!important}#top h1{background:none;-webkit-text-fill-color:CanvasText}}

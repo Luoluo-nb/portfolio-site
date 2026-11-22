@@ -449,7 +449,6 @@ for (const item of profile.education || []) {
   row.append(element('p','resume-period',item.period),element('h4','',item.school),element('p','resume-summary',item.degree));
   $('education-list').append(row);
 }
-$('year').textContent = new Date().getFullYear();
 const featuredTechniques = {
   'ptcg-card': '磨砂亮片 · 细线高光 · 双层视差',
   'unreal-car': '分层车漆 · 按键变色 · 平面反射',

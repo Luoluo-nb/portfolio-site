@@ -17,7 +17,8 @@
 .contact-method-arrow{grid-column:3;grid-row:1;color:#8cc7e0;font-size:24px;transition:transform .25s}
 .contact-method:hover .contact-method-arrow{transform:translate(2px,-2px)}
 .contact-feedback{min-height:24px;margin-top:17px;font-size:13px;line-height:1.7;color:#a5d8eb}
-.contact-section .footer-bottom{width:min(900px,calc(100% - 112px));margin-top:auto;padding-block:22px}
+.contact-network{position:relative;flex:none;width:min(100%,1440px);height:clamp(150px,19vw,260px);margin:auto auto 0;opacity:.68;pointer-events:none}
+.contact-network:empty{display:none}
 @keyframes contact-starlight{to{background-position:73px -12px,151px 12px,-180% 0}}
 @media(max-width:900px){.contact-section[data-view-panel]{padding-top:174px}}
 @media(max-width:600px){
@@ -29,7 +30,6 @@
  .contact-method-label{grid-column:1;grid-row:1;font-size:13px}
  .contact-method strong{grid-column:1;grid-row:2;font-size:clamp(19px,5.5vw,25px);letter-spacing:0}
  .contact-method-arrow{grid-column:2;grid-row:1/3;font-size:22px}
- .contact-section .footer-bottom{width:calc(100% - 44px);flex-wrap:wrap;gap:12px}
 }
 @media(prefers-reduced-motion:reduce){.contact-method strong,.contact-method-arrow,.contact-method::after{animation:none!important;transition:none}.contact-method:hover .contact-method-arrow{transform:none}}
 @media(forced-colors:active){.contact-method strong{background:none;color:ButtonText!important;filter:none!important}.contact-method:focus-visible{outline:2px solid Highlight}}

@@ -183,7 +183,7 @@ export class HomeNetwork {
     // the capped buffer still avoids full-screen device-pixel rendering.
     const compact=box.width<=600;
     this.layers=this.contact?(compact?2:3):(compact?3:4);
-    this.budget=this.contact?(compact?46000:110000):(compact?180000:480000);
+    this.budget=this.contact?(compact?64000:172000):(compact?180000:480000);
     this.projectionScale=this.contact?(compact?.44:.39):.52;
     this.frameInterval=this.contact?1000/(compact?12:18):FRAME_INTERVAL;
     this.canvas.dataset.layers=String(this.layers);this.canvas.dataset.pixelBudget=String(this.budget);
@@ -272,7 +272,7 @@ export class HomeNetwork {
       this._initialize();
       this._sync();
     };
-    // Let the contact view and footer text paint before compiling the shader.
+    // Let the contact details paint before compiling the shader.
     this.setupJob=typeof requestIdleCallback==='function'?requestIdleCallback(prepare):setTimeout(prepare,150);
   }
   _sync(){
@@ -301,12 +301,5 @@ for(const container of document.querySelectorAll('.home-transition')){
   if(!container.querySelector('.home-network'))new HomeNetwork(container);
 }
 
-const contactFooter=document.querySelector('#contact .footer-bottom');
-if(contactFooter&&!contactFooter.querySelector('.contact-network')){
-  const network=document.createElement('div');
-  network.className='contact-network';
-  network.setAttribute('aria-hidden','true');
-  network.dataset.noTranslate='';
-  contactFooter.prepend(network);
-  new HomeNetwork(network,'contact');
-}
+const contactNetwork=document.querySelector('#contact .contact-network');
+if(contactNetwork)new HomeNetwork(contactNetwork,'contact');
