@@ -5,7 +5,6 @@ const source = './media/bgm-new-days-hope-loop.mp3';
 const preferenceKey = 'portfolio-music-volume';
 const sessionKey = 'portfolio-music-session';
 const ownerKey = 'portfolio-music-owner';
-const ENTRY_DELAY_MS = 1000;
 const ENTRY_FADE_SECONDS = 2;
 let volume = 0.35;
 let muted = false;
@@ -50,16 +49,16 @@ function applyOutputVolume() {
 
 function clearEntryIntro() {
   if (!entryIntro) return;
-  clearTimeout(entryIntro.timer);
   cancelAnimationFrame(entryIntro.frame);
   entryIntro = undefined;
 }
 
 function beginEntryFade() {
   const intro = entryIntro;
-  if (intro?.phase !== 'rewinding' || audio.seeking || !playbackAllowed()) return;
+  if (!intro || intro.phase === 'waiting' || intro.frame || audio.paused || audio.seeking || !playbackAllowed()) return;
   intro.phase = 'fading';
   function fade() {
+    intro.frame = 0;
     if (entryIntro !== intro || !playbackAllowed()) return;
     // Drive the ramp with the media clock so a buffering pause cannot use up
     // the fade before sound starts.
@@ -72,16 +71,16 @@ function beginEntryFade() {
   intro.frame = requestAnimationFrame(fade);
 }
 
-function scheduleEntryFade() {
+async function continueEntryIntro() {
   const intro = entryIntro;
-  if (intro?.phase !== 'waiting') return;
-  clearTimeout(intro.timer);
-  intro.timer = setTimeout(() => {
-    if (entryIntro !== intro || !playbackAllowed()) return;
+  if (!intro) return;
+  if (intro.phase === 'waiting') {
+    await window.PortfolioStartGate.skyReady;
+    if (entryIntro !== intro || intro.phase !== 'waiting' || !playbackAllowed() || audio.paused) return;
     intro.phase = 'rewinding';
     if (audio.currentTime > 0) audio.currentTime = 0;
-    beginEntryFade();
-  }, Math.max(0, intro.deadline - performance.now()));
+  }
+  beginEntryFade();
 }
 
 // Analyse only this soundtrack when playback is wanted and the page is active.
@@ -108,8 +107,11 @@ function suspendAnalysis() {
 function pausePlayback() {
   playbackRequest++; activityGeneration++; analysisPending = 0;
   audio.pause();
-  if (entryIntro && entryIntro.phase !== 'fading') audio.currentTime = 0;
-  clearEntryIntro();
+  if (entryIntro) {
+    cancelAnimationFrame(entryIntro.frame);
+    entryIntro.frame = 0;
+    if (entryIntro.phase === 'waiting') audio.currentTime = 0;
+  }
   applyOutputVolume();
   suspendAnalysis();
 }
@@ -310,7 +312,7 @@ async function start() {
       return;
     }
     if (!playbackAllowed()) pausePlayback();
-    else { claimAudio(); enableAnalysis(); scheduleEntryFade(); }
+    else { claimAudio(); enableAnalysis(); continueEntryIntro(); }
   } catch (error) {
     if (request !== playbackRequest) return;
     if (error.name === 'NotAllowedError') wanted = false;
@@ -320,12 +322,12 @@ async function start() {
   remember();
   draw();
 }
-// Begin silent playback within the START gesture. The delayed seek restores
-// the beginning before opening the gain, without a second autoplay request.
-function enterWithSound(enteredAt = performance.now()) {
+// START unlocks the media element silently. Rewind and open the gain only
+// when both the starfield reveal and the first playback request are ready.
+function enterWithSound() {
   clearEntryIntro();
   cancelAnimationFrame(volumeAnimation);
-  entryIntro = {deadline: enteredAt + ENTRY_DELAY_MS, level: 0, phase: 'waiting', followSlider: true};
+  entryIntro = {level: 0, phase: 'waiting', frame: 0, followSlider: true};
   wanted = true;
   muted = false;
   volume = 1;
@@ -339,7 +341,7 @@ function enterWithSound(enteredAt = performance.now()) {
   draw();
 }
 window.addEventListener('portfolio:enter', event => {
-  if (event.detail?.userInitiated) enterWithSound(event.detail.enteredAt ?? undefined);
+  if (event.detail?.userInitiated) enterWithSound();
 });
 toggle.addEventListener('click', () => {
   wanted = !wanted;
@@ -426,5 +428,5 @@ musicShader = mountMusicShader(panel, () => ({
 draw();
 // A skipped gate can finish before this module arrives; native playback may then
 // require another gesture, which the existing header play control provides.
-if (window.PortfolioStartGate?.started) enterWithSound(window.PortfolioStartGate.enteredAt ?? undefined);
+if (window.PortfolioStartGate?.started) enterWithSound();
 else if (wanted) start();

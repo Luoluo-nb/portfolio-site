@@ -125,7 +125,7 @@ function mountUiAudio() {
   document.addEventListener('click', event => {
     if (!event.isTrusted || !activePage || document.hidden || !volume()) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (!target || target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="slider"],.music-panel,.music-button,#music-volume')) return;
+    if (!target || target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="slider"],.start-gate,.music-panel,.music-button,#music-volume')) return;
     const control = target.closest('button,a[href],[role="button"]');
     if (!control || control.matches(':disabled,[aria-disabled="true"]') || control.closest('[inert],[hidden]')) return;
     const now = performance.now();

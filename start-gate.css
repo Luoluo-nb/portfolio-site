@@ -1,5 +1,7 @@
 /* START stays centered. A thin loading line disappears once essentials settle. */
 :root{--start-gate-styles:ready}
+.start-sky-shade{position:fixed;inset:0;z-index:-1;background:#000;pointer-events:none;animation:start-sky-reveal 1s ease-in-out forwards}
+@keyframes start-sky-reveal{from{opacity:1}to{opacity:0}}
 html[data-start-gate="pending"]::after{content:"";position:fixed;inset:0;z-index:2147483646;background:#000;pointer-events:none}
 dialog.start-gate{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;padding:24px;border:0;border-radius:0;box-shadow:none;box-sizing:border-box;overflow:auto;color:#e8f5ff;background:#000;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",Arial,sans-serif;outline:none;overscroll-behavior:contain}
 dialog.start-gate[open]{display:grid;place-items:center}

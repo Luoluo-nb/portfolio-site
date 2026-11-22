@@ -11,7 +11,7 @@
   }
 
   let active = true, started = false, dialog, ready = false, appReady = false;
-  let enteredAt = null;
+  let enteredAt = null, skyReady;
   let deadline, bootDeadline, language = 'zh';
   let previousFocus, scrollStyles, disposeFilm;
   const pendingCleanup = new Set();
@@ -26,6 +26,26 @@
     partial: '部分资源未就绪，可进入',
     escape: '可按 Esc 直接进入。',
   };
+
+  function revealSky() {
+    // Same stacking level as the star canvas, after it in paint order. This
+    // fades both the live sky and its CSS fallback without dimming page text.
+    const shade = document.createElement('div');
+    shade.className = 'start-sky-shade';
+    shade.setAttribute('aria-hidden', 'true');
+    document.body.append(shade);
+    return new Promise(resolve => {
+      function finish() {
+        window.removeEventListener('pagehide', finish);
+        shade.remove();
+        resolve();
+      }
+      window.addEventListener('pagehide', finish, {once: true});
+      const fade = shade.getAnimations?.()[0];
+      if (fade) fade.finished.then(finish, finish);
+      else setTimeout(finish, 1000);
+    });
+  }
 
   function release(userInitiated = false, restoreFocus = true) {
     if (!active) return;
@@ -42,6 +62,7 @@
     pendingCleanup.clear();
     if (userInitiated) {
       try { sessionStorage.setItem(sessionKey, '1'); } catch {}
+      skyReady = revealSky();
     }
     // Synchronous dispatch keeps the real button/keyboard activation for audio.play().
     // pagehide and recovery release the page without asking the soundtrack to play.
@@ -274,7 +295,7 @@
     } catch { release(false, false); }
   }
 
-  window.PortfolioStartGate = Object.freeze({get active() { return active; }, get started() { return started; }, get enteredAt() { return enteredAt; }, mount});
+  window.PortfolioStartGate = Object.freeze({get active() { return active; }, get started() { return started; }, get enteredAt() { return enteredAt; }, get skyReady() { return skyReady; }, mount});
   window.addEventListener('portfolio:app-ready', onAppReady);
   window.addEventListener('pagehide', onPageHide, {once: true});
   document.addEventListener('DOMContentLoaded', mount, {once: true});
