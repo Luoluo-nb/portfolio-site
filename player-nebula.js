@@ -6,7 +6,7 @@ const frames = [], compactFrames = [], alphaFrames = [], compactAlphaFrames = []
 const controlField = new Float32Array(WIDTH * HEIGHT);
 const composedFrames = new Map(), MAX_COMPOSED_FRAMES = 384;
 let controlImage;
-let canvas, context, building = false, buildFailed = false, pendingBuild = false, suspended = false;
+let canvas, context, buildFailed = false, pendingBuild = false, suspended = false;
 const smooth = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 // Fixed noise lattice avoids per-frame random jitter and expensive pixel hashes.
 const lattice = Float32Array.from({length:1024}, (_, i) => {
@@ -67,29 +67,33 @@ function composedTexture(index, compact, controls) {
   composedFrames.set(key, texture); return texture;
 }
 function notify() { for (const instance of instances) instance.update(); }
-function queueBuild() {
-  if (pendingBuild || buildFailed || frames.length >= FRAME_COUNT || document.hidden || reducedMotion.matches || suspended) return;
-  pendingBuild = true;
-  const step = () => {
-    pendingBuild = false;
-    if (document.hidden || buildFailed || reducedMotion.matches || suspended) return;
-    try { if (frames.length < FRAME_COUNT) makeFrame(frames.length); }
-    catch { buildFailed = true; }
-    if (frames.length === FRAME_COUNT || buildFailed) { building = false; notify(); }
-    else queueBuild();
-  };
-  if ('requestIdleCallback' in window) requestIdleCallback(step, {timeout:250}); else setTimeout(step, 16);
+function shouldBuild() {
+  const frameLimit = reducedMotion.matches ? 1 : FRAME_COUNT;
+  return !buildFailed && frames.length < frameLimit && !document.hidden && !suspended
+    && !window.PortfolioStartGate?.active && [...instances].some(instance => instance.needsFrames());
 }
-function prepare() {
-  if (building || buildFailed || frames.length) return;
-  try {
-    canvas = document.createElement('canvas'); canvas.width = WIDTH; canvas.height = HEIGHT;
-    // These tiny textures are immediately PNG-encoded. Keep them on the CPU to
-    // avoid a synchronous GPU readback when the first visible mask is prepared.
-    context = canvas.getContext('2d', {alpha:true, willReadFrequently:true});
-    if (!context) throw new Error('Mask canvas unavailable');
-    makeFrame(0); building = true; queueBuild();
-  } catch { buildFailed = true; }
+function queueBuild() {
+  if (pendingBuild || !shouldBuild()) return;
+  pendingBuild = true;
+  const step = deadline => {
+    pendingBuild = false;
+    if (!shouldBuild()) return;
+    if (deadline && deadline.timeRemaining() < 8) { queueBuild(); return; }
+    try {
+      if (!context) {
+        canvas = document.createElement('canvas'); canvas.width = WIDTH; canvas.height = HEIGHT;
+        // Encode on the CPU to avoid synchronous GPU readback.
+        context = canvas.getContext('2d', {alpha:true, willReadFrequently:true});
+        if (!context) throw new Error('Mask canvas unavailable');
+      }
+      makeFrame(frames.length);
+    } catch { buildFailed = true; }
+    if (frames.length === 1 || frames.length === FRAME_COUNT || buildFailed) notify();
+    queueBuild();
+  };
+  // The CSS mask covers the preview until the first texture is ready.
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(step);
+  else setTimeout(step, 80);
 }
 
 function attachMask(root) {
@@ -97,7 +101,10 @@ function attachMask(root) {
   let compact = false, lastCompact = false, lastControls = -1, controlStart = 0, controlTarget = 0, controlAt = 0;
   const isFullscreen = () => document.fullscreenElement && (document.fullscreenElement === root || root.contains(document.fullscreenElement));
   const hasMaskedMedia = () => Boolean(root.querySelector('.poster-button, :scope > video, :scope > iframe'));
-  const canAnimate = () => hasMaskedMedia() && !disposed && !suspended && visible && !document.hidden && !reducedMotion.matches && !isFullscreen() && frames.length === FRAME_COUNT;
+  const needsFrames = () => visible && !disposed && root.isConnected && !root.closest('[hidden]')
+    && !isFullscreen() && hasMaskedMedia();
+  const canAnimate = () => needsFrames() && !suspended && !document.hidden
+    && !reducedMotion.matches && frames.length === FRAME_COUNT;
   function stop() { clearTimeout(timer); timer = 0; root.dataset.playerMaskRunning = 'false'; }
   const controlsAt = now => reducedMotion.matches ? controlTarget : controlStart + (controlTarget - controlStart) * smooth(0, 500, now - controlAt);
   const transitioning = now => Math.abs(controlsAt(now) - controlTarget) > .001;
@@ -115,7 +122,7 @@ function attachMask(root) {
   }
   function tick() {
     timer = 0;
-    if (disposed || suspended || !visible || document.hidden || isFullscreen() || !hasMaskedMedia()) { stop(); return; }
+    if (suspended || document.hidden || !needsFrames()) { stop(); return; }
     refreshControls();
     const now = performance.now();
     apply(reducedMotion.matches ? 0 : Math.floor(now / 1000 * FPS) % frames.length);
@@ -124,14 +131,14 @@ function attachMask(root) {
   }
   function update() {
     stop(); if (disposed) return;
-    if (!hasMaskedMedia()) { root.style.removeProperty('--player-noise-mask'); delete root.dataset.playerMaskFrame; root.dataset.playerMaskState = 'image'; return; }
-    if (visible) prepare();
+    if (!hasMaskedMedia()) { root.style.removeProperty('--player-noise-mask'); delete root.dataset.playerMaskFrame; root.dataset.playerMaskState = 'image'; lastFrame = -1; return; }
+    if (!visible || suspended || document.hidden || root.closest('[hidden]') || isFullscreen()) return;
+    queueBuild();
     compact = root.getBoundingClientRect().width <= 600;
     root.dataset.playerMaskSize = compact ? 'compact' : 'wide';
     refreshControls();
     if (!frames.length) { root.dataset.playerMaskState = buildFailed ? 'fallback' : 'waiting'; return; }
     root.dataset.playerMaskState = reducedMotion.matches ? 'static' : frames.length === FRAME_COUNT ? 'ready' : 'preparing';
-    if (!visible || document.hidden || isFullscreen()) return;
     apply(reducedMotion.matches ? 0 : Math.floor(performance.now() / 1000 * FPS) % frames.length);
     if (canAnimate() || transitioning(performance.now())) tick();
   }
@@ -146,12 +153,13 @@ function attachMask(root) {
   root.addEventListener('pointerenter', enter); root.addEventListener('pointerleave', leave);
   root.addEventListener('focusin', focus); root.addEventListener('focusout', focus);
   document.addEventListener('pointermove', pointer, {passive:true});
-  const instance = {update, destroy() { disposed = true; stop(); observer.disconnect(); resize.disconnect(); content.disconnect(); root.removeEventListener('pointerenter',enter); root.removeEventListener('pointerleave',leave); root.removeEventListener('focusin',focus); root.removeEventListener('focusout',focus); document.removeEventListener('pointermove',pointer); instances.delete(instance); }};
+  const instance = {update, needsFrames, destroy() { disposed = true; stop(); observer.disconnect(); resize.disconnect(); content.disconnect(); root.removeEventListener('pointerenter',enter); root.removeEventListener('pointerleave',leave); root.removeEventListener('focusin',focus); root.removeEventListener('focusout',focus); document.removeEventListener('pointermove',pointer); instances.delete(instance); }};
   instances.add(instance); update();
 }
 document.querySelectorAll('.project-preview').forEach(attachMask);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) queueBuild(); notify(); });
 document.addEventListener('fullscreenchange', notify);
+window.addEventListener('portfolio:enter', queueBuild);
 reducedMotion.addEventListener('change', () => { queueBuild(); notify(); });
 window.addEventListener('pagehide', event => {
   suspended = true;

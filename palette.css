@@ -77,4 +77,30 @@ h2>i,.contact-inner h2 i{color:var(--pink)}
 .contact-method:is(:hover,:focus-visible,.is-copied)::after{background:linear-gradient(90deg,transparent,#8bbcf245 25%,#e9b7d06b 45%,transparent 78%)}
 .contact-method:focus-visible{outline-color:rgb(var(--pink-rgb)/.55)}
 .footer-bottom,.detail-footer{color:var(--muted)}
+.shell-navigated [data-view-panel]:not([hidden]){animation:none}
+/* A quiet, static geometric coda above the functional footer links. */
+.contact-section .footer-bottom{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  column-gap:16px;
+  row-gap:8px;
+  border-top:0;
+  padding-block:20px 28px;
+}
+.footer-bottom::before{
+  content:"";
+  grid-column:1/-1;
+  grid-row:1;
+  height:clamp(62px,10vw,108px);
+  margin-bottom:10px;
+  background:
+    radial-gradient(circle at 76% 43%,#d9effc 0 2px,transparent 3px),
+    radial-gradient(ellipse 30% 62% at 70% 74%,transparent 95%,#88c9e982 97%,transparent 100%),
+    radial-gradient(ellipse 33% 63% at 69% 71%,transparent 95%,#44678a60 97%,transparent 100%),
+    linear-gradient(135deg,#162842 26%,#233f5d 26% 39%,#091827 39% 62%,#5b91a57a 62% 63%,transparent 63%);
+  border-radius:4px;
+}
+.footer-bottom>span:nth-of-type(2){display:none}
+.footer-bottom>a{justify-self:end;min-height:44px;display:inline-flex;align-items:center;white-space:nowrap}
+.footer-bottom>.music-credit{grid-column:1/-1;padding-bottom:0}
 @media(forced-colors:active){.contact-method strong{background:none;color:ButtonText!important}#top h1{background:none;-webkit-text-fill-color:CanvasText}}

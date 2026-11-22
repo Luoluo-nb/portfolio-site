@@ -341,9 +341,19 @@ for (const button of document.querySelectorAll('[data-subcategory]')) button.add
 function worksRoute() {
   return activeCategory === 'all' ? '#works' : `#works/${activeCategory}${activeCategory === 'unreal' && activeSubcategory === 'vehicle' ? '/vehicle' : ''}`;
 }
+const siteRoot = new URL('./', location.href);
+const shellViews = new Map([
+  [new URL('portfolio.html', siteRoot).pathname, 'works'],
+  [new URL('about.html', siteRoot).pathname, 'about'],
+  [new URL('contact.html', siteRoot).pathname, 'contact'],
+]);
+const shellPaths = new Set([siteRoot.pathname, new URL('index.html', siteRoot).pathname, ...shellViews.keys()]);
+const shellRouteHash = /^#(top|home-projects(?:-title)?|works(?:\/(unity|unreal|td)(?:\/vehicle)?)?|about|contact)$/;
+let renderedUrl;
+
 function showRoute({focus = false} = {}) {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
-  const fileView = { 'portfolio.html':'works', 'about.html':'about', 'contact.html':'contact' }[location.pathname.split('/').pop()];
+  const fileView = shellViews.get(location.pathname);
   const nextView = fileView || (['works','about','contact'].includes(parts[0]) ? parts[0] : 'top');
   const homeProjects = nextView === 'top' && ['home-projects', 'home-projects-title'].includes(parts[0]);
   const changedView = activeView !== nextView;
@@ -364,13 +374,18 @@ function showRoute({focus = false} = {}) {
     if (changedFilter) renderProjects();
   }
   activeView = nextView;
-  for (const panel of document.querySelectorAll('[data-view-panel]')) panel.hidden = panel.dataset.viewPanel !== activeView;
+  for (const panel of document.querySelectorAll('[data-view-panel]')) {
+    const hide = panel.dataset.viewPanel !== activeView;
+    if (panel.hidden !== hide) panel.hidden = hide;
+  }
   for (const link of document.querySelectorAll('.header nav [data-view]')) {
-    if (link.dataset.view === activeView) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
+    if (link.dataset.view === activeView) {
+      if (link.getAttribute('aria-current') !== 'page') link.setAttribute('aria-current', 'page');
+    } else if (link.hasAttribute('aria-current')) link.removeAttribute('aria-current');
     if (link.dataset.view === 'works') link.href = `./portfolio.html${worksRoute()}`;
   }
   document.body.dataset.view = activeView;
+  renderedUrl = location.href;
   const labels = {top:'首页',works:'作品',about:'关于',contact:'联系'};
   document.title = `${labels[activeView]} · 张致远 — 美术 / 技术美术`;
   if (homeProjects) {
@@ -386,26 +401,35 @@ function showRoute({focus = false} = {}) {
     heading.focus({preventScroll:true});
     announce(homeProjects ? '精选作品' : `已切换到${labels[activeView]}`);
   }
+  if (changedView) window.dispatchEvent(new Event('portfolio:viewchange'));
 }
 document.addEventListener('click', event => {
-  const link = event.target.closest('a[href^="#"]');
-  if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-  let route = link.getAttribute('href');
-  if (!/^#(top|home-projects(?:-title)?|works(?:\/(unity|unreal|td)(?:\/vehicle)?)?|about|contact)$/.test(route)) return;
+  if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  const link = event.target.closest?.('a[href]');
+  if (!link || link.hasAttribute('download') || (link.target && link.target.toLowerCase() !== '_self')) return;
+  const route = new URL(link.href);
+  if (route.origin !== siteRoot.origin || route.search || !shellPaths.has(route.pathname)) return;
+  if (route.hash && !shellRouteHash.test(route.hash)) return;
+  // Keep the canonical URLs and native links; only ordinary in-site clicks reuse the shell.
+  if (route.href !== location.href) {
+    try { history.pushState(null, '', route.href); }
+    catch { return; }
+  }
   event.preventDefault();
-  if (link.dataset.view === 'works') route = worksRoute();
-  if (location.hash !== route) history.pushState(null, '', route);
+  document.body.classList.add('shell-navigated');
   showRoute({focus:true});
 });
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 window.addEventListener('popstate', () => {
-  showRoute();
+  if (location.href !== renderedUrl) showRoute();
   // A compositor smooth-scroll frame can arrive after history's instant jump.
   // Reapply the destination once after that frame, unless navigation changed.
-  const destination = location.href;
-  requestAnimationFrame(() => { if (location.href === destination) showRoute(); });
+  if (/^#home-projects(?:-title)?$/.test(location.hash)) {
+    const destination = location.href;
+    requestAnimationFrame(() => { if (location.href === destination) showRoute(); });
+  }
 });
-window.addEventListener('hashchange', () => showRoute());
+window.addEventListener('hashchange', () => { if (location.href !== renderedUrl) showRoute(); });
 if (profile.about) $('about-text').textContent = profile.about;
 for (const item of profile.experience || []) {
   const row = element('article', 'experience-item');

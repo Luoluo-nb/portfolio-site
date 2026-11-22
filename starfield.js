@@ -240,6 +240,9 @@ export class Starfield {
     // Reduced motion still updates the static composition when navigating.
     this._listen(window, 'scroll', () => { if (this.reducedMotion) this._sync(); });
     this._listen(window, 'hashchange', () => { if (this.reducedMotion) queueMicrotask(() => this._sync()); });
+    this._listen(window, 'portfolio:viewchange', () => {
+      if (this.reducedMotion) queueMicrotask(() => this._sync());
+    });
     this._listen(window, 'pagehide', () => { this.pageActive = false; this._stop(); });
     this._listen(window, 'pageshow', () => { this.pageActive = true; this._sync(); });
     this._listen(window, 'resize', () => { this._resize(); });
