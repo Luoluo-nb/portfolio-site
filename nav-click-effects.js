@@ -25,7 +25,7 @@ layer.setAttribute('data-no-translate', '');
 function newArc() {
   return {sweep: 60 + Math.random() * 300, start: Math.random() * 360,
     direction: Math.random() < .5 ? -1 : 1, speed: 55 + Math.random() * 100,
-    alphaPower: 1 + Math.random() * 4};
+    alphaPower: .4 + Math.random() * 4.6};
 }
 
 function validArc(arc) {
@@ -45,7 +45,7 @@ function midpointStrength(progress) {
 }
 
 function resolveAlphaPower(arc, index) {
-  if (Number.isFinite(arc.alphaPower) && arc.alphaPower >= 1 && arc.alphaPower <= 5) return arc.alphaPower;
+  if (Number.isFinite(arc.alphaPower) && arc.alphaPower >= .4 && arc.alphaPower <= 5) return arc.alphaPower;
   // Old v2 records keep their geometry and motion. Derive a stable per-ring
   // exponent once; the existing arcs snapshot then carries it on navigation.
   let seed = (Math.round(arc.sweep * 1000) ^ Math.imul(Math.round(arc.start * 1000), 31)
@@ -53,7 +53,7 @@ function resolveAlphaPower(arc, index) {
     ^ (arc.direction < 0 ? 0x85ebca6b : 0)) >>> 0;
   seed = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b) >>> 0;
   seed = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b) >>> 0;
-  return 1 + 4 * ((seed ^ (seed >>> 16)) >>> 0) / 4294967296;
+  return .4 + 4.6 * ((seed ^ (seed >>> 16)) >>> 0) / 4294967296;
 }
 
 function angularColor(progress, alphaPower, opacity = 1) {

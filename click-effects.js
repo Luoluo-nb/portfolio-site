@@ -168,7 +168,7 @@ function createFlowBands(seed,mode,style){
   const arc=(60+300*random())*Math.PI/180,start=random()*tau,direction=random()<.5?-1:1,speed=.38+.92*random();
   const taper=(style===1?.62:style===2?1.18:.82)*(.85+.3*random());
   // Sample after the existing shape/motion sequence so saved seeds retain it.
-  const alphaPower=1+4*random();
+  const alphaPower=.4+4.6*random();
   const segments=Math.max(16,Math.ceil(arc*16)*2),points=new Float32Array((segments+1)*3);
   for(let n=0;n<=segments;n++){
    const t=n/segments,angle=direction*arc*(t-1);
