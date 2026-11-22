@@ -66,20 +66,32 @@
       <p class="home-effect-credit"><span>星网改编</span><a href="https://youtu.be/GAhu4ngQa48" target="_blank" rel="noopener noreferrer" data-no-translate>The Universe Within · BigWings</a><a href="https://creativecommons.org/licenses/by-nc-sa/3.0/" target="_blank" rel="license noopener noreferrer" data-no-translate>CC BY-NC-SA 3.0</a></p>
     </section>
     <section class="works-section" id="works" data-view-panel="works" aria-labelledby="works-title" hidden>
-      <div class="section-head shell"><div><div class="section-kicker">01 / 精选作品</div><h1 id="works-title" class="page-title">作品<span>集</span><i aria-hidden="true">.</i></h1></div><div class="category-tabs" role="group" aria-label="作品分类"><button data-category="all" aria-pressed="true">全部</button><button data-category="unity" aria-pressed="false">Unity</button><button data-category="unreal" aria-pressed="false">Unreal Engine</button><button data-category="td" aria-pressed="false">TD</button></div></div>
-      <div class="subcategory-row shell" id="ue-subcategories" hidden><span>UNREAL ENGINE <b aria-hidden="true">/</b></span><div role="group" aria-label="Unreal Engine 二级分类"><button data-subcategory="all" aria-pressed="true">全部 UE 作品</button><button data-subcategory="vehicle" aria-pressed="false">车辆</button></div></div>
+      <div class="section-head shell">
+        <h1 id="works-title" class="page-title">作品<span>集</span></h1>
+        <div class="category-tabs" role="group" aria-label="作品分类">
+          <button data-category="all" aria-pressed="true">全部</button><button data-category="unity" aria-pressed="false">Unity</button><button data-category="unreal" aria-pressed="false">Unreal Engine</button><button data-category="td" aria-pressed="false">TD</button>
+        </div>
+      </div>
+      <div class="subcategory-row shell" id="ue-subcategories" hidden><div role="group" aria-label="Unreal Engine 二级分类"><button data-subcategory="all" aria-pressed="true">全部 UE 作品</button><button data-subcategory="vehicle" aria-pressed="false">车辆</button></div></div>
       <div class="works-layout shell">
         <div class="preview-column">
-          <div class="preview-toolbar"><span><i class="signal"></i> 作品预览</span><span id="preview-index">— / —</span></div>
+          <div class="preview-toolbar"><span id="project-platform">UNITY / UNREAL ENGINE</span><span id="preview-index">— / —</span></div>
           <div class="project-preview" id="project-preview"><div class="empty-preview"><div class="empty-symbol" aria-hidden="true">＋</div><span class="empty-kicker">新的作品</span><h3>作品待补充</h3><p>此分类暂无作品。</p></div></div>
           <div id="playback-controls" class="playback-controls" hidden><label for="playback-speed">播放速度</label><select id="playback-speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1× 正常</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>
           <div id="video-chapters" class="video-chapters" role="group" aria-label="效果时间定位" hidden></div>
-          <div class="project-caption"><div><p id="project-platform">UNITY / UNREAL ENGINE</p><h3 id="project-title">等待下一次灵感登场</h3></div><a id="project-link" class="text-link" href="https://space.bilibili.com/31364151" target="_blank" rel="noopener noreferrer">Bilibili 空间 <span aria-hidden="true">↗</span></a></div>
-          <a id="project-detail-link" class="project-detail-link" href="./portfolio.html">查看作品详情 <span aria-hidden="true">↗</span></a>
+          <h2 id="project-title">等待下一次灵感登场</h2>
           <p id="project-description" class="project-description">作品视频与制作过程将在这里更新。</p>
+          <div class="project-actions">
+            <a id="project-detail-link" class="project-detail-link" href="./portfolio.html">查看作品详情 <span aria-hidden="true">→</span></a>
+            <a id="project-link" class="text-link" href="https://space.bilibili.com/31364151" target="_blank" rel="noopener noreferrer">Bilibili 空间 <span aria-hidden="true">↗</span></a>
+          </div>
           <div id="project-credits" class="project-credits" aria-label="项目参考与素材说明" hidden></div>
         </div>
-        <div class="selection-column"><div class="selection-heading"><span>选择作品</span><span id="project-count">00</span></div><div id="project-grid" class="project-grid" aria-label="选择作品"></div><p class="selection-tip">悬停预览，点击查看详情。手机端点选预览，再次点击进入详情。</p></div>
+        <div class="selection-column">
+          <div class="selection-heading"><span>选择作品</span><span id="project-count">00</span></div>
+          <p class="selection-tip">轻点预览，再点查看详情。合集直接打开 Bilibili。</p>
+          <div id="project-grid" class="project-grid" aria-label="选择作品"></div>
+        </div>
       </div>
     </section>
     <section class="about-section shell" id="about" data-view-panel="about" aria-labelledby="about-title" hidden>

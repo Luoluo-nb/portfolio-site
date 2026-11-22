@@ -6,6 +6,46 @@ const figure = (name, width, height, caption, type = 'image') => ({
 });
 
 export const projectDetails = {
+  'td-particle-gesture': {
+    title: '从 CT 网格到手势交互',
+    introduction: '这套原型把解剖结构画成粒子。空间位置决定模型的形状，着色器决定它看起来像什么，摄像头捕捉的手势则用来切换效果和操控虚拟刀具。',
+    chapters: [
+      {
+        id: 'medical-mesh', title: '从体数据提取表面',
+        description: '建模流程参考马南的 Bioxel Nodes 案例。在 Blender 中把 CT 切片重建为三维网格，为后续粒子提供可采样的表面。',
+        steps: [
+          '读入 NIfTI（.nii）体数据，保留体素在三维空间中的位置与密度。',
+          '按密度生成遮罩，把目标结构与周围组织分开。',
+          '从遮罩提取表面，整理网格后送入 TouchDesigner。',
+        ],
+      },
+      {
+        id: 'medical-instances', title: '让粒子拼出骨架',
+        description: '在 TouchDesigner 中，位置纹理为每个实例提供坐标，颜色纹理提供逐粒子颜色。粒子共享基础几何体，组合起来仍能读出肋骨、脊柱和骨盆的形状。',
+        steps: [
+          'GLSL 按实例读取属性，让同一批粒子的颜色和大小可以分别控制。',
+          '图中的金色骨架用垂直位置驱动缩放。观察腰椎与骨盆，可以看到点的大小如何改变表面的疏密感。',
+        ],
+        figures: [figure('medical-particle-scale', 1386, 1110, '按高度缩放的骨骼粒子（研究文档图 39）')],
+      },
+      {
+        id: 'medical-shading', title: '把连续光照整理成色阶',
+        description: '材质研究比较了 PBR 的连续明暗与 NPR 的分段着色。骨面需要保留体积感，细小结构又容易淹没在反光里，因此将明暗、高光与轮廓分开调节。',
+        steps: [
+          '用表面法线与光照方向计算 Half-Lambert 明暗值，再采样 Ramp 色带，控制暗部和亮部的颜色。',
+          '用半程向量控制高光阈值，用视线与法线的夹角提取轮廓光。演示中的浅色边缘让骨骼从深色背景中显出来。',
+        ],
+      },
+      {
+        id: 'medical-gestures', title: '用手势切换与操控',
+        description: '普通摄像头把手部画面送入 TouchDesigner 的 MediaPipe 插件。演示左下角叠加了手部关键点和识别状态，操作者可以直接看出手有没有被识别。',
+        steps: [
+          '拇指向上触发效果切换，便于在同一视角比较不同显示方式。',
+          '握拳进入虚拟刀具控制，画面同步反馈当前手势。',
+        ],
+      },
+    ],
+  },
   'unreal-multilegged-robot': {
     title: '多足机器人制作流程',
     introduction: '在 Blender 完成多足机器人的建模与骨骼绑定，接入 Unreal Engine 后用程序化骨骼动画驱动行走。',

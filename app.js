@@ -3,6 +3,7 @@ import { Starfield } from './starfield.js';
 import { renderVideoChapters } from './video-chapters.js';
 import { setupWorkPreload } from './work-preload.js';
 import './player-nebula.js';
+import './header-reveal.js';
 
 const $ = (id) => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -77,13 +78,15 @@ $('playback-speed').addEventListener('change', (event) => {
   announce(`播放速度：${playbackSpeed}倍`);
 });
 function replacePreview(...nodes) {
-  const previousVideo = $('project-preview').querySelector('video');
+  const preview = $('project-preview');
+  const previousVideo = preview.querySelector('video');
   if (previousVideo) {
     previousVideo.pause();
     previousVideo.removeAttribute('src');
     previousVideo.load();
   }
-  $('project-preview').replaceChildren(...nodes);
+  preview.replaceChildren(...nodes);
+  $('playback-controls').hidden = !preview.querySelector('video');
 }
 function createTypeCover(project) {
   const cover = element('span', 'project-type-cover', project.coverLabel || project.title);
@@ -165,7 +168,6 @@ function openPlayer(project, startTime = project.startTime ?? 0) {
 function selectProject(project, shouldScroll = false) {
   selected = project;
   replacePreview(createPoster(project));
-  $('playback-controls').hidden = !project.videoSrc;
   renderVideoChapters($('video-chapters'), project.videoSrc ? project : null, () => $('project-preview').querySelector('video'), time => openPlayer(project, time));
   syncSpeedControl();
   $('project-title').textContent = project.title;
@@ -192,7 +194,7 @@ function selectProject(project, shouldScroll = false) {
   $('project-link').textContent = project.videoSrc ? '打开视频 ↗' : '在 Bilibili 打开 ↗';
   $('preview-index').textContent = `${String(projects.indexOf(project) + 1).padStart(2,'0')} / ${String(projects.length).padStart(2,'0')}`;
   $('playback-help').hidden = true;
-  for (const item of document.querySelectorAll('#project-grid .project-card')) {
+  for (const item of document.querySelectorAll('#project-grid .project-entry')) {
     const current = item.dataset.id === project.id;
     item.dataset.selected = String(current);
     if (current) item.setAttribute('aria-current', 'true');
@@ -205,7 +207,6 @@ function selectProject(project, shouldScroll = false) {
 }
 function showEmpty() {
   selected = null;
-  $('playback-controls').hidden = true;
   renderVideoChapters($('video-chapters'), null);
   $('project-detail-link').hidden = true;
   const state = element('div','empty-preview');
@@ -222,32 +223,6 @@ function showEmpty() {
   $('project-link').textContent = 'Bilibili 空间 ↗';
   $('playback-help').hidden = true;
 }
-// Native rounded borders keep each option's silhouette fixed. Only the soft
-// highlight moves; no noise, displacement or filter touches the contour.
-const selectionFrames = new Set();
-function syncSelectionFrame(frame) {
-  const moving = frame.dataset.visible === 'true' && !document.hidden && !reducedMotion.matches;
-  frame.dataset.motion = moving ? 'running' : 'paused';
-}
-const selectionFrameObserver = typeof IntersectionObserver === 'function'
-  ? new IntersectionObserver(entries => {
-    for (const entry of entries) {
-      entry.target.dataset.visible = String(entry.isIntersecting);
-      syncSelectionFrame(entry.target);
-    }
-  }, {threshold:0}) : null;
-function syncSelectionFrames() { for (const frame of selectionFrames) syncSelectionFrame(frame); }
-reducedMotion.addEventListener('change', syncSelectionFrames);
-document.addEventListener('visibilitychange', syncSelectionFrames);
-function createSelectionFrame(index) {
-  const frame = element('span', 'selection-card-frame');
-  frame.setAttribute('aria-hidden', 'true');
-  frame.dataset.visible = String(!selectionFrameObserver);
-  frame.style.setProperty('--selection-highlight-delay', `${-index * 2.4}s`);
-  frame.append(element('span', 'selection-frame-light'));
-  selectionFrames.add(frame);
-  return frame;
-}
 function setProjectDestination(link, project) {
   if (project.externalOnly) {
     link.href = bilibiliVideoUrl(project);
@@ -260,56 +235,55 @@ function setProjectDestination(link, project) {
     link.setAttribute('aria-label', `查看 ${project.title} 详情`);
   }
 }
-document.querySelector('.selection-tip').textContent = '悬停预览。单个作品可查看详情，合集直接前往 Bilibili。';
-
 function renderProjects() {
   const visible = projects.filter(project => (activeCategory === 'all' || project.category === activeCategory) && (activeCategory !== 'unreal' || activeSubcategory === 'all' || project.subcategory === activeSubcategory));
   $('ue-subcategories').hidden = activeCategory !== 'unreal';
   for (const item of document.querySelectorAll('[data-category]')) item.setAttribute('aria-pressed', String(item.dataset.category === activeCategory));
   for (const item of document.querySelectorAll('[data-subcategory]')) item.setAttribute('aria-pressed', String(item.dataset.subcategory === activeSubcategory));
-  selectionFrameObserver?.disconnect();
-  selectionFrames.clear();
   $('project-grid').replaceChildren();
   $('project-count').textContent = String(visible.length).padStart(2,'0');
   for (const project of visible) {
-    const button = element('a','project-card');
+    const button = element('a','project-entry');
     setProjectDestination(button, project);
     button.dataset.id = project.id;
     button.dataset.selected = String(selected?.id === project.id);
-    button.setAttribute('aria-current', String(selected?.id === project.id));
-    const label = element('span', 'card-copy');
+    if (selected?.id === project.id) button.setAttribute('aria-current', 'true');
+    const label = element('span', 'project-entry-copy');
     const duration = Number.isFinite(project.duration) ? Math.round(project.duration) : 0;
     const platform = categoryName(project.category);
     const meta = duration > 0 ? `${platform} / ${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}` : platform;
     label.append(element('strong','',project.title), element('small','',meta));
-    const media = element('span', 'selection-card-media');
+    const media = element('span', 'project-entry-thumb');
     if (project.cover) {
       const image = element('img');
       image.alt = '';
       image.loading = 'lazy';
       image.decoding = 'async';
       image.referrerPolicy = 'no-referrer';
-      image.addEventListener('error', () => { image.hidden = true; }, {once:true});
+      image.addEventListener('error', () => { media.replaceChildren(createTypeCover(project)); }, {once:true});
       image.src = project.cover;
       media.append(image);
     } else media.append(createTypeCover(project));
-    const frame = createSelectionFrame(visible.indexOf(project));
-    button.append(media,label,frame);
+    const arrow = element('span', 'project-entry-arrow', project.externalOnly ? '↗' : '→');
+    arrow.setAttribute('aria-hidden', 'true');
+    button.append(media, label, arrow);
     button.addEventListener('click', (event) => {
-      if (project.externalOnly) return;
+      if (project.externalOnly || selected?.id === project.id ||
+          event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       // Touch users can preview first, then use the detail link or tap again.
-      if (matchMedia('(hover: none)').matches && selected?.id !== project.id) {
+      if (event.pointerType === 'touch' || (event.detail > 0 && matchMedia('(hover: none)').matches)) {
         event.preventDefault();
         selectProject(project, true);
       } else selectProject(project);
     });
     // Hover updates posters only, and never interrupts an already opened player.
-    button.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse' && !$('project-preview').querySelector('iframe, video')) selectProject(project); });
+    const preview = () => {
+      if (selected?.id !== project.id && !$('project-preview').querySelector('iframe, video')) selectProject(project);
+    };
+    button.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse') preview(); });
     // Keyboard focus previews; touch focus must leave the first-tap decision to click.
-    button.addEventListener('focus', () => { if (button.matches(':focus-visible') && !$('project-preview').querySelector('iframe, video')) selectProject(project); });
+    button.addEventListener('focus', () => { if (button.matches(':focus-visible')) preview(); });
     $('project-grid').append(button);
-    selectionFrameObserver?.observe(frame);
-    syncSelectionFrame(frame);
   }
   if (!visible.length) {
     const categories = activeCategory === 'all' ? ['unity','unreal','td'] : [activeCategory];

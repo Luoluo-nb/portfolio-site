@@ -1,0 +1,193 @@
+/* Works directory: a thumbnail, readable title and destination per row. */
+#project-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border-block-start: 1px solid #b4cef22e;
+}
+
+.project-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: clamp(68px, 5.6vw, 88px) minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 7px 9px;
+  border-block-end: 1px solid #aec6e51c;
+  color: #e5ecf5;
+  text-decoration: none;
+  transition: background-color .18s ease;
+}
+
+.project-entry-thumb {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #101b2c;
+}
+.project-entry-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: .83;
+  transition: opacity .18s ease;
+}
+.project-entry-thumb .project-type-cover {
+  padding: 3px;
+  border-radius: inherit;
+  font-size: 10px;
+  letter-spacing: normal;
+}
+
+.project-entry-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.project-entry-copy strong {
+  font-size: clamp(14px, 1.1vw, 17px);
+  line-height: 1.38;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.project-entry-copy small {
+  color: #a0b2c7;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .045em;
+  line-height: 1.4;
+}
+.project-entry-arrow {
+  color: #8399af;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+  transition: color .18s ease, transform .18s ease;
+}
+
+.project-entry[aria-current=true] {
+  background: linear-gradient(100deg, #213d52aa, #162a3c55 80%);
+  box-shadow: inset 2px 0 #97d4e7;
+  color: #f3f9ff;
+}
+.project-entry[aria-current=true] .project-entry-thumb img,
+.project-entry:focus-visible .project-entry-thumb img { opacity: 1; }
+.project-entry[aria-current=true] .project-entry-arrow,
+.project-entry:focus-visible .project-entry-arrow { color: #b9eaff; }
+.project-entry:focus-visible { outline: 2px solid #bbebff; outline-offset: -2px; }
+
+@media (hover: hover) {
+  .project-entry:hover { background-color: #1b30454f; }
+  .project-entry:hover .project-entry-thumb img { opacity: 1; }
+  .project-entry:hover .project-entry-arrow { color: #c2efff; transform: translateX(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-entry, .project-entry-thumb img, .project-entry-arrow { transition: none; }
+  .project-entry:hover .project-entry-arrow { transform: none; }
+}
+@media (forced-colors: active) {
+  .project-entry[aria-current=true] { border-inline-start: 3px solid Highlight; }
+  .project-entry:focus-visible { outline-color: Highlight; }
+}
+
+/* Alternate gallery view with a travelling border highlight. */
+@property --card-flow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+#selection-grid .selection-card {
+  --card-flow-color: #98dfff;
+  --card-flow-peak: #f5fcff;
+  --card-flow-accent: #bca4ff;
+}
+
+#selection-grid .selection-card::before {
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px solid var(--card-flow-color);
+  background: none;
+  -webkit-mask: none;
+  mask: none;
+  opacity: 0;
+  animation: none;
+  transition: opacity .22s ease;
+}
+
+#selection-grid .selection-card {
+  isolation: isolate;
+}
+
+#selection-grid .selection-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  z-index: 3;
+}
+
+#selection-grid .selection-card[aria-current=true]::before {
+  opacity: .38;
+}
+
+#selection-grid .selection-card:is(:hover, :focus-visible)::before {
+  opacity: 1;
+}
+
+@supports (background: conic-gradient(from 0deg, transparent, #fff)) and ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  #selection-grid .selection-card::before {
+    border: 0;
+    padding: 2px;
+    /* A long soft tail and a short white head orbit the fixed rounded mask. */
+    background: conic-gradient(from var(--card-flow-angle),
+      transparent 0deg 190deg,
+      #6599ed08 220deg,
+      #77bdff42 262deg,
+      var(--card-flow-color) 292deg,
+      var(--card-flow-peak) 307deg 312deg,
+      var(--card-flow-accent) 320deg,
+      transparent 340deg 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: card-border-orbit 8s linear infinite;
+    animation-play-state: paused;
+  }
+
+  #selection-grid .selection-card:is(:hover, :focus-visible)::before {
+    animation-duration: 3.8s;
+  }
+
+  #selection-grid .selection-card:is(:hover, :focus-visible)::before {
+    animation-play-state: running;
+  }
+
+}
+
+@keyframes card-border-orbit {
+  from { --card-flow-angle: 0deg; }
+  to { --card-flow-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #selection-grid .selection-card::before {
+    animation: none !important;
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  #selection-grid .selection-card::before {
+    display: none;
+  }
+  #selection-grid .selection-card:is(:hover, :focus-visible, [aria-current=true]) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}

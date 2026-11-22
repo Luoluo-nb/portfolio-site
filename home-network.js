@@ -21,7 +21,7 @@ precision highp float;
 precision mediump float;
 #endif
 uniform vec2 uCssSize,uPointer,uResolution;
-uniform float uTime,uLayers,uProjectionScale;
+uniform float uTime,uLayers,uProjectionScale,uHorizontalCrop;
 float N21(vec2 p){
   vec3 a=fract(vec3(p.xyx)*vec3(213.897,653.453,253.098));
   a+=dot(a,a.yzx+79.76);
@@ -76,7 +76,7 @@ float NetLayer(vec2 st,float n,float t,float pixel,float width){
 }
 void main(){
   vec2 vUv=gl_FragCoord.xy/max(uResolution,vec2(1.));
-  vec2 edge=min(vUv,1.-vUv);
+  vec2 edge=.5-abs(vUv-.5)*vec2(uHorizontalCrop,1.);
   // Resolve fully transparent edges before evaluating any moving cells.
   float dissolve=pow(smoothstep(.025,.18,edge.x)*smoothstep(.025,.20,edge.y),1.2);
   if(dissolve<=0.){gl_FragColor=vec4(0.);return;}
@@ -178,6 +178,9 @@ export class HomeNetwork {
     }
     const box=this.container.getBoundingClientRect();
     this.size={width:box.width,height:box.height,left:box.left,top:box.top};
+    // Contact reveals the visible slice of a band twice its former width.
+    // Keep the offscreen part out of both the framebuffer and the 2D fallback.
+    this.horizontalCrop=this.contact&&box.width>0?box.width/(2*Math.min(box.width,1440)):1;
     if(!this.intersectionObserver)this.inView=box.width>0&&box.height>0&&box.bottom>0&&box.top<innerHeight;
     // The smaller transition gets enough samples for solid diagonal strokes;
     // the capped buffer still avoids full-screen device-pixel rendering.
@@ -204,7 +207,7 @@ export class HomeNetwork {
       if(!program)throw Error('Program allocation failed');gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'aPosition');gl.linkProgram(program);
       if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Network shader link failed');
       buffer=gl.createBuffer();if(!buffer)throw Error('Buffer allocation failed');gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-      this.program=program;this.buffer=buffer;this.uniforms=Object.fromEntries(['uCssSize','uPointer','uResolution','uTime','uLayers','uProjectionScale'].map(key=>[key,gl.getUniformLocation(program,key)]));
+      this.program=program;this.buffer=buffer;this.uniforms=Object.fromEntries(['uCssSize','uPointer','uResolution','uTime','uLayers','uProjectionScale','uHorizontalCrop'].map(key=>[key,gl.getUniformLocation(program,key)]));
       gl.deleteShader(vs);gl.deleteShader(fs);this.ready=true;this.canvas.hidden=false;
       this.fallbackCanvas?.remove();this.fallbackCanvas=null;this.fallbackContext=null;this.canvas.dataset.state='ready';
     }catch{
@@ -241,14 +244,31 @@ export class HomeNetwork {
     ctx.globalCompositeOperation='destination-in';
     for(const [length,horizontal,reach]of [[w,true,.18],[h,false,.20]]){
       const mask=ctx.createLinearGradient(0,0,horizontal?length:0,horizontal?0:length);
-      for(let i=0;i<=24;i++){const x=i/24,edge=Math.min(x,1-x),v=Math.max(0,Math.min(1,(edge-.025)/(reach-.025))),smooth=v*v*(3-2*v);mask.addColorStop(x,`rgba(0,0,0,${Math.pow(smooth,1.2)})`);}
+      const crop=horizontal?this.horizontalCrop:1;
+      for(let i=0;i<=24;i++){const x=i/24,edge=.5-Math.abs(x-.5)*crop,v=Math.max(0,Math.min(1,(edge-.025)/(reach-.025))),smooth=v*v*(3-2*v);mask.addColorStop(x,`rgba(0,0,0,${Math.pow(smooth,1.2)})`);}
       ctx.fillStyle=mask;ctx.fillRect(0,0,w,h);
     }
     ctx.globalCompositeOperation='source-over';
   }
   _draw(){
     if(this.destroyed||!this.size.width||!this.size.height)return;
-    if(this.ready){const gl=this.gl;gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.disable(gl.BLEND);gl.uniform2f(this.uniforms.uCssSize,this.size.width,this.size.height);gl.uniform2f(this.uniforms.uResolution,this.canvas.width,this.canvas.height);gl.uniform2f(this.uniforms.uPointer,this.pointer.x,this.pointer.y);gl.uniform1f(this.uniforms.uTime,this.time);gl.uniform1f(this.uniforms.uLayers,this.layers);gl.uniform1f(this.uniforms.uProjectionScale,this.projectionScale);gl.drawArrays(gl.TRIANGLES,0,3);}else this._drawFallback();
+    if(this.ready){
+      const gl=this.gl;
+      gl.viewport(0,0,this.canvas.width,this.canvas.height);
+      gl.useProgram(this.program);
+      gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+      gl.disable(gl.BLEND);
+      gl.uniform2f(this.uniforms.uCssSize,this.size.width,this.size.height);
+      gl.uniform2f(this.uniforms.uResolution,this.canvas.width,this.canvas.height);
+      gl.uniform2f(this.uniforms.uPointer,this.pointer.x,this.pointer.y);
+      gl.uniform1f(this.uniforms.uTime,this.time);
+      gl.uniform1f(this.uniforms.uLayers,this.layers);
+      gl.uniform1f(this.uniforms.uProjectionScale,this.projectionScale);
+      gl.uniform1f(this.uniforms.uHorizontalCrop,this.horizontalCrop);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+    }else this._drawFallback();
     this.canvas.dataset.time=this.time.toFixed(3);
   }
   _tick(now){

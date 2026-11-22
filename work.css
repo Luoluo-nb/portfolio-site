@@ -44,6 +44,11 @@
 
 /* Adjacent-project navigation follows the reference without another framed card. */
 .breakdown-chapter:not(:has(.breakdown-gallery)) .breakdown-chapter-heading{margin-bottom:0}
+#breakdown-medical-instances .breakdown-gallery{grid-template-columns:minmax(0,1fr)}
+@media(min-width:900px){
+  #breakdown-medical-instances{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.85fr);align-items:center;gap:clamp(32px,5vw,80px)}
+  #breakdown-medical-instances .breakdown-chapter-heading{margin:0}
+}
 .breakdown-wide{grid-column:1/-1}
 .breakdown-preview .breakdown-image-link>img{width:auto;max-width:100%;height:auto;max-height:212px;margin-inline:auto;background:transparent}
 .breakdown-preview{align-self:center}
