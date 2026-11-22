@@ -21,7 +21,7 @@ precision highp float;
 precision mediump float;
 #endif
 uniform vec2 uCssSize,uPointer,uResolution;
-uniform float uTime,uLayers;
+uniform float uTime,uLayers,uProjectionScale;
 float N21(vec2 p){
   vec3 a=fract(vec3(p.xyx)*vec3(213.897,653.453,253.098));
   a+=dot(a,a.yzx+79.76);
@@ -82,7 +82,7 @@ void main(){
   if(dissolve<=0.){gl_FragColor=vec4(0.);return;}
   // Wide strips use a wider projection than the original square composition.
   // Expanding the strip reveals more cells instead of stretching the network.
-  float projection=max(min(uCssSize.x,1328.)*.52,1.);
+  float projection=max(min(uCssSize.x,1328.)*uProjectionScale,1.);
   vec2 uv=(vUv-.5)*uCssSize/max(projection,1.);
   float t=uTime*.035,s=sin(t),c=cos(t);
   mat2 rot=mat2(c,-s,s,c);
@@ -113,11 +113,12 @@ void main(){
 }`;
 
 export class HomeNetwork {
-  constructor(container) {
+  constructor(container, placement = 'home') {
     if (!(container instanceof HTMLElement)) throw new TypeError('HomeNetwork requires a transition container.');
     this.container=container;this.listeners=[];this.time=17.3;this.frame=0;this.lastDraw=0;this.nextDraw=0;
-    this.anchor=document.querySelector('#top .hero-scroll');
-    this.hero=document.querySelector('#top');this.heroCopy=document.querySelector('#top .hero-copy');
+    this.contact=placement==='contact';this.setupJob=null;
+    this.anchor=this.contact?null:document.querySelector('#top .hero-scroll');
+    this.hero=this.contact?null:document.querySelector('#top');this.heroCopy=this.hero?.querySelector('.hero-copy');
     this.featured=container.closest('.home-featured');this.heading=this.featured?.querySelector('.home-featured-heading');
     this.ready=false;this.destroyed=false;this.pageActive=true;this.inView=false;this.lost=false;
     this.pointer={x:0,y:0,targetX:0,targetY:0};this.size={width:0,height:0,left:0,top:0};
@@ -130,6 +131,7 @@ export class HomeNetwork {
     this._listen(window,'pagehide',event=>{this.pageActive=false;this._stop();if(!event.persisted)this.destroy();});
     this._listen(window,'pageshow',()=>{this.pageActive=true;this._measure();this._sync();});
     this._listen(window,'resize',()=>{this._measure();this._sync();});
+    if(this.contact)this._listen(window,'portfolio:enter',()=>this._sync());
     this._listen(window,'pointermove',event=>{
       if(event.pointerType!=='mouse'||!this.fine.matches||this.motion.matches||!this.inView||document.hidden)return;
       const box=this.container.getBoundingClientRect();
@@ -179,7 +181,11 @@ export class HomeNetwork {
     if(!this.intersectionObserver)this.inView=box.width>0&&box.height>0&&box.bottom>0&&box.top<innerHeight;
     // The smaller transition gets enough samples for solid diagonal strokes;
     // the capped buffer still avoids full-screen device-pixel rendering.
-    const compact=box.width<=600;this.layers=compact?3:4;this.budget=compact?180000:480000;
+    const compact=box.width<=600;
+    this.layers=this.contact?(compact?2:3):(compact?3:4);
+    this.budget=this.contact?(compact?46000:110000):(compact?180000:480000);
+    this.projectionScale=this.contact?(compact?.44:.39):.52;
+    this.frameInterval=this.contact?1000/(compact?12:18):FRAME_INTERVAL;
     this.canvas.dataset.layers=String(this.layers);this.canvas.dataset.pixelBudget=String(this.budget);
     const scale=Math.min(devicePixelRatio||1,1.5,Math.sqrt(this.budget/Math.max(1,box.width*box.height)));
     const w=Math.max(1,Math.floor(box.width*scale)),h=Math.max(1,Math.floor(box.height*scale));
@@ -198,7 +204,7 @@ export class HomeNetwork {
       if(!program)throw Error('Program allocation failed');gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'aPosition');gl.linkProgram(program);
       if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Network shader link failed');
       buffer=gl.createBuffer();if(!buffer)throw Error('Buffer allocation failed');gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-      this.program=program;this.buffer=buffer;this.uniforms=Object.fromEntries(['uCssSize','uPointer','uResolution','uTime','uLayers'].map(key=>[key,gl.getUniformLocation(program,key)]));
+      this.program=program;this.buffer=buffer;this.uniforms=Object.fromEntries(['uCssSize','uPointer','uResolution','uTime','uLayers','uProjectionScale'].map(key=>[key,gl.getUniformLocation(program,key)]));
       gl.deleteShader(vs);gl.deleteShader(fs);this.ready=true;this.canvas.hidden=false;
       this.fallbackCanvas?.remove();this.fallbackCanvas=null;this.fallbackContext=null;this.canvas.dataset.state='ready';
     }catch{
@@ -216,7 +222,7 @@ export class HomeNetwork {
     ctx.setTransform(canvas.width/w,0,0,canvas.height/h,0,0);ctx.clearRect(0,0,w,h);
     const fract=x=>x-Math.floor(x),hash=(x,y)=>fract(Math.sin(x*127.1+y*311.7)*43758.5453);
     for(let layer=0;layer<2;layer++){
-      const spacing=Math.min(w,1328)/(layer?6.6:9.6),rows=Math.ceil(h/spacing)+2,points=[];
+      const spacing=Math.min(w,1328)*(this.projectionScale/.52)/(layer?6.6:9.6),rows=Math.ceil(h/spacing)+2,points=[];
       for(let row=-1;row<rows;row++)for(let col=-1;col<Math.ceil(w/spacing)+1;col++){
         const n=hash(col+layer*17,row+layer*23),t=this.time*.42+n;
         points.push({col,row,x:(col+.5+Math.sin(t*fract(n*10))*.4)*spacing+this.pointer.x*5*(layer+1),y:(row+.5+Math.cos(t*fract(n*100))*.4)*spacing+this.pointer.y*5*(layer+1),n});
@@ -242,29 +248,47 @@ export class HomeNetwork {
   }
   _draw(){
     if(this.destroyed||!this.size.width||!this.size.height)return;
-    if(this.ready){const gl=this.gl;gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.disable(gl.BLEND);gl.uniform2f(this.uniforms.uCssSize,this.size.width,this.size.height);gl.uniform2f(this.uniforms.uResolution,this.canvas.width,this.canvas.height);gl.uniform2f(this.uniforms.uPointer,this.pointer.x,this.pointer.y);gl.uniform1f(this.uniforms.uTime,this.time);gl.uniform1f(this.uniforms.uLayers,this.layers);gl.drawArrays(gl.TRIANGLES,0,3);}else this._drawFallback();
+    if(this.ready){const gl=this.gl;gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.disable(gl.BLEND);gl.uniform2f(this.uniforms.uCssSize,this.size.width,this.size.height);gl.uniform2f(this.uniforms.uResolution,this.canvas.width,this.canvas.height);gl.uniform2f(this.uniforms.uPointer,this.pointer.x,this.pointer.y);gl.uniform1f(this.uniforms.uTime,this.time);gl.uniform1f(this.uniforms.uLayers,this.layers);gl.uniform1f(this.uniforms.uProjectionScale,this.projectionScale);gl.drawArrays(gl.TRIANGLES,0,3);}else this._drawFallback();
     this.canvas.dataset.time=this.time.toFixed(3);
   }
   _tick(now){
     this.frame=0;if(!this._allowed()||this.motion.matches){this.canvas.dataset.running='false';return;}
-    const elapsed=this.lastDraw?now-this.lastDraw:FRAME_INTERVAL;
+    const interval=this.frameInterval,elapsed=this.lastDraw?now-this.lastDraw:interval;
     if(!this.nextDraw||now>=this.nextDraw){
-      // Keep a deadline separate from real elapsed time: 24 fps remains 24 fps
-      // on a 60 Hz screen, without accelerating the animation's clock.
-      this.nextDraw=this.nextDraw?now+FRAME_INTERVAL-((now-this.nextDraw)%FRAME_INTERVAL):now+FRAME_INTERVAL;
+      // Keep the deadline separate from elapsed time so throttling does not
+      // change the animation's speed on different displays.
+      this.nextDraw=this.nextDraw?now+interval-((now-this.nextDraw)%interval):now+interval;
       const dt=Math.min(elapsed,100)/1000;this.lastDraw=now;this.time+=dt;const ease=1-Math.exp(-dt*4);this.pointer.x+=(this.pointer.targetX-this.pointer.x)*ease;this.pointer.y+=(this.pointer.targetY-this.pointer.y)*ease;this._draw();
     }
     this.frame=requestAnimationFrame(this._tick);
   }
-  _allowed(){return !this.destroyed&&this.pageActive&&!document.hidden&&this.inView&&this.size.width>0&&this.size.height>0;}
+  _allowed(){return !this.destroyed&&this.pageActive&&!document.hidden&&this.inView&&this.size.width>0&&this.size.height>0&&(!this.contact||!window.PortfolioStartGate?.active);}
   _stop(){if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.lastDraw=0;this.nextDraw=0;this.canvas.dataset.running='false';}
+  _queueContactSetup(){
+    if(this.setupJob!==null)return;
+    const prepare=()=>{
+      this.setupJob=null;
+      if(!this._allowed()||this.container.closest('[hidden]'))return;
+      this._initialize();
+      this._sync();
+    };
+    // Let the contact view and footer text paint before compiling the shader.
+    this.setupJob=typeof requestIdleCallback==='function'?requestIdleCallback(prepare):setTimeout(prepare,150);
+  }
   _sync(){
     this._stop();if(!this._allowed())return;
-    if(!this.gl&&!this.fallbackCanvas&&!this.lost)this._initialize();
+    if(!this.gl&&!this.fallbackCanvas&&!this.lost){
+      if(this.contact){this._queueContactSetup();return;}
+      this._initialize();
+    }
     this._draw();if(!this.motion.matches&&(this.ready||this.fallbackContext)){this.canvas.dataset.running='true';this.frame=requestAnimationFrame(this._tick);}
   }
   destroy(){
     if(this.destroyed)return;this._stop();this.destroyed=true;
+    if(this.setupJob!==null){
+      if(typeof requestIdleCallback==='function')cancelIdleCallback(this.setupJob);
+      else clearTimeout(this.setupJob);
+    }
     this.resizeObserver?.disconnect();this.intersectionObserver?.disconnect();
     for(const [target,type,callback,options]of this.listeners)target.removeEventListener(type,callback,options);
     if(this.motion.removeEventListener)this.motion.removeEventListener('change',this.motionChanged);else this.motion.removeListener(this.motionChanged);
@@ -275,4 +299,14 @@ export class HomeNetwork {
 
 for(const container of document.querySelectorAll('.home-transition')){
   if(!container.querySelector('.home-network'))new HomeNetwork(container);
+}
+
+const contactFooter=document.querySelector('#contact .footer-bottom');
+if(contactFooter&&!contactFooter.querySelector('.contact-network')){
+  const network=document.createElement('div');
+  network.className='contact-network';
+  network.setAttribute('aria-hidden','true');
+  network.dataset.noTranslate='';
+  contactFooter.prepend(network);
+  new HomeNetwork(network,'contact');
 }

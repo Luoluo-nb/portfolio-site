@@ -92,7 +92,7 @@ void main(){
 let gl,program,buffer,uniforms,ready=false,failed=false,lost=false,destroyed=false,suspended=false,blurred=false;
 let hover=null,focus=null,frame=0,refreshFrame=0,lastDraw=0,time=0,atlasHeight=1,activationTimer=0;
 const surfaces=new Map(),cleanups=[];
-const measurements=new WeakMap();let metricsDirty=true;
+let measurements=new WeakMap(),metricsDirty=true;
 const modeNames=['ring','nebula','flow'],modeStorageKey='portfolio-button-shader-v2',activated=new Map();
 // A fresh control already shows ring. Its first click must visibly advance it.
 let nextMode=1,rememberedModes={};
@@ -155,7 +155,7 @@ function measure(el){
  const rect=el.getBoundingClientRect(),width=el.clientWidth,height=el.clientHeight;
  if(!width||!height||rect.bottom<=0||rect.top>=innerHeight||rect.right<=0||rect.left>=innerWidth||getComputedStyle(el).visibility==='hidden')return null;
  const cached=measurements.get(el);
- if(!metricsDirty&&cached?.width===width&&cached.height===height)return cached;
+ if(cached?.width===width&&cached.height===height)return cached;
  let l=Infinity,t=Infinity,r=-Infinity,b=-Infinity;
  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
  for(let node=walker.nextNode();node;node=walker.nextNode()){
@@ -181,18 +181,20 @@ function refresh(){
  refreshFrame=0;if(destroyed)return;
  const elements=[...document.querySelectorAll(targets)];
  for(const el of elements){el.classList.add('fx-button');modeOf(el);}
- // Read every geometry before CSS writes. Scroll reuses text-relative metrics,
- // so Range text measurement is limited to actual font/content/size changes.
- const measured=new Map(elements.map(el=>[el,measure(el)]));metricsDirty=false;
- for(const [el,m]of measured){
-  if(m){el.style.setProperty('--fx-center-x',m.cx+'px');el.style.setProperty('--fx-center-y',m.cy+'px');el.style.setProperty('--fx-width',(m.rx*2+6)+'px');el.style.setProperty('--fx-height',(m.ry*2+6)+'px');}
- }
- if(!allowed()){stop();clear();atlas.dataset.state=reduced.matches?'disabled-motion':'suspended';return;}
  const candidates=new Set(document.querySelectorAll(selected));
  for(const [el,until]of activated){if(!enabled(el)||until<=performance.now())activated.delete(el);else candidates.add(el);}
  if(fine.matches&&enabled(hover))candidates.add(hover);
  if(enabled(focus)&&focus.matches(':focus-visible'))candidates.add(focus);
- const visible=new Map();for(const el of candidates){if(!enabled(el))continue;const m=measured.get(el);if(m)visible.set(el,m);}
+ // Only active effects need precise glyph measurements. Read them together
+ // before writing styles, so revealing a section does not measure every button.
+ if(metricsDirty){measurements=new WeakMap();metricsDirty=false;}
+ const visible=new Map();
+ for(const el of candidates){if(!enabled(el))continue;const m=measure(el);if(m)visible.set(el,m);}
+ for(const [el,m]of visible){
+  el.style.setProperty('--fx-center-x',m.cx+'px');el.style.setProperty('--fx-center-y',m.cy+'px');
+  el.style.setProperty('--fx-width',(m.rx*2+6)+'px');el.style.setProperty('--fx-height',(m.ry*2+6)+'px');
+ }
+ if(!allowed()){stop();clear();atlas.dataset.state=reduced.matches?'disabled-motion':'suspended';return;}
  for(const [el,s]of surfaces)if(!visible.has(el))remove(el,s);
  for(const [el,m]of visible){const s=surfaces.get(el)||create(el);if(!s)continue;if(s.canvas.parentElement!==el)el.append(s.canvas);Object.assign(s,m);s.canvas.dataset.center=m.cx.toFixed(3)+','+m.cy.toFixed(3);s.canvas.dataset.radius=m.rx.toFixed(3)+','+m.ry.toFixed(3);}
  atlas.dataset.targets=String(surfaces.size);
@@ -227,7 +229,7 @@ listen(document,'focusin',e=>{focus=e.target.closest?.(targets)||null;schedule()
 listen(document,'click',e=>{const el=e.target instanceof Element?e.target.closest(targets):null;if(enabled(el))activate(el);},true);
 listen(window,'resize',invalidateMetrics,{passive:true});listen(window,'scroll',schedule,{passive:true});
 listen(window,'blur',()=>{blurred=true;hover=null;stop();clear();atlas.dataset.state='suspended';});listen(window,'focus',()=>{blurred=false;schedule();});
-listen(document,'visibilitychange',refresh);listen(document,'portfolio:languagechange',invalidateMetrics);listen(fine,'change',invalidateMetrics);listen(reduced,'change',refresh);
+listen(document,'visibilitychange',refresh);listen(window,'portfolio:languagechange',invalidateMetrics);listen(fine,'change',invalidateMetrics);listen(reduced,'change',refresh);
 if(document.fonts){document.fonts.ready.then(invalidateMetrics);listen(document.fonts,'loadingdone',invalidateMetrics);}
 listen(atlas,'webglcontextlost',e=>{e.preventDefault();lost=true;ready=false;stop();clear();atlas.dataset.state='fallback';});
 listen(atlas,'webglcontextrestored',()=>{lost=false;failed=false;program=null;buffer=null;schedule();});

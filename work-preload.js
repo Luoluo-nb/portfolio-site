@@ -129,6 +129,7 @@ export function setupWorkPreload(initialUrls = [], initialCovers = []) {
     if (event.type === 'pointerover' && event.relatedTarget instanceof Node
       && link.contains(event.relatedTarget)) return;
     warm(detailUrl(link.href));
+    warm(coverUrl(link.dataset.preloadWork));
   }
 
   document.addEventListener('pointerover', warmOnIntent, {passive: true});

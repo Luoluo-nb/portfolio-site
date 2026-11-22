@@ -9,21 +9,42 @@ import './image-viewer.js';
 const $ = id => document.getElementById(id);
 const announce = message => { $('detail-announcement').textContent = message; };
 let sky;
-let skyFrame;
+let skyFrame = 0;
+let skyJob = null;
+let pageActive = true;
+const useIdleCallback = typeof window.requestIdleCallback === 'function';
+function canStartSky() {
+  return pageActive && !document.hidden && !window.PortfolioStartGate?.active;
+}
 function scheduleSky() {
-  if (sky || skyFrame) return;
-  // Let the detail layout paint before compiling and drawing the background.
+  if (sky || skyFrame || skyJob !== null || !canStartSky()) return;
   skyFrame = requestAnimationFrame(() => {
     skyFrame = requestAnimationFrame(() => {
       skyFrame = 0;
-      try {
-        sky = new Starfield($('starfield-canvas'), {
-          reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-          onStatus({state}) { $('starfield-canvas').dataset.state = state; },
-        });
-      } catch { $('starfield-canvas').dataset.state = 'fallback'; }
+      if (!canStartSky()) return;
+      // Let the title and cover get their first paint. Shader compilation can
+      // wait for an idle turn; the static star background covers the gap.
+      const initialize = () => {
+        skyJob = null;
+        if (!canStartSky()) return;
+        try {
+          sky = new Starfield($('starfield-canvas'), {
+            reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+            onStatus({state}) { $('starfield-canvas').dataset.state = state; },
+          });
+        } catch { $('starfield-canvas').dataset.state = 'fallback'; }
+      };
+      skyJob = useIdleCallback ? requestIdleCallback(initialize) : setTimeout(initialize, 350);
     });
   });
+}
+function cancelSky() {
+  cancelAnimationFrame(skyFrame);
+  skyFrame = 0;
+  if (skyJob === null) return;
+  if (useIdleCallback) cancelIdleCallback(skyJob);
+  else clearTimeout(skyJob);
+  skyJob = null;
 }
 
 const requestedId = new URLSearchParams(location.search).get('id');
@@ -220,12 +241,12 @@ function renderBreakdown(detail) {
       open.setAttribute('aria-haspopup', 'dialog');
       open.setAttribute('aria-controls', 'image-preview');
       const image = document.createElement('img');
-      image.src = item.src;
       image.alt = item.caption;
       image.width = item.width;
       image.height = item.height;
       image.loading = 'lazy';
       image.decoding = 'async';
+      image.src = item.src;
       open.append(image);
       const caption = document.createElement('figcaption');
       const label = document.createElement('span');
@@ -260,7 +281,9 @@ if (project) {
     const nextProject = detailProjects[(detailProjects.indexOf(project) + 1) % detailProjects.length];
     const nextUrl = `./work.html?id=${encodeURIComponent(nextProject.id)}`;
     $('work-next').href = $('work-next-footer').href = nextUrl;
-    for (const link of [$('work-next'), $('work-next-footer')]) link.dataset.preloadWork = '';
+    for (const link of [$('work-next'), $('work-next-footer')]) {
+      link.dataset.preloadWork = nextProject.cover || '';
+    }
     workPreparation = setupWorkPreload([nextUrl], [nextProject.cover]);
     $('work-next-name').textContent = $('work-next-title').textContent = nextProject.title;
     const nextCopy = document.createElement('span');
@@ -307,13 +330,18 @@ if (project) {
 }
 $('detail-year').textContent = new Date().getFullYear();
 window.addEventListener('pagehide', event => {
-  cancelAnimationFrame(skyFrame);
-  skyFrame = 0;
+  pageActive = false;
+  cancelSky();
   $('detail-player').querySelector('video')?.pause();
   if (!event.persisted) sky?.destroy();
 });
 if (!requestedProject?.externalOnly) {
   scheduleSky();
-  window.addEventListener('pageshow', event => { if (event.persisted) scheduleSky(); });
+  window.addEventListener('portfolio:enter', scheduleSky);
+  document.addEventListener('visibilitychange', () => document.hidden ? cancelSky() : scheduleSky());
+  window.addEventListener('pageshow', () => {
+    pageActive = true;
+    scheduleSky();
+  });
 }
 window.dispatchEvent(new CustomEvent('portfolio:app-ready', {detail: {workPreparation}}));

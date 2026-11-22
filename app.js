@@ -97,9 +97,10 @@ function createPoster(project) {
     const cover = element('figure', 'project-static-cover');
     const image = element('img');
     image.addEventListener('load', () => { image.style.maxWidth = image.naturalWidth+'px'; image.style.maxHeight = image.naturalHeight+'px'; }, {once:true});
-    image.src = project.cover;
     image.alt = project.title;
     image.referrerPolicy = 'no-referrer';
+    image.decoding = 'async';
+    image.src = project.cover;
     cover.append(image);
     return cover;
   }
@@ -107,10 +108,11 @@ function createPoster(project) {
   button.type = 'button';
   button.setAttribute('aria-label', `播放 ${project.title}`);
   const img = element('img');
-  img.src = project.cover;
   img.alt = '';
   img.referrerPolicy = 'no-referrer';
+  img.decoding = 'async';
   img.addEventListener('error', () => { img.hidden = true; }, {once:true});
+  img.src = project.cover;
   const caption = element('span', 'poster-play');
   const playIcon = element('span', 'play-triangle');
   playIcon.setAttribute('aria-hidden', 'true');
@@ -175,7 +177,7 @@ function selectProject(project, shouldScroll = false) {
   if (project.externalOnly) detailLink.removeAttribute('href');
   else {
     detailLink.href = `./work.html?id=${encodeURIComponent(project.id)}`;
-    detailLink.dataset.preloadWork = '';
+    detailLink.dataset.preloadWork = project.cover || '';
   }
   $('project-credits').replaceChildren();
   $('project-credits').hidden = !project.references?.length;
@@ -254,7 +256,7 @@ function setProjectDestination(link, project) {
     link.setAttribute('aria-label', `在 Bilibili 观看 ${project.title}`);
   } else {
     link.href = `./work.html?id=${encodeURIComponent(project.id)}`;
-    link.dataset.preloadWork = '';
+    link.dataset.preloadWork = project.cover || '';
     link.setAttribute('aria-label', `查看 ${project.title} 详情`);
   }
 }
@@ -285,6 +287,7 @@ function renderProjects() {
       const image = element('img');
       image.alt = '';
       image.loading = 'lazy';
+      image.decoding = 'async';
       image.referrerPolicy = 'no-referrer';
       image.addEventListener('error', () => { image.hidden = true; }, {once:true});
       image.src = project.cover;
@@ -532,9 +535,10 @@ function createProjectLink(project) {
   const card = element('a', 'project-card');
   setProjectDestination(card, project);
   const image = element('img');
-  image.src = project.cover;
   image.alt = '';
   image.loading = 'lazy';
+  image.decoding = 'async';
+  image.src = project.cover;
   const media = element('span', 'home-card-media');
   media.append(image);
   mountHomeCardFilm(card, media);
