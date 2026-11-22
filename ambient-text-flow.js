@@ -21,20 +21,30 @@ export function createAmbientTextFlow() {
   const visible = new Set(), metrics = new Map();
   const letterSpacingSupported = 'letterSpacing' in context;
   const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, {granularity: 'grapheme'}) : null;
-  const invalidateLayout = () => { layoutDirty = true; };
-  const invalidateStructure = () => { structureDirty = layoutDirty = true; };
+  let layoutJob = null;
+  const useIdleCallback = typeof window.requestIdleCallback === 'function';
+  function queueLayout() {
+    if (destroyed || document.hidden || layoutJob !== null) return;
+    const prepare = () => {
+      layoutJob = null;
+      if (!destroyed && !document.hidden && (structureDirty || layoutDirty)) rebuildLayout();
+    };
+    layoutJob = useIdleCallback ? requestIdleCallback(prepare) : setTimeout(prepare, 100);
+  }
+  const invalidateLayout = () => { layoutDirty = true; queueLayout(); };
+  const invalidateStructure = () => { structureDirty = true; invalidateLayout(); };
   const viewportObserver = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
     let changed = false;
     for (const entry of entries) {
       if (entry.isIntersecting && !visible.has(entry.target)) { visible.add(entry.target); changed = true; }
       else if (!entry.isIntersecting && visible.delete(entry.target)) changed = true;
     }
-    if (changed) layoutDirty = true;
+    if (changed) invalidateLayout();
   }, {rootMargin: '220px 0px'}) : null;
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(invalidateLayout) : null;
   const mutations = new MutationObserver(records => {
     if (records.some(record => record.type === 'childList' || record.type === 'attributes')) structureDirty = true;
-    layoutDirty = true;
+    invalidateLayout();
   });
   // Per-frame shader custom properties/data attributes do not invalidate type.
   mutations.observe(main, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class', 'lang']});
@@ -63,7 +73,7 @@ export function createAmbientTextFlow() {
     context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
     painted = false;
     canvas.hidden = true;
-    layoutDirty = true;
+    invalidateLayout();
   }
 
   function refreshTargets() {
@@ -240,7 +250,12 @@ export function createAmbientTextFlow() {
     if (destroyed) return;
     if (!bands.length || document.hidden || window.PortfolioStartGate?.active) { clear(); return; }
     if (width !== view.width || height !== view.height) resize(view.width, view.height);
-    if (structureDirty || layoutDirty) rebuildLayout();
+    // A cold cache must never block the frame that reveals the white ring.
+    if (structureDirty || layoutDirty) {
+      queueLayout();
+      clear();
+      return;
+    }
     const left = view.left, top = view.top;
     canvas.style.left = `${left}px`;
     canvas.style.top = `${top}px`;
@@ -280,6 +295,10 @@ export function createAmbientTextFlow() {
     if (destroyed) return;
     clear();
     destroyed = true;
+    if (layoutJob !== null) {
+      if (useIdleCallback) cancelIdleCallback(layoutJob);
+      else clearTimeout(layoutJob);
+    }
     mutations.disconnect();
     viewportObserver?.disconnect();
     resizeObserver?.disconnect();
