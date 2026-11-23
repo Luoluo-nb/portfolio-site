@@ -222,11 +222,34 @@ function getLevels() {
   return {...levels};
 }
 // The header reads the same post-volume FFT frame as the other visuals.
-function readSpectrum(bands) {
+function readSpectrum(bands, trace) {
   bands.fill(0);
   if (!bands.length || !mixMusicSpectrum) return;
   try {
-    if (getLevels().active) mixMusicSpectrum(frequencyData, bands);
+    if (!getLevels().active) return;
+    mixMusicSpectrum(frequencyData, bands);
+    if (!trace?.length) return;
+    // Start on a rising zero crossing, then attenuate bass in the display trace.
+    // This runs on the analyser data only, after the audio output is connected.
+    const span = waveformData.length >> 1;
+    const bassBlend = 1 - Math.exp(-2 * Math.PI * 340 / audioContext.sampleRate);
+    let start = 0;
+    let bass = waveformData[0];
+    for (let i = 1; i < span; i++) {
+      if (waveformData[i - 1] <= 0 && waveformData[i] > 0) { start = i; break; }
+    }
+    for (let i = 0; i < start; i++) bass += (waveformData[i] - bass) * bassBlend;
+    for (let i = 0; i < trace.length; i++) {
+      const first = start + Math.floor(i * span / trace.length);
+      const end = Math.max(first + 1, start + Math.floor((i + 1) * span / trace.length));
+      let sum = 0;
+      for (let j = first; j < end; j++) {
+        const sample = waveformData[j];
+        bass += (sample - bass) * bassBlend;
+        sum += sample - bass * .88;
+      }
+      trace[i] = sum / (end - first);
+    }
   } catch { /* Keep the display at rest when spectrum data is unavailable. */ }
 }
 window.PortfolioAudioAnalysis = Object.freeze({getLevels, readSpectrum, snareSettings:SNARE_ANALYSIS, beatSettings:SNARE_ANALYSIS});

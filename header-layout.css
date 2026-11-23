@@ -1,114 +1,149 @@
-/* One primary group (brand + navigation), one secondary tool group. The only
-   flexible gap sits between navigation and tools, within the page's shell. */
-.header{height:80px;display:flex;flex-wrap:nowrap;justify-content:flex-start;align-items:center;column-gap:0;row-gap:0;padding-inline:max(56px,calc((100vw - 1328px)/2))}
-.header>.brand{flex:0 0 auto;gap:12px;min-height:44px}
-.header .brand-mark{width:48px;font-size:31px}
-.header .brand-caption{font-size:14px;font-weight:700;line-height:1.4;letter-spacing:.35px;color:#cbdbea;white-space:nowrap}
-.header>nav{flex:0 0 auto;display:flex;align-items:center;gap:8px;margin-left:36px;height:auto}
-.header>nav a{min-height:48px;min-width:76px;padding:11px 14px;font-size:16px;font-weight:700;line-height:1.35;letter-spacing:.3px;color:#c5d7e9}
-.header>nav a[aria-current=page]{color:#f1fbff}
-.header>.header-tools{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;width:auto;height:auto;gap:14px;margin-left:auto;border:0}
-.header .language-switch button{font-size:12px;font-weight:600;letter-spacing:0;color:#8ea7bd}
-.header .language-switch button[aria-pressed=true]{color:#c3dce9}
-.header .music-controls .music-button{color:#91adbf}
-.header .music-controls .music-button:hover,.header .music-controls .music-button[aria-pressed=true]{color:#d4eaf4}
-@media(max-width:1100px){
-  .header{padding-inline:32px}
-  .header>nav{margin-left:32px;gap:4px}
-  .header>nav a{min-width:72px;padding-inline:12px}
-  .header>.header-tools{gap:10px}
+/* Shared header. The canvas paints the wave; controls sit directly over the page. */
+.header-dock {
+  --nav-hit-height: 76px;
+  --wave-height: clamp(106px, 8vw, 142px);
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
 }
-@media(max-width:900px){
-  .header{height:126px;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:64px 44px;align-content:center;column-gap:24px}
-  .header>.brand{grid-column:1;grid-row:1;height:auto}
-  .header>nav{grid-column:2;grid-row:1;justify-self:start;margin-left:0;height:auto}
-  .header>.header-tools{grid-column:1/-1;grid-row:2;width:100%;height:44px;margin-left:0;justify-content:space-between;gap:8px;border:0}
+.header-dock.is-collapsed {height: var(--nav-hit-height)}
+.header-dock > .header {
+  position: relative;
+  inset: auto;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  align-items: center;
+  height: 80px;
+  gap: 20px;
+  padding: 0 max(clamp(22px, 4vw, 70px), calc((100% - 1600px)/2));
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-@media(max-width:760px){
-  .header{padding-inline:20px;column-gap:20px}
-  .header .brand-mark{width:42px;font-size:29px}
-  .header .brand-caption{display:none}
-  .header>nav{gap:4px}
-  .header>nav a,html[lang=en] .header>nav a{min-width:58px;min-height:46px;padding:10px 12px;font-size:14px;letter-spacing:0}
-  .header .language-switch button{font-size:11px}
+.header-dock > .header > .brand {justify-self: start; gap: 12px; min-height: 44px}
+.header-dock .brand-caption {font-size: 14px; letter-spacing: .035em; white-space: nowrap}
+.header-dock > .header > nav {display: flex; align-items: center; gap: clamp(3px, 1vw, 18px); margin: 0; height: auto}
+.header-dock .header nav a {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 60px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 15px;
+  letter-spacing: .035em;
+  clip-path: none;
 }
-@media(max-width:380px){
-  .header{padding-inline:16px;column-gap:12px}
-  .header>nav{gap:2px}
-  .header>nav a,html[lang=en] .header>nav a{min-width:54px;padding-inline:10px}
-  .header>.header-tools{gap:4px}
+.header-dock .header > .header-tools {justify-self: end; display: flex; align-items: center; gap: 14px; width: auto; height: auto; border: 0}
+.header-dock .header .language-switch {border: 0; background: transparent; gap: 1px}
+.header-dock .language-switch button {min-height: 44px; font-size: 12px}
+.header-dock .header .language-switch button {background: transparent; border-color: transparent}
+.header-wave-text {display: inline-block; pointer-events: none}
+.header-dock .header :is(.brand-caption, nav a, .language-switch button) {text-shadow: 0 1px 4px #050b17, 0 0 10px #050b17aa}
+.header-dock .header nav a[aria-current=page] {text-decoration: underline; text-underline-offset: .52em; text-decoration-thickness: 1px; text-decoration-color: #9bd5e8}
+.header-dock .header .music-controls {filter: drop-shadow(0 1px 2px #050b17)}
+.header-dock .header :is(.brand, nav a, .language-switch button, .music-button) {position: relative}
+.header-dock .header :is(nav a, .language-switch button) > .button-shader-surface {opacity: .38}
+.header-dock .header :is(.brand, nav a, .language-switch button, .music-button):is(:hover, :focus-visible) {
+  color: #f1fbff;
+  background: transparent;
+  text-shadow: 0 0 8px #c3eaffb3, 0 1px 4px #050b17;
 }
-
-/* The fixed bar keeps its layout dimensions while its lower edge lifts and fades. */
-.header-dock{
-  --nav-hit-height:78px;
-  --nav-meter-height:74px;
-  position:fixed;inset:0 0 auto;z-index:30;
+.header-dock .header .brand:is(:hover, :focus-visible) .brand-caption {color: #f1fbff; text-shadow: 0 0 8px #c3eaffb3}
+.header-dock .header .brand:is(:hover, :focus-visible) img {filter: brightness(1.2) drop-shadow(0 0 5px #a9dcff80)}
+.header-dock .header nav a[aria-current=page]:is(:hover, :focus-visible) {text-decoration-color: transparent}
+.header-dock .header :is(.brand, nav a, .language-switch button, .music-button)::before {
+  content: '';
+  display: block;
+  position: absolute;
+  inset: auto 20% 6px;
+  height: 1px;
+  padding: 0;
+  border-radius: 1px;
+  background:
+    radial-gradient(ellipse at center, #fff 0%, #def6ff 18%, #a5e2ff 34%, transparent 70%) center / 60% 100% no-repeat,
+    linear-gradient(90deg, transparent, #c2eafdaf 50%, transparent);
+  mask: none;
+  box-shadow: none;
+  filter: drop-shadow(0 0 3px #a4ddffb8);
+  pointer-events: none;
+  opacity: 0;
+  animation: none;
+  transition: opacity .16s ease-out;
 }
-.header-dock.is-collapsed{height:var(--nav-hit-height)}
-.header-dock>.header{position:relative;inset:auto}
-.header[data-reveal]{
-  background:#080f24;
-  backdrop-filter:none;
-  -webkit-backdrop-filter:none;
-  clip-path:inset(0);
-  opacity:1;
-  transform:translateY(0);
-  transition:clip-path .42s cubic-bezier(.16,1,.3,1),transform .42s cubic-bezier(.16,1,.3,1),opacity .30s ease-out;
+.header-dock .header :is(nav a, .language-switch button):is([aria-current=page], [aria-pressed=true])::before {opacity: 0}
+.header-dock .header :is(.brand, nav a, .language-switch button, .music-button:not(:disabled)):is(:hover, :focus-visible)::before {
+  opacity: 1 !important;
 }
-.header[data-reveal=closed]{
-  clip-path:inset(0 0 100% 0);
-  opacity:0;
-  transform:translateY(-18px);
-  pointer-events:none;
-  transition:clip-path .16s ease-out,transform .16s ease-out,opacity .12s linear;
-}
-@media(prefers-reduced-motion:no-preference){
-  html[data-start-gate] .header-dock>.header{
-    opacity:0;transform:translateY(-10px);clip-path:inset(0 0 65% 0);
-  }
-  .header-reveal-handle.first-spectrum canvas{
-    transform-origin:50% 0;
-    animation:header-spectrum-enter .64s cubic-bezier(.22,.7,.25,1) both;
-  }
-  @keyframes header-spectrum-enter{
-    from{opacity:0;transform:scaleY(.15)}
-    to{opacity:1;transform:scaleY(1)}
-  }
-  .header[data-reveal]>:is(.brand,nav,.header-tools){
-    opacity:1;
-    translate:0 0;
-    transition:opacity .24s ease-out var(--reveal-delay,30ms),translate .32s ease-out var(--reveal-delay,30ms);
-  }
-  .header[data-reveal]>nav{--reveal-delay:65ms}
-  .header[data-reveal]>.header-tools{--reveal-delay:100ms}
-  .header[data-reveal=closed]>:is(.brand,nav,.header-tools){
-    opacity:0;
-    translate:0 -4px;
-    transition-delay:0s;
+@media (prefers-reduced-motion: no-preference) {
+  .header-dock .header :is(.brand, nav a, .language-switch button, .music-button:not(:disabled)):is(:hover, :focus-visible)::before {
+    animation: header-hover-flow 1.25s ease-in-out infinite alternate;
   }
 }
-.header-reveal-handle{
-  position:absolute;inset:0 0 auto;z-index:31;overflow:hidden;
-  display:block;width:100%;height:var(--nav-hit-height);
-  margin:0;padding:0;border:0;border-radius:0;background:transparent;appearance:none;
-  opacity:0;visibility:hidden;pointer-events:none;touch-action:manipulation;
-  transition:opacity .10s linear,visibility 0s linear .10s;
+.header-dock .header .music-controls input[type=range]:is(:hover, :focus-visible)::-webkit-slider-thumb {
+  background: #effbff;
+  box-shadow: 0 0 8px #c5ebffd1;
 }
-.header-reveal-handle[aria-expanded=false]{
-  visibility:visible;pointer-events:auto;opacity:1;
-  transition:opacity .18s ease-out,visibility 0s;
+.header-dock .header .music-controls input[type=range]:is(:hover, :focus-visible)::-moz-range-thumb {
+  background: #effbff;
+  box-shadow: 0 0 8px #c5ebffd1;
 }
-.header-reveal-handle canvas{
-  position:absolute;inset:0 0 auto;width:100%;height:var(--nav-meter-height);pointer-events:none;
+@keyframes header-hover-flow {
+  from {background-position: -40% center, center}
+  to {background-position: 140% center, center}
 }
-.header-reveal-handle:focus-visible{outline:2px solid #9ad7ea;outline-offset:-2px}
-@media(max-width:900px){
-  .header-dock{--nav-hit-height:96px;--nav-meter-height:90px}
+.header-waves {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  height: var(--wave-height);
+  display: block;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .5s ease;
 }
-@media(prefers-reduced-motion:reduce){
-  .header[data-reveal],.header-reveal-handle[aria-expanded]{transition:none}
+.header-dock.waves-ready .header-waves {opacity: 1}
+.header[data-reveal] {
+  clip-path: inset(0);
+  opacity: 1;
+  transition: opacity .26s ease, transform .32s cubic-bezier(.22,.8,.25,1);
 }
-@media(forced-colors:active){
-  .header-reveal-handle{border-top:2px dotted ButtonText}
+.header[data-reveal=closed] {
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none;
+  transition-duration: .13s, .16s;
+}
+html[data-start-gate] .header-dock > .header {opacity: 0; transform: translateY(-10px)}
+.header-reveal-handle {
+  position: absolute; inset: 0 0 auto;
+  z-index: 1;
+  width: 100%; height: var(--nav-hit-height);
+  padding: 0; margin: 0; border: 0; background: transparent;
+  appearance: none; visibility: hidden; pointer-events: none; touch-action: manipulation;
+}
+.header-reveal-handle[aria-expanded=false] {visibility: visible; pointer-events: auto}
+.header-reveal-handle:focus-visible {outline: 2px solid #9ad7ea; outline-offset: -2px}
+@media (max-width: 900px) {
+  .header-dock {--wave-height: 142px; --nav-hit-height: 74px}
+  .header-dock > .header {
+    height: 126px; grid-template-columns: auto minmax(0,1fr); grid-template-rows: 54px 44px;
+    align-content: center; gap: 0 12px;
+  }
+  .header-dock .header > nav {justify-self: end}
+  .header-dock .header > .header-tools {grid-column: 1/-1; justify-self: stretch; justify-content: space-between}
+  .header-dock .header > .brand {height: auto}
+}
+@media (max-width: 760px) {
+  .header-dock .brand-caption {display: none}
+  .header-dock .header nav a, html[lang=en] .header-dock .header nav a {min-width: 52px; padding-inline: 8px; font-size: 14px}
+}
+@media (prefers-reduced-motion: reduce) {
+  .header-dock .header, .header-waves {transition: none}
+}
+@media (forced-colors: active) {
+  .header-reveal-handle[aria-expanded=false] {border-top: 2px dotted ButtonText}
 }

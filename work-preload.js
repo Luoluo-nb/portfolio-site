@@ -13,7 +13,7 @@ export function setupWorkPreload(initialUrls = [], initialCovers = []) {
   if (!['http:', 'https:'].includes(location.protocol)) return Promise.resolve(true);
 
   const detailPage = new URL('./work.html', location.href);
-  const mediaDirectory = new URL('./media/', detailPage);
+  const mediaPathPrefix = new URL('media', detailPage).pathname + '/';
   const used = new Set();
   const pendingFetches = new Map();
   const supportsPrefetch = document.createElement('link').relList?.supports?.('prefetch');
@@ -50,7 +50,7 @@ export function setupWorkPreload(initialUrls = [], initialCovers = []) {
 
   function coverUrl(value) {
     const url = localUrl(value);
-    return url?.pathname.startsWith(mediaDirectory.pathname) && /\.(?:jpe?g|webp|png)$/i.test(url.pathname)
+    return url?.pathname.startsWith(mediaPathPrefix) && /\.(?:jpe?g|webp|png)$/i.test(url.pathname)
       ? url.href
       : null;
   }

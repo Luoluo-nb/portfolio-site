@@ -5,6 +5,7 @@ import { projectDetails } from './project-details.js';
 import { setupWorkPreload } from './work-preload.js';
 import './player-nebula.js';
 import './image-viewer.js';
+import './header-reveal.js';
 
 const $ = id => document.getElementById(id);
 const announce = message => { $('detail-announcement').textContent = message; };
