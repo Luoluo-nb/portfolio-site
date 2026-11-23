@@ -1,7 +1,6 @@
-/* Shared header. The canvas paints the wave; controls sit directly over the page. */
+/* Shared header controls sit directly over the page. */
 .header-dock {
   --nav-hit-height: 76px;
-  --wave-height: clamp(106px, 8vw, 142px);
   position: fixed;
   inset: 0 0 auto;
   z-index: 30;
@@ -41,7 +40,6 @@
 .header-dock .header .language-switch {border: 0; background: transparent; gap: 1px}
 .header-dock .language-switch button {min-height: 44px; font-size: 12px}
 .header-dock .header .language-switch button {background: transparent; border-color: transparent}
-.header-wave-text {display: inline-block; pointer-events: none}
 .header-dock .header :is(.brand-caption, nav a, .language-switch button) {text-shadow: 0 1px 4px #050b17, 0 0 10px #050b17aa}
 .header-dock .header nav a[aria-current=page] {text-decoration: underline; text-underline-offset: .52em; text-decoration-thickness: 1px; text-decoration-color: #9bd5e8}
 .header-dock .header .music-controls {filter: drop-shadow(0 1px 2px #050b17)}
@@ -95,17 +93,6 @@
   from {background-position: -40% center, center}
   to {background-position: 140% center, center}
 }
-.header-waves {
-  position: absolute;
-  inset: 0 0 auto;
-  width: 100%;
-  height: var(--wave-height);
-  display: block;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .5s ease;
-}
-.header-dock.waves-ready .header-waves {opacity: 1}
 .header[data-reveal] {
   clip-path: inset(0);
   opacity: 1;
@@ -127,8 +114,22 @@ html[data-start-gate] .header-dock > .header {opacity: 0; transform: translateY(
 }
 .header-reveal-handle[aria-expanded=false] {visibility: visible; pointer-events: auto}
 .header-reveal-handle:focus-visible {outline: 2px solid #9ad7ea; outline-offset: -2px}
+@media (hover: none) {
+  .header-reveal-handle::after {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    width: 11px;
+    height: 11px;
+    border: solid #c5e7f4;
+    border-width: 0 1px 1px 0;
+    transform: translateX(-50%) rotate(45deg);
+  }
+}
 @media (max-width: 900px) {
-  .header-dock {--wave-height: 142px; --nav-hit-height: 74px}
+  .header-dock {--nav-hit-height: 74px}
   .header-dock > .header {
     height: 126px; grid-template-columns: auto minmax(0,1fr); grid-template-rows: 54px 44px;
     align-content: center; gap: 0 12px;
@@ -142,7 +143,7 @@ html[data-start-gate] .header-dock > .header {opacity: 0; transform: translateY(
   .header-dock .header nav a, html[lang=en] .header-dock .header nav a {min-width: 52px; padding-inline: 8px; font-size: 14px}
 }
 @media (prefers-reduced-motion: reduce) {
-  .header-dock .header, .header-waves {transition: none}
+  .header-dock .header {transition: none}
 }
 @media (forced-colors: active) {
   .header-reveal-handle[aria-expanded=false] {border-top: 2px dotted ButtonText}

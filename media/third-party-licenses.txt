@@ -83,12 +83,3 @@ faster edge dissolution and a responsive, visibility-aware renderer. The
 original audio fog and timed blackout are omitted. The adapted module is
 distributed under the same CC BY-NC-SA 3.0 license. No endorsement implied.
 This license applies to this adapted effect, not to unrelated portfolio works.
-
-Header audio waves
-
-Pulse Waves by uNiversal (28 May 2015), https://www.shadertoy.com/view/4tS3W3
-Based on Waves Remix by ADOB (10 April 2015), https://www.shadertoy.com/view/4ljGD1
-CC BY-NC-SA 3.0 Unported, https://creativecommons.org/licenses/by-nc-sa/3.0/
-The header-waves.js adaptation uses five frequency bands, a time-domain trace,
-a blue-cyan palette and a feathered control mask, drawn on transparent Canvas 2D.
-This adapted visual is distributed under the same license.

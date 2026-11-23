@@ -1,6 +1,4 @@
 // Original, short oscillator cues. UI audio never changes media playback.
-import { createSpectrumMixer } from './audio-spectrum.js';
-
 export const UI_AUDIO_CONFIG = Object.freeze({ intervalMs: 90, maxVoices: 3, peakGain: .022 });
 const tones = Object.freeze({
   select: { duration: .115, partials: [[880, 1060, .74, 0], [1760, 1880, .26, 0]] },
@@ -61,7 +59,6 @@ function mountUiAudio() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   const voices = new Set(), pendingCopies = new Set();
   let context, master, resumePending, audioElement;
-  let analyser, cueFrequencies, mixCueSpectrum;
   let activePage = !document.hidden, generation = 0, lastActivation = -Infinity;
   const stats = { played: 0, throttled: 0, dropped: 0, maxVoices: 0, events: [] };
   const volume = () => {
@@ -84,33 +81,12 @@ function mountUiAudio() {
     audioElement = next;
     audioElement?.addEventListener('volumechange', updateVolume);
   };
-  function attachSpectrumTap() {
-    try {
-      const tap = context.createAnalyser();
-      tap.fftSize = 1024;
-      tap.smoothingTimeConstant = .08;
-      cueFrequencies = new Float32Array(tap.frequencyBinCount);
-      mixCueSpectrum = createSpectrumMixer(context.sampleRate, tap.fftSize);
-      // Analyse a parallel branch. The existing master-to-speakers connection plays each cue once.
-      master.connect(tap);
-      analyser = tap;
-    } catch { /* Metering is optional on the existing UI audio context. */ }
-  }
-  function mixSpectrum(bands) {
-    if (!bands.length || !voices.size || !analyser || !activePage || document.hidden
-      || context.state !== 'running' || !volume()) return;
-    try {
-      analyser.getFloatFrequencyData(cueFrequencies);
-      mixCueSpectrum(cueFrequencies, bands);
-    } catch { /* Keep the incoming music bands when the cue analyser is unavailable. */ }
-  }
   function enable() {
     if (!AudioContext || !activePage || document.hidden || !volume()) return Promise.resolve(false);
     try {
       if (!context) {
         context = new AudioContext({ latencyHint: 'interactive' });
         master = context.createGain(); master.gain.value = volume(); master.connect(context.destination);
-        attachSpectrumTap();
       }
       observeVolume(); updateVolume();
       if (context.state === 'running') return Promise.resolve(true);
@@ -172,7 +148,6 @@ function mountUiAudio() {
   window.addEventListener('pagehide', suspend);
   window.addEventListener('pageshow', () => { activePage = !document.hidden; });
   return Object.freeze({
-    mixSpectrum,
     snapshot: () => ({ ...stats, events: stats.events.map(event => ({ ...event })), available: !!AudioContext,
       initialized: !!context, state: context?.state || 'uninitialized', activeVoices: voices.size,
       volume: volume(), activePage, config: UI_AUDIO_CONFIG }),

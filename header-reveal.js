@@ -1,5 +1,3 @@
-import { mountHeaderWaves } from './header-waves.js';
-
 const header = document.querySelector('.header');
 const dock = document.createElement('div');
 dock.className = 'header-dock';
@@ -14,7 +12,6 @@ handle.setAttribute('aria-expanded', 'true');
 handle.tabIndex = -1;
 header.before(dock);
 dock.append(handle, header);
-mountHeaderWaves(dock, header);
 
 function labelHandle() {
   handle.setAttribute('aria-label', document.documentElement.lang === 'en' ? 'Show navigation' : '展开导航');
